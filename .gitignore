@@ -25,3 +25,23 @@ _ide_helper.php
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# 1G-SLS local/runtime data
+/%SystemDrive%/
+/_norton_/
+/public/sls-exports/
+/routes/*.bak-*
+*.sql
+*.sql.gz
+*.zip
+*.tar.gz
+/GMT*.txt
+/storage/app/backups/
+/storage/app/private/knowledge-sources/
+/storage/app/private/intelligence-documents/
+/storage/app/private/directory-images/
+/tools/downloads/
+/tools/ffmpeg/
+/tools/python-whisper/
+/tools/whisper/
+/tools/whisper-models/
