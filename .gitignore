@@ -45,3 +45,4 @@ Thumbs.db
 /tools/python-whisper/
 /tools/whisper/
 /tools/whisper-models/
+*.bak*
