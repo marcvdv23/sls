@@ -6,6 +6,7 @@ use App\Models\CountryUpdate;
 use App\Models\CountryUpdateOpportunity;
 use App\Models\CountryUpdateOrganization;
 use App\Models\ChatAnswerLog;
+use App\Models\CrawlerSetting;
 use App\Models\DemoFeatureMoment;
 use App\Models\DemoFrame;
 use App\Models\DemoSession;
@@ -2862,13 +2863,16 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
         ->take($displayLimit)
         ->values();
 
-    $latestRuns = CountryMonitorRun::query()
-        ->with('country')
+    $latestRunIds = CountryMonitorRun::query()
+        ->selectRaw('MAX(id) as id')
         ->whereIn('country_id', $countryIds)
         ->when($focus !== 'all', fn ($query) => $query->where('focus', $focus))
-        ->latest('finished_at')
+        ->groupBy('country_id');
+
+    $latestRuns = CountryMonitorRun::query()
+        ->with('country')
+        ->whereIn('id', $latestRunIds)
         ->get()
-        ->unique(fn (CountryMonitorRun $run) => $run->country_id . '|' . ($focus === 'all' ? 'all' : $run->focus))
         ->keyBy(fn (CountryMonitorRun $run) => (string) $run->country_id);
     $latestUpdatesByCountry = $updates
         ->sortByDesc(fn (CountryUpdate $update) => $update->retrieved_at?->timestamp ?? 0)
@@ -6368,24 +6372,44 @@ Route::get('/sls/intelligence/sources', function (Request $request) use ($allMap
 
         return $runAt->lessThanOrEqualTo($now) ? $runAt->addDay() : $runAt;
     };
-    $nextGlobalHrmsSweep = $nextTimeTodayOrTomorrow((string) env('SLS_GLOBAL_HRMS_TENDER_SWEEP_TIME', '02:35'));
-    $nextGlobalErmsSweep = $nextTimeTodayOrTomorrow((string) env('SLS_GLOBAL_ERMS_TENDER_SWEEP_TIME', '03:05'));
-    $nextGlobalEbpcSweep = $nextTimeTodayOrTomorrow((string) env('SLS_GLOBAL_EBPC_TENDER_SWEEP_TIME', '03:15'));
-    $nextGlobalSocialSweep = $nextTimeTodayOrTomorrow((string) env('SLS_GLOBAL_SOCIAL_TENDER_SWEEP_TIME', '02:55'));
+    $crawlerSetting = function (string $key, mixed $default = null): mixed {
+        try {
+            if (! Schema::hasTable('crawler_settings')) {
+                return $default;
+            }
+
+            $value = DB::table('crawler_settings')->where('setting_key', $key)->value('setting_value');
+
+            return filled($value) ? $value : $default;
+        } catch (Throwable) {
+            return $default;
+        }
+    };
+    $crawlerTimeList = function (string $key, array $default) use ($crawlerSetting): array {
+        return collect(explode(',', (string) $crawlerSetting($key, implode(',', $default))))
+            ->map(fn (string $time) => trim($time))
+            ->filter(fn (string $time) => preg_match('/^\d{2}:\d{2}$/', $time) === 1)
+            ->values()
+            ->all();
+    };
+    $nextGlobalHrmsSweep = $nextTimeTodayOrTomorrow((string) $crawlerSetting('global_hrms_tender_sweep_time', env('SLS_GLOBAL_HRMS_TENDER_SWEEP_TIME', '02:35')));
+    $nextGlobalErmsSweep = $nextTimeTodayOrTomorrow((string) $crawlerSetting('global_erms_tender_sweep_time', env('SLS_GLOBAL_ERMS_TENDER_SWEEP_TIME', '03:05')));
+    $nextGlobalEbpcSweep = $nextTimeTodayOrTomorrow((string) $crawlerSetting('global_ebpc_tender_sweep_time', env('SLS_GLOBAL_EBPC_TENDER_SWEEP_TIME', '03:15')));
+    $nextGlobalSocialSweep = $nextTimeTodayOrTomorrow((string) $crawlerSetting('global_social_tender_sweep_time', env('SLS_GLOBAL_SOCIAL_TENDER_SWEEP_TIME', '02:55')));
     $allSourceCountries = $allMapCountries();
     $socialSecuritySourceNextRuns = $sourceNextRunMap(
         $allSourceCountries,
-        config('country_intelligence.daily_slots', []),
-        (int) config('country_intelligence.daily_batch_size', 1),
+        $crawlerTimeList('social_security_daily_slots', config('country_intelligence.daily_slots', [])),
+        (int) $crawlerSetting('daily_batch_size', config('country_intelligence.daily_batch_size', 1)),
     );
     $hrmsSourceNextRuns = $sourceNextRunMap(
         $allSourceCountries->filter(fn (array $country) => in_array(Str::lower($country['region_group']), ['africa', 'asia', 'caribbean', 'latin america', 'north america', 'europe'], true))->values(),
-        config('country_intelligence.hrms_tender_slots', []),
+        $crawlerTimeList('hrms_tender_slots', config('country_intelligence.hrms_tender_slots', [])),
         1,
     );
     $sectorSourceNextRuns = $sourceNextRunMap(
         $allSourceCountries->filter(fn (array $country) => in_array(Str::lower($country['region_group']), ['africa', 'asia', 'caribbean', 'latin america', 'north america', 'europe'], true))->values(),
-        config('country_intelligence.sector_tender_slots', []),
+        $crawlerTimeList('sector_tender_slots', config('country_intelligence.sector_tender_slots', [])),
         1,
     );
 
@@ -6903,6 +6927,359 @@ Route::post('/sls/intelligence/sources/{source}/delete', function (IntelligenceS
 
     return back()->with('status', 'Intelligence source removed.');
 })->name('sls.intelligence.sources.delete');
+
+$crawlerSettingDefinitions = fn (): array => [
+    'scheduled_region_scope' => [
+        'label' => 'Scheduled region scope',
+        'description' => 'Region key or comma-separated region names used by scheduled crawlers.',
+        'value_type' => 'string',
+        'default' => 'africa_asia_caribbean_latin_america_north_america_europe',
+    ],
+    'verify_ssl' => [
+        'label' => 'Verify source SSL certificates',
+        'description' => 'Use true in production unless a source/API requires relaxed certificate checks.',
+        'value_type' => 'boolean',
+        'default' => config('country_intelligence.verify_ssl', false) ? 'true' : 'false',
+    ],
+    'gdelt_endpoint' => [
+        'label' => 'GDELT news API endpoint',
+        'description' => 'Endpoint used for indexed news and source-specific news/tender searches.',
+        'value_type' => 'string',
+        'default' => (string) config('country_intelligence.gdelt_endpoint', 'https://api.gdeltproject.org/api/v2/doc/doc'),
+    ],
+    'scheduled_max_results' => [
+        'label' => 'Scheduled max results per country',
+        'description' => 'Maximum candidate items kept for each scheduled country/focus run.',
+        'value_type' => 'integer',
+        'default' => (string) config('country_intelligence.scheduled_max_results', 3),
+    ],
+    'default_max_results' => [
+        'label' => 'Manual run max results',
+        'description' => 'Default item limit when a monitor is run manually without another max value.',
+        'value_type' => 'integer',
+        'default' => (string) config('country_intelligence.default_max_results', 10),
+    ],
+    'max_queries_per_country' => [
+        'label' => 'News queries per country',
+        'description' => 'Maximum general news search queries sent for each country/focus run.',
+        'value_type' => 'integer',
+        'default' => (string) config('country_intelligence.max_queries_per_country', 16),
+    ],
+    'development_partner_max_queries_per_country' => [
+        'label' => 'Donor portal queries per focus',
+        'description' => 'Maximum donor/development partner domain searches per focus run.',
+        'value_type' => 'integer',
+        'default' => (string) config('country_intelligence.development_partner_max_queries_per_country', 8),
+    ],
+    'gdelt_timespan' => [
+        'label' => 'News search recency window',
+        'description' => 'GDELT timespan, for example 7d, 30d, 3m. Keeps general news searches fresh.',
+        'value_type' => 'string',
+        'default' => (string) config('country_intelligence.gdelt_timespan', '30d'),
+    ],
+    'world_bank_procurement_endpoint' => [
+        'label' => 'World Bank procurement endpoint',
+        'description' => 'Official World Bank procurement notice API endpoint.',
+        'value_type' => 'string',
+        'default' => (string) config('country_intelligence.world_bank_procurement_endpoint', 'https://search.worldbank.org/api/v2/procnotices'),
+    ],
+    'world_bank_recent_notice_days' => [
+        'label' => 'World Bank notice freshness days',
+        'description' => 'How far back World Bank notices can be considered current when no open deadline is captured.',
+        'value_type' => 'integer',
+        'default' => (string) config('country_intelligence.world_bank_recent_notice_days', 45),
+    ],
+    'ted_search_endpoint' => [
+        'label' => 'TED search endpoint',
+        'description' => 'Official EU TED notices search endpoint.',
+        'value_type' => 'string',
+        'default' => (string) config('country_intelligence.ted_search_endpoint', 'https://api.ted.europa.eu/v3/notices/search'),
+    ],
+    'usaid_business_forecast_endpoint' => [
+        'label' => 'USAID business forecast endpoint',
+        'description' => 'USAID public business forecast dataset endpoint.',
+        'value_type' => 'string',
+        'default' => (string) config('country_intelligence.usaid_business_forecast_endpoint', 'https://data.usaid.gov/resource/qdtq-s66e.json'),
+    ],
+    'sam_gov_opportunities_endpoint' => [
+        'label' => 'SAM.gov opportunities endpoint',
+        'description' => 'SAM.gov contract opportunities API endpoint.',
+        'value_type' => 'string',
+        'default' => (string) config('country_intelligence.sam_gov_opportunities_endpoint', 'https://api.sam.gov/opportunities/v2/search'),
+    ],
+    'sam_gov_api_key' => [
+        'label' => 'SAM.gov API key',
+        'description' => 'API key for SAM.gov opportunity searches. Leave blank if SAM.gov should be skipped.',
+        'value_type' => 'secret',
+        'default' => (string) env('SAM_GOV_API_KEY', env('SAM_API_KEY', '')),
+    ],
+    'daily_batch_size' => [
+        'label' => 'Countries per scheduled news slot',
+        'description' => 'How many countries the rotating news monitor checks in each scheduled slot.',
+        'value_type' => 'integer',
+        'default' => (string) config('country_intelligence.daily_batch_size', 1),
+    ],
+    'social_security_daily_slots' => [
+        'label' => 'Social security/news country slots',
+        'description' => 'Comma-separated HH:MM times. These rotate through countries by batch size.',
+        'value_type' => 'csv_times',
+        'default' => implode(',', config('country_intelligence.daily_slots', [])),
+    ],
+    'hrms_tender_slots' => [
+        'label' => 'HRMS/ERMS/EBPC tender slots',
+        'description' => 'Comma-separated HH:MM base times. ERMS and EBPC are staggered from these slots.',
+        'value_type' => 'csv_times',
+        'default' => implode(',', config('country_intelligence.hrms_tender_slots', [])),
+    ],
+    'sector_tender_slots' => [
+        'label' => 'Sector tender slots',
+        'description' => 'Comma-separated HH:MM times for sector tender searches.',
+        'value_type' => 'csv_times',
+        'default' => implode(',', config('country_intelligence.sector_tender_slots', [])),
+    ],
+    'social_protection_profile_weekly_day' => [
+        'label' => 'ILO profile weekly day',
+        'description' => 'Laravel weekly day number for ILO country-profile checks. 0 Sunday, 1 Monday, 2 Tuesday, etc.',
+        'value_type' => 'integer',
+        'default' => '1',
+    ],
+    'social_protection_profile_weekly_time' => [
+        'label' => 'ILO profile weekly time',
+        'description' => 'Weekly HH:MM server-time run for ILO country-profile checks.',
+        'value_type' => 'time',
+        'default' => (string) config('country_intelligence.social_protection_profile_weekly_time', '04:10'),
+    ],
+    'ilo_social_protection_project_weekly_day' => [
+        'label' => 'ILO project discovery weekly day',
+        'description' => 'Laravel weekly day number for ILO project discovery. 0 Sunday, 1 Monday, 2 Tuesday, etc.',
+        'value_type' => 'integer',
+        'default' => '2',
+    ],
+    'ilo_social_protection_project_weekly_time' => [
+        'label' => 'ILO project discovery weekly time',
+        'description' => 'Weekly HH:MM server-time run for ILO project discovery.',
+        'value_type' => 'time',
+        'default' => (string) config('country_intelligence.ilo_social_protection_project_weekly_time', '04:35'),
+    ],
+    'ilo_social_protection_project_weekly_country_limit' => [
+        'label' => 'ILO project country limit',
+        'description' => 'Maximum countries checked per ILO project discovery run.',
+        'value_type' => 'integer',
+        'default' => (string) config('country_intelligence.ilo_social_protection_project_weekly_country_limit', 25),
+    ],
+    'ilo_social_protection_project_queries_per_country' => [
+        'label' => 'ILO project queries per country',
+        'description' => 'Maximum SerpAPI queries per country for ILO project discovery.',
+        'value_type' => 'integer',
+        'default' => (string) config('country_intelligence.ilo_social_protection_project_queries_per_country', 3),
+    ],
+    'ilo_social_protection_project_results_per_query' => [
+        'label' => 'ILO project results per query',
+        'description' => 'Maximum indexed-search results kept per ILO project discovery query.',
+        'value_type' => 'integer',
+        'default' => (string) config('country_intelligence.ilo_social_protection_project_results_per_query', 5),
+    ],
+    'global_hrms_tender_sweep_time' => [
+        'label' => 'Global HRMS tender sweep time',
+        'description' => 'Daily HH:MM server-time run for global HRMS tender sweep.',
+        'value_type' => 'time',
+        'default' => env('SLS_GLOBAL_HRMS_TENDER_SWEEP_TIME', '02:35'),
+    ],
+    'global_erms_tender_sweep_time' => [
+        'label' => 'Global ERMS tender sweep time',
+        'description' => 'Daily HH:MM server-time run for global ERMS tender sweep.',
+        'value_type' => 'time',
+        'default' => env('SLS_GLOBAL_ERMS_TENDER_SWEEP_TIME', '03:05'),
+    ],
+    'global_ebpc_tender_sweep_time' => [
+        'label' => 'Global EBPC tender sweep time',
+        'description' => 'Daily HH:MM server-time run for global EBPC tender sweep.',
+        'value_type' => 'time',
+        'default' => env('SLS_GLOBAL_EBPC_TENDER_SWEEP_TIME', '03:15'),
+    ],
+    'global_social_tender_sweep_time' => [
+        'label' => 'Global social security tender sweep time',
+        'description' => 'Daily HH:MM server-time run for global social-security tender sweep.',
+        'value_type' => 'time',
+        'default' => env('SLS_GLOBAL_SOCIAL_TENDER_SWEEP_TIME', '02:55'),
+    ],
+    'global_social_news_sweep_time' => [
+        'label' => 'Global social security news sweep time',
+        'description' => 'Daily HH:MM server-time run for global social-security news sweep.',
+        'value_type' => 'time',
+        'default' => env('SLS_GLOBAL_SOCIAL_NEWS_SWEEP_TIME', '03:20'),
+    ],
+    'global_tender_sweep_max_results' => [
+        'label' => 'Global tender sweep max results',
+        'description' => 'Maximum results used by each global tender sweep.',
+        'value_type' => 'integer',
+        'default' => '80',
+    ],
+    'global_social_news_max_results' => [
+        'label' => 'Global news sweep max results',
+        'description' => 'Maximum results used by the global social-security news sweep.',
+        'value_type' => 'integer',
+        'default' => '120',
+    ],
+    'daily_backup_time' => [
+        'label' => 'Daily backup time',
+        'description' => 'Daily HH:MM server-time run for local SLS backup.',
+        'value_type' => 'time',
+        'default' => env('SLS_DAILY_BACKUP_TIME', '03:00'),
+    ],
+    'daily_backup_timezone' => [
+        'label' => 'Daily backup timezone',
+        'description' => 'Timezone used for the daily backup schedule.',
+        'value_type' => 'string',
+        'default' => env('SLS_DAILY_BACKUP_TIMEZONE', 'America/Chicago'),
+    ],
+    'tender_document_process_limit' => [
+        'label' => 'Tender document process limit',
+        'description' => 'Maximum tender documents processed per scheduled processing run.',
+        'value_type' => 'integer',
+        'default' => (string) env('SLS_TENDER_DOCUMENT_PROCESS_LIMIT', 20),
+    ],
+    'title_translation_backfill_limit' => [
+        'label' => 'Title translation backfill limit',
+        'description' => 'Maximum update titles translated per scheduled backfill run.',
+        'value_type' => 'integer',
+        'default' => (string) env('SLS_TITLE_TRANSLATION_BACKFILL_LIMIT', 100),
+    ],
+    'crawler_contact_clean_limit' => [
+        'label' => 'Crawler contact clean limit',
+        'description' => 'Maximum crawler contacts cleaned per scheduled cleanup run.',
+        'value_type' => 'integer',
+        'default' => (string) env('SLS_CRAWLER_CONTACT_CLEAN_LIMIT', 5000),
+    ],
+    'crawler_contact_resolve_limit' => [
+        'label' => 'Crawler contact resolve limit',
+        'description' => 'Maximum crawler contact names resolved per scheduled research run.',
+        'value_type' => 'integer',
+        'default' => (string) env('SLS_CRAWLER_CONTACT_RESOLVE_LIMIT', 200),
+    ],
+    'worker_stale_minutes' => [
+        'label' => 'Worker stale threshold minutes',
+        'description' => 'Minutes without a completed monitor run before worker health check warns.',
+        'value_type' => 'integer',
+        'default' => (string) env('SLS_WORKER_STALE_MINUTES', 45),
+    ],
+    'serpapi_key' => [
+        'label' => 'SerpAPI key',
+        'description' => 'API key used by source discovery and indexed-search discovery crawlers.',
+        'value_type' => 'secret',
+        'default' => (string) env('SERPAPI_KEY', ''),
+    ],
+    'serpapi_pilot_limit' => [
+        'label' => 'SerpAPI pilot country limit',
+        'description' => 'Default country limit when SerpAPI discovery is run without an explicit limit.',
+        'value_type' => 'integer',
+        'default' => (string) env('SERPAPI_PILOT_LIMIT', 0),
+    ],
+    'serpapi_verify_ssl' => [
+        'label' => 'Verify SerpAPI SSL certificates',
+        'description' => 'Use true in production unless local certificate handling requires disabling verification.',
+        'value_type' => 'boolean',
+        'default' => filter_var(env('SERPAPI_VERIFY_SSL', true), FILTER_VALIDATE_BOOL) ? 'true' : 'false',
+    ],
+    'serpapi_ca_bundle' => [
+        'label' => 'SerpAPI CA bundle path',
+        'description' => 'Optional CA bundle path used by SerpAPI-backed discovery crawlers.',
+        'value_type' => 'string',
+        'default' => (string) env('SERPAPI_CA_BUNDLE', ''),
+    ],
+];
+
+$seedCrawlerSettings = function () use ($crawlerSettingDefinitions): void {
+    if (! Schema::hasTable('crawler_settings')) {
+        return;
+    }
+
+    foreach ($crawlerSettingDefinitions() as $key => $definition) {
+        CrawlerSetting::query()->firstOrCreate(
+            ['setting_key' => $key],
+            [
+                'setting_value' => $definition['default'],
+                'value_type' => $definition['value_type'],
+                'label' => $definition['label'],
+                'description' => $definition['description'],
+            ],
+        );
+    }
+};
+
+Route::get('/sls/intelligence/crawler-settings', function () use ($seedCrawlerSettings, $crawlerSettingDefinitions) {
+    $seedCrawlerSettings();
+
+    $settings = CrawlerSetting::query()
+        ->orderByRaw("FIELD(setting_key, '" . implode("','", array_keys($crawlerSettingDefinitions())) . "')")
+        ->get()
+        ->keyBy('setting_key');
+
+    return view('sls.intelligence.crawler-settings', [
+        'settings' => $settings,
+        'definitions' => $crawlerSettingDefinitions(),
+    ]);
+})->name('sls.intelligence.crawlerSettings');
+
+Route::post('/sls/intelligence/crawler-settings', function (Request $request) use ($seedCrawlerSettings, $crawlerSettingDefinitions) {
+    $seedCrawlerSettings();
+    $definitions = $crawlerSettingDefinitions();
+    $data = $request->validate([
+        'settings' => ['required', 'array'],
+        'settings.*' => ['nullable', 'string', 'max:5000'],
+    ]);
+
+    foreach (($data['settings'] ?? []) as $key => $value) {
+        if (! array_key_exists($key, $definitions)) {
+            continue;
+        }
+
+        $definition = $definitions[$key];
+        $value = trim((string) $value);
+
+        if ($definition['value_type'] === 'integer') {
+            $value = (string) max(0, (int) $value);
+        }
+
+        if ($definition['value_type'] === 'boolean') {
+            $normalized = filter_var($value, FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE);
+
+            if ($normalized === null) {
+                return back()->withErrors([$key => $definition['label'] . ' must be true or false.'])->withInput();
+            }
+
+            $value = $normalized ? 'true' : 'false';
+        }
+
+        if ($definition['value_type'] === 'time' && preg_match('/^\d{2}:\d{2}$/', $value) !== 1) {
+            return back()->withErrors([$key => $definition['label'] . ' must use HH:MM format.'])->withInput();
+        }
+
+        if ($definition['value_type'] === 'csv_times') {
+            $times = collect(explode(',', $value))
+                ->map(fn (string $time) => trim($time))
+                ->filter();
+
+            if ($times->contains(fn (string $time) => preg_match('/^\d{2}:\d{2}$/', $time) !== 1)) {
+                return back()->withErrors([$key => $definition['label'] . ' must be a comma-separated list of HH:MM times.'])->withInput();
+            }
+
+            $value = $times->implode(',');
+        }
+
+        CrawlerSetting::query()->updateOrCreate(
+            ['setting_key' => $key],
+            [
+                'setting_value' => $value,
+                'value_type' => $definition['value_type'],
+                'label' => $definition['label'],
+                'description' => $definition['description'],
+            ],
+        );
+    }
+
+    return back()->with('status', 'Crawler settings saved. The scheduler will pick up these settings on its next minute tick.');
+})->name('sls.intelligence.crawlerSettings.update');
 
 Route::get('/sls/intelligence/keywords', function () use ($seedIntelligenceRegistries) {
     $seedIntelligenceRegistries();

@@ -42,6 +42,7 @@
             </div>
             <div class="actions">
                 <a class="button secondary" href="{{ route('sls.intelligence.sources', ['region' => 'all']) }}">Source registry</a>
+                <a class="button secondary" href="{{ route('sls.intelligence.crawlerSettings') }}">Crawler settings</a>
                 <a class="button secondary" href="{{ route('sls.intelligence.review', ['focus' => 'social_security', 'region' => 'all']) }}">Review desk</a>
                 <a class="button" href="{{ url('/sls') }}">Dashboard</a>
             </div>

@@ -7,6 +7,7 @@
 @section('topbar_actions')
     <a class="button secondary" href="{{ route('sls.intelligence.review', ['region' => $region]) }}">Tenders and status</a>
     <a class="button secondary" href="{{ route('sls.intelligence.keywords') }}">Keyword directory</a>
+    <a class="button secondary" href="{{ route('sls.intelligence.crawlerSettings') }}">Crawler settings</a>
     <a class="button secondary" href="{{ route('sls.intelligence.world', ['region' => $region === 'all' ? null : $region]) }}">Map</a>
 @endsection
 

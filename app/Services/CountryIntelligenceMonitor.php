@@ -6,11 +6,14 @@ use App\Models\Country;
 use App\Models\CountryMonitorRun;
 use App\Models\CountryTopic;
 use App\Models\CountryUpdate;
+use App\Models\IntelligenceKeyword;
+use App\Models\IntelligenceSource;
 use App\Support\TitleLanguage;
 use Carbon\Carbon;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -55,7 +58,8 @@ class CountryIntelligenceMonitor
         $country = $dryRun ? null : $this->ensureCountry($countryConfig);
         $topic = $dryRun || ! $country ? null : $this->ensureTopic($country);
         $candidateItems = collect();
-        $sourcesChecked = collect($countryConfig['sources'] ?? [])->pluck('domain')->push('search.worldbank.org');
+        $activeCountrySources = collect($countryConfig['sources'] ?? [])->filter(fn (array $source) => $this->sourceMatchesFocus($source, $focus));
+        $sourcesChecked = $activeCountrySources->pluck('domain')->push('search.worldbank.org');
 
         if (in_array($focus, ['social_security', 'hrms_tenders', 'erms_tenders', 'ebpc_tenders', 'sector_tenders'], true)) {
             $sourcesChecked = $sourcesChecked->merge($this->developmentPartnerTenderSources()->pluck('domain'));
@@ -63,7 +67,7 @@ class CountryIntelligenceMonitor
 
         $sourcesChecked = $sourcesChecked->filter()->unique()->values()->all();
 
-        $queryLimit = (int) config('country_intelligence.max_queries_per_country', 8);
+        $queryLimit = $this->crawlerSettingInteger('max_queries_per_country', config('country_intelligence.max_queries_per_country', 8));
 
         foreach (array_slice($this->queriesFor($countryConfig, $focus), 0, $queryLimit) as $query) {
             $candidateItems = $candidateItems->merge($this->searchGdelt($query, max(6, min($maxResults, 12))));
@@ -76,7 +80,7 @@ class CountryIntelligenceMonitor
             $candidateItems = $candidateItems->merge($this->searchDevelopmentPartnerTenderSources($countryConfig, $focus, max(5, $maxResults)));
         }
 
-        foreach ($countryConfig['sources'] ?? [] as $source) {
+        foreach ($activeCountrySources as $source) {
             if (($source['type'] ?? null) === 'wordpress') {
                 $candidateItems = $candidateItems->merge($this->searchWordPress($source, $countryConfig, max(3, $maxResults)));
             }
@@ -95,8 +99,14 @@ class CountryIntelligenceMonitor
             ->values();
 
         if (! $dryRun && $country) {
-            $items->each(fn (array $item) => $this->storeUpdate($country, $topic, $item));
-            $this->storeMonitorRun($country, $focus, $sourcesChecked, $items->count(), $startedAt);
+            $storedUpdates = $items->map(fn (array $item) => $this->storeUpdate($country, $topic, $item));
+            $this->storeMonitorRun(
+                $country,
+                $focus,
+                $sourcesChecked,
+                $storedUpdates->filter(fn (CountryUpdate $update) => $update->wasRecentlyCreated)->count(),
+                $startedAt
+            );
         }
 
         return [
@@ -179,6 +189,11 @@ class CountryIntelligenceMonitor
                 $countryConfig['iso_code'] = $countryConfig['iso_code'] ?? $isoCode;
                 $countryConfig['search_names'] = array_values(array_unique($countryConfig['search_names'] ?? [$countryConfig['name']]));
                 $countryConfig['priority_queries'] = array_values(array_unique($countryConfig['priority_queries'] ?? []));
+                $countryConfig['sources'] = collect($countryConfig['sources'])
+                    ->merge($this->databaseCountrySources($countryConfig))
+                    ->unique(fn (array $source) => Str::lower((string) ($source['domain'] ?? '')) . '|' . Str::lower((string) ($source['url'] ?? '')))
+                    ->values()
+                    ->all();
 
                 return $countryConfig;
             });
@@ -231,6 +246,7 @@ class CountryIntelligenceMonitor
             ->unique()
             ->take(8);
         $focusTerms = collect(config("country_intelligence.focuses.$focus.terms", config('country_intelligence.topics', [])))
+            ->merge($this->databaseKeywordTerms($focus, ['en']))
             ->merge($this->localizedFocusTerms($countryConfig, $focus))
             ->unique()
             ->values();
@@ -241,6 +257,7 @@ class CountryIntelligenceMonitor
             ->all();
 
         $sourceSpecific = collect($countryConfig['sources'] ?? [])
+            ->filter(fn (array $source) => $this->sourceMatchesFocus($source, $focus))
             ->take(5)
             ->pluck('domain')
             ->filter()
@@ -303,8 +320,131 @@ class CountryIntelligenceMonitor
 
         return $languageCodes
             ->flatMap(fn (string $languageCode) => config("country_intelligence.localized_focus_terms.$focus.$languageCode", []))
+            ->merge($this->databaseKeywordTerms($focus, $languageCodes->all()))
             ->filter()
             ->values();
+    }
+
+    private function databaseKeywordTerms(string $focus, array $languageCodes = ['en']): Collection
+    {
+        if (! Schema::hasTable('intelligence_keywords')) {
+            return collect();
+        }
+
+        $languageCodes = collect($languageCodes)
+            ->push('en')
+            ->map(fn ($code) => Str::lower(trim((string) $code)))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        return IntelligenceKeyword::query()
+            ->where('is_enabled', true)
+            ->where('focus', $focus)
+            ->whereIn('language_code', $languageCodes)
+            ->pluck('term')
+            ->map(fn ($term) => trim((string) $term))
+            ->filter()
+            ->unique()
+            ->values();
+    }
+
+    private function databaseCountrySources(array $countryConfig): Collection
+    {
+        if (! Schema::hasTable('intelligence_sources')) {
+            return collect();
+        }
+
+        $iso = strtoupper((string) ($countryConfig['iso_code'] ?? ''));
+        $region = Str::lower((string) ($countryConfig['region'] ?? ''));
+
+        return IntelligenceSource::query()
+            ->where('is_enabled', true)
+            ->where(function ($query) use ($iso, $region) {
+                $query->where('country_iso', $iso);
+
+                if ($region !== '') {
+                    $query->orWhereRaw('LOWER(region) = ?', [$region]);
+                }
+            })
+            ->get()
+            ->map(fn (IntelligenceSource $source) => $this->intelligenceSourceToCrawlerSource($source))
+            ->filter(fn (array $source) => filled($source['domain'] ?? null) || filled($source['url'] ?? null))
+            ->values();
+    }
+
+    private function databaseGlobalTenderSources(): Collection
+    {
+        if (! Schema::hasTable('intelligence_sources')) {
+            return collect();
+        }
+
+        return IntelligenceSource::query()
+            ->where('is_enabled', true)
+            ->whereNull('country_iso')
+            ->whereIn('source_class', ['donor_tender_portal', 'central_tender_portal', 'news_aggregator'])
+            ->get()
+            ->map(fn (IntelligenceSource $source) => $this->intelligenceSourceToCrawlerSource($source))
+            ->filter(fn (array $source) => filled($source['domain'] ?? null) || filled($source['url'] ?? null))
+            ->values();
+    }
+
+    private function intelligenceSourceToCrawlerSource(IntelligenceSource $source): array
+    {
+        return [
+            'name' => $source->name,
+            'domain' => $source->domain,
+            'url' => $source->url,
+            'source_class' => $source->source_class,
+            'focus' => $source->focus,
+            'access_method' => $source->access_method,
+            'connector' => $source->connector,
+            'procurement_portal_type' => $source->procurement_portal_type,
+            'registration_notes' => $source->registration_notes,
+        ];
+    }
+
+    private function crawlerSetting(string $key, mixed $default = null): mixed
+    {
+        try {
+            if (! Schema::hasTable('crawler_settings')) {
+                return $default;
+            }
+
+            $value = \Illuminate\Support\Facades\DB::table('crawler_settings')
+                ->where('setting_key', $key)
+                ->value('setting_value');
+
+            return filled($value) ? $value : $default;
+        } catch (Throwable) {
+            return $default;
+        }
+    }
+
+    private function crawlerSettingString(string $key, mixed $default = ''): string
+    {
+        return trim((string) $this->crawlerSetting($key, $default));
+    }
+
+    private function crawlerSettingInteger(string $key, mixed $default = 0): int
+    {
+        return (int) $this->crawlerSetting($key, $default);
+    }
+
+    private function crawlerSettingBoolean(string $key, mixed $default = false): bool
+    {
+        return filter_var($this->crawlerSetting($key, $default), FILTER_VALIDATE_BOOL);
+    }
+
+    private function sourceMatchesFocus(array $source, string $focus): bool
+    {
+        $sourceFocus = (string) ($source['focus'] ?? 'both');
+
+        return $sourceFocus === 'both'
+            || $sourceFocus === $focus
+            || ($sourceFocus === 'news' && $focus === 'social_security')
+            || ($sourceFocus === 'tenders' && in_array($focus, ['social_security', 'hrms_tenders', 'erms_tenders', 'ebpc_tenders', 'sector_tenders'], true));
     }
 
     private function searchLanguageCodes(array $countryConfig): Collection
@@ -335,17 +475,18 @@ class CountryIntelligenceMonitor
             ->connectTimeout(3)
             ->acceptJson();
 
-        if (! config('country_intelligence.verify_ssl', false)) {
+        if (! $this->crawlerSettingBoolean('verify_ssl', config('country_intelligence.verify_ssl', false))) {
             $request = $request->withoutVerifying();
         }
 
         try {
-            $response = $request->get(config('country_intelligence.gdelt_endpoint'), [
+            $response = $request->get($this->crawlerSettingString('gdelt_endpoint', config('country_intelligence.gdelt_endpoint')), [
                 'query' => $query,
                 'mode' => 'ArtList',
                 'format' => 'json',
                 'sort' => 'DateDesc',
                 'maxrecords' => $maxRecords,
+                'timespan' => $this->crawlerSettingString('gdelt_timespan', config('country_intelligence.gdelt_timespan', '30d')),
             ]);
         } catch (Throwable) {
             return collect();
@@ -379,7 +520,7 @@ class CountryIntelligenceMonitor
         return $terms->flatMap(function (string $term) use ($baseUrl, $source, $maxRecords) {
             $request = Http::timeout(8)->connectTimeout(4)->acceptJson();
 
-            if (! config('country_intelligence.verify_ssl', false)) {
+            if (! $this->crawlerSettingBoolean('verify_ssl', config('country_intelligence.verify_ssl', false))) {
                 $request = $request->withoutVerifying();
             }
 
@@ -434,7 +575,7 @@ class CountryIntelligenceMonitor
         foreach ($feedUrls as $feedUrl) {
             $request = Http::timeout(8)->connectTimeout(4)->accept('application/rss+xml, application/xml, text/xml');
 
-            if (! config('country_intelligence.verify_ssl', false)) {
+            if (! $this->crawlerSettingBoolean('verify_ssl', config('country_intelligence.verify_ssl', false))) {
                 $request = $request->withoutVerifying();
             }
 
@@ -520,7 +661,7 @@ class CountryIntelligenceMonitor
 
     private function searchWorldBankProcurement(array $countryConfig, string $focus, int $maxRecords): Collection
     {
-        $endpoint = (string) config('country_intelligence.world_bank_procurement_endpoint', '');
+        $endpoint = $this->crawlerSettingString('world_bank_procurement_endpoint', config('country_intelligence.world_bank_procurement_endpoint', ''));
 
         if ($endpoint === '') {
             return collect();
@@ -570,7 +711,7 @@ class CountryIntelligenceMonitor
             return collect();
         }
 
-        $queryLimit = (int) config('country_intelligence.development_partner_max_queries_per_country', 18);
+        $queryLimit = $this->crawlerSettingInteger('development_partner_max_queries_per_country', config('country_intelligence.development_partner_max_queries_per_country', 18));
         $industryQuery = '("higher education" OR university OR college OR telecom OR telecommunications OR "oil and gas" OR petroleum OR government OR "civil service" OR "public service" OR "public administration" OR postal OR healthcare OR hospital OR "ministry of health")';
         $termQuery = match ($focus) {
             'sector_tenders' => '(telecom OR telecommunications OR "oil and gas" OR postal OR "civil service" OR aviation OR mining OR banking OR finance) (tender OR procurement OR rfp OR bid)',
@@ -632,7 +773,7 @@ class CountryIntelligenceMonitor
 
     private function searchTedNotices(array $source, array $countryConfig, string $focus, int $maxRecords): Collection
     {
-        $endpoint = (string) config('country_intelligence.ted_search_endpoint', '');
+        $endpoint = $this->crawlerSettingString('ted_search_endpoint', config('country_intelligence.ted_search_endpoint', ''));
 
         if ($endpoint === '') {
             return collect();
@@ -641,7 +782,7 @@ class CountryIntelligenceMonitor
         $queries = $this->topicTenderQueries($focus)->take(3);
         $request = Http::timeout(6)->connectTimeout(3)->acceptJson();
 
-        if (! config('country_intelligence.verify_ssl', false)) {
+        if (! $this->crawlerSettingBoolean('verify_ssl', config('country_intelligence.verify_ssl', false))) {
             $request = $request->withoutVerifying();
         }
 
@@ -678,7 +819,7 @@ class CountryIntelligenceMonitor
 
     private function searchUsaidBusinessForecast(array $source, array $countryConfig, string $focus, int $maxRecords): Collection
     {
-        $endpoint = (string) config('country_intelligence.usaid_business_forecast_endpoint', '');
+        $endpoint = $this->crawlerSettingString('usaid_business_forecast_endpoint', config('country_intelligence.usaid_business_forecast_endpoint', ''));
 
         if ($endpoint === '') {
             return collect();
@@ -686,7 +827,7 @@ class CountryIntelligenceMonitor
 
         $request = Http::timeout(6)->connectTimeout(3)->acceptJson();
 
-        if (! config('country_intelligence.verify_ssl', false)) {
+        if (! $this->crawlerSettingBoolean('verify_ssl', config('country_intelligence.verify_ssl', false))) {
             $request = $request->withoutVerifying();
         }
 
@@ -717,8 +858,8 @@ class CountryIntelligenceMonitor
 
     private function searchSamGovOpportunities(array $source, array $countryConfig, string $focus, int $maxRecords): Collection
     {
-        $endpoint = (string) config('country_intelligence.sam_gov_opportunities_endpoint', '');
-        $apiKey = (string) env('SAM_GOV_API_KEY', env('SAM_API_KEY', ''));
+        $endpoint = $this->crawlerSettingString('sam_gov_opportunities_endpoint', config('country_intelligence.sam_gov_opportunities_endpoint', ''));
+        $apiKey = $this->crawlerSettingString('sam_gov_api_key', env('SAM_GOV_API_KEY', env('SAM_API_KEY', '')));
 
         if ($endpoint === '' || $apiKey === '') {
             return collect();
@@ -726,7 +867,7 @@ class CountryIntelligenceMonitor
 
         $request = Http::timeout(8)->connectTimeout(4)->acceptJson();
 
-        if (! config('country_intelligence.verify_ssl', false)) {
+        if (! $this->crawlerSettingBoolean('verify_ssl', config('country_intelligence.verify_ssl', false))) {
             $request = $request->withoutVerifying();
         }
 
@@ -922,7 +1063,7 @@ class CountryIntelligenceMonitor
             ->connectTimeout(5)
             ->acceptJson();
 
-        if (! config('country_intelligence.verify_ssl', false)) {
+        if (! $this->crawlerSettingBoolean('verify_ssl', config('country_intelligence.verify_ssl', false))) {
             $request = $request->withoutVerifying();
         }
 
@@ -1053,7 +1194,7 @@ class CountryIntelligenceMonitor
             ->first();
 
         return $publishedAt
-            ? $publishedAt->gte(now()->subDays(120))
+            ? $publishedAt->gte(now()->subDays((int) $this->crawlerSetting('world_bank_recent_notice_days', config('country_intelligence.world_bank_recent_notice_days', 45))))
             : false;
     }
 
@@ -1238,7 +1379,9 @@ class CountryIntelligenceMonitor
     private function developmentPartnerTenderSources(): Collection
     {
         return collect(config('country_intelligence.development_partner_sources', []))
+            ->merge($this->databaseGlobalTenderSources())
             ->filter(fn (array $source) => ! empty($source['domain']))
+            ->unique(fn (array $source) => Str::lower((string) ($source['domain'] ?? '')) . '|' . Str::lower((string) ($source['url'] ?? '')))
             ->values();
     }
 

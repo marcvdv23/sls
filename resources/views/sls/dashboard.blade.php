@@ -1,4 +1,4 @@
-﻿@extends('sls.layouts.app')
+@extends('sls.layouts.app')
 
 @section('title', '1G-SLS Dashboard')
 @section('refresh', '300')
@@ -463,7 +463,15 @@
                                             <div class="muted tiny">Checked {{ $country->social_protection_profile_checked_at->format('Y-m-d') }}</div>
                                         @endif
                                         @if (filled($country->social_protection_profile_last_error))
-                                            <div class="missing-source tiny">Last check failed</div>
+                                            <div class="tiny">
+                                                <a
+                                                    class="missing-source"
+                                                    href="{{ $country->social_protection_profile_url }}"
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    title="{{ $country->social_protection_profile_last_error }}"
+                                                >ILO profile check failed</a>
+                                            </div>
                                         @endif
                                     @else
                                         <span class="muted">Not set</span>

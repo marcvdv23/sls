@@ -7,6 +7,7 @@ use App\Models\IntelligenceKeyword;
 use App\Models\IntelligenceSource;
 use App\Models\IntelligenceSourceAudit;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -24,7 +25,7 @@ class SerpApiSourceDiscoveryService
         int $resultsPerQuery = 8,
         bool $dryRun = false,
     ): array {
-        $apiKey = (string) env('SERPAPI_KEY', '');
+        $apiKey = $this->crawlerSettingString('serpapi_key', env('SERPAPI_KEY', ''));
         $errors = [];
         $items = [];
         $queries = 0;
@@ -32,7 +33,7 @@ class SerpApiSourceDiscoveryService
         $updated = 0;
         $candidates = 0;
 
-        $countryLimit = $countryLimit > 0 ? $countryLimit : (int) env('SERPAPI_PILOT_LIMIT', 0);
+        $countryLimit = $countryLimit > 0 ? $countryLimit : $this->crawlerSettingInteger('serpapi_pilot_limit', env('SERPAPI_PILOT_LIMIT', 0));
 
         $countries = Country::query()
             ->where('region', $region)
@@ -340,18 +341,48 @@ class SerpApiSourceDiscoveryService
 
     private function httpOptions(): array
     {
-        $verifySsl = filter_var(env('SERPAPI_VERIFY_SSL', true), FILTER_VALIDATE_BOOLEAN);
+        $verifySsl = $this->crawlerSettingBoolean('serpapi_verify_ssl', env('SERPAPI_VERIFY_SSL', true));
 
         if (! $verifySsl) {
             return ['verify' => false];
         }
 
-        $caBundle = trim((string) env('SERPAPI_CA_BUNDLE', ''));
+        $caBundle = $this->crawlerSettingString('serpapi_ca_bundle', env('SERPAPI_CA_BUNDLE', ''));
 
         if ($caBundle !== '' && is_file($caBundle)) {
             return ['verify' => $caBundle];
         }
 
         return [];
+    }
+
+    private function crawlerSetting(string $key, mixed $default = null): mixed
+    {
+        try {
+            if (! Schema::hasTable('crawler_settings')) {
+                return $default;
+            }
+
+            $value = DB::table('crawler_settings')->where('setting_key', $key)->value('setting_value');
+
+            return filled($value) ? $value : $default;
+        } catch (Throwable) {
+            return $default;
+        }
+    }
+
+    private function crawlerSettingString(string $key, mixed $default = ''): string
+    {
+        return trim((string) $this->crawlerSetting($key, $default));
+    }
+
+    private function crawlerSettingInteger(string $key, mixed $default = 0): int
+    {
+        return (int) $this->crawlerSetting($key, $default);
+    }
+
+    private function crawlerSettingBoolean(string $key, mixed $default = false): bool
+    {
+        return filter_var($this->crawlerSetting($key, $default), FILTER_VALIDATE_BOOL);
     }
 }

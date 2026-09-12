@@ -26,8 +26,10 @@ use App\Models\CountryUpdate;
 use App\Models\IntelligenceSource;
 use App\Models\KnowledgeChunk;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schedule;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use App\Support\TitleLanguage;
 use Carbon\Carbon;
@@ -1022,15 +1024,37 @@ Artisan::command('sls:worker-health-check {--focus=sector_tenders : Monitor focu
     $this->warn('Worker stale. Alert sent to ' . $alertEmail . '.');
 })->purpose('Alert if the iMac/worker has stopped triggering intelligence monitor runs');
 
+$crawlerSetting = function (string $key, mixed $default = null): mixed {
+    try {
+        if (! Schema::hasTable('crawler_settings')) {
+            return $default;
+        }
+
+        $value = DB::table('crawler_settings')->where('setting_key', $key)->value('setting_value');
+
+        return filled($value) ? $value : $default;
+    } catch (\Throwable) {
+        return $default;
+    }
+};
+
 Schedule::command('sls:backup-local')
     ->name('sls-local-backup-daily')
-    ->dailyAt(env('SLS_DAILY_BACKUP_TIME', '03:00'))
-    ->timezone(env('SLS_DAILY_BACKUP_TIMEZONE', 'America/Chicago'))
+    ->dailyAt((string) $crawlerSetting('daily_backup_time', env('SLS_DAILY_BACKUP_TIME', '03:00')))
+    ->timezone((string) $crawlerSetting('daily_backup_timezone', env('SLS_DAILY_BACKUP_TIMEZONE', 'America/Chicago')))
     ->withoutOverlapping()
     ->onOneServer();
 
-$dailySlots = config('country_intelligence.daily_slots', ['06:15']);
-$scheduledMaxResults = config('country_intelligence.scheduled_max_results', config('country_intelligence.default_max_results'));
+$crawlerTimeList = function (string $key, array $default) use ($crawlerSetting): array {
+    return collect(explode(',', (string) $crawlerSetting($key, implode(',', $default))))
+        ->map(fn (string $time) => trim($time))
+        ->filter(fn (string $time) => preg_match('/^\d{2}:\d{2}$/', $time) === 1)
+        ->values()
+        ->all();
+};
+
+$dailySlots = $crawlerTimeList('social_security_daily_slots', config('country_intelligence.daily_slots', ['06:15']));
+$scheduledMaxResults = (int) $crawlerSetting('scheduled_max_results', config('country_intelligence.scheduled_max_results', config('country_intelligence.default_max_results')));
 
 $scheduleCountryMonitor = function (string $runTime, array $options, string $name): void {
     Schedule::call(function () use ($options) {
@@ -1053,8 +1077,8 @@ $scheduleCountryMonitor = function (string $runTime, array $options, string $nam
 
 foreach ($dailySlots as $slotIndex => $runTime) {
     $scheduleCountryMonitor($runTime, [
-        'cycle' => config('country_intelligence.daily_batch_size'),
-        'region' => 'africa_asia_caribbean_latin_america_north_america_europe',
+        'cycle' => (int) $crawlerSetting('daily_batch_size', config('country_intelligence.daily_batch_size')),
+        'region' => (string) $crawlerSetting('scheduled_region_scope', 'africa_asia_caribbean_latin_america_north_america_europe'),
         'slot' => $slotIndex,
         'slots_per_day' => count($dailySlots),
         'max' => $scheduledMaxResults,
@@ -1066,29 +1090,43 @@ Schedule::call(function () {
     app(SocialProtectionProfileMonitor::class)->run();
 })
     ->name('sls-social-protection-profile-weekly')
-    ->weeklyOn(1, config('country_intelligence.social_protection_profile_weekly_time', '04:10'))
+    ->weeklyOn((int) $crawlerSetting('social_protection_profile_weekly_day', 1), (string) $crawlerSetting('social_protection_profile_weekly_time', config('country_intelligence.social_protection_profile_weekly_time', '04:10')))
     ->withoutOverlapping()
     ->onOneServer();
 
 Schedule::call(function () {
+    $crawlerSetting = function (string $key, mixed $default = null): mixed {
+        try {
+            if (! Schema::hasTable('crawler_settings')) {
+                return $default;
+            }
+
+            $value = DB::table('crawler_settings')->where('setting_key', $key)->value('setting_value');
+
+            return filled($value) ? $value : $default;
+        } catch (\Throwable) {
+            return $default;
+        }
+    };
+
     app(IloSocialProtectionProjectDiscoveryService::class)->discover(
-        region: 'africa_asia_caribbean_latin_america_north_america_europe',
-        countryLimit: (int) config('country_intelligence.ilo_social_protection_project_weekly_country_limit', 25),
-        queriesPerCountry: (int) config('country_intelligence.ilo_social_protection_project_queries_per_country', 3),
-        resultsPerQuery: (int) config('country_intelligence.ilo_social_protection_project_results_per_query', 5),
+        region: (string) $crawlerSetting('scheduled_region_scope', 'africa_asia_caribbean_latin_america_north_america_europe'),
+        countryLimit: (int) $crawlerSetting('ilo_social_protection_project_weekly_country_limit', config('country_intelligence.ilo_social_protection_project_weekly_country_limit', 25)),
+        queriesPerCountry: (int) $crawlerSetting('ilo_social_protection_project_queries_per_country', config('country_intelligence.ilo_social_protection_project_queries_per_country', 3)),
+        resultsPerQuery: (int) $crawlerSetting('ilo_social_protection_project_results_per_query', config('country_intelligence.ilo_social_protection_project_results_per_query', 5)),
     );
 })
     ->name('sls-ilo-social-protection-projects-weekly')
-    ->weeklyOn(2, config('country_intelligence.ilo_social_protection_project_weekly_time', '04:35'))
+    ->weeklyOn((int) $crawlerSetting('ilo_social_protection_project_weekly_day', 2), (string) $crawlerSetting('ilo_social_protection_project_weekly_time', config('country_intelligence.ilo_social_protection_project_weekly_time', '04:35')))
     ->withoutOverlapping()
     ->onOneServer();
 
-$hrmsTenderSlots = config('country_intelligence.hrms_tender_slots', []);
+$hrmsTenderSlots = $crawlerTimeList('hrms_tender_slots', config('country_intelligence.hrms_tender_slots', []));
 
 foreach ($hrmsTenderSlots as $slotIndex => $runTime) {
     $scheduleCountryMonitor($runTime, [
         'cycle' => 1,
-        'region' => 'africa_asia_caribbean_latin_america_north_america_europe',
+        'region' => (string) $crawlerSetting('scheduled_region_scope', 'africa_asia_caribbean_latin_america_north_america_europe'),
         'slot' => $slotIndex,
         'slots_per_day' => count($hrmsTenderSlots),
         'max' => $scheduledMaxResults,
@@ -1104,7 +1142,7 @@ foreach (['erms_tenders' => 5, 'ebpc_tenders' => 10] as $focus => $minuteOffset)
 
         $scheduleCountryMonitor($staggeredRunTime, [
             'cycle' => 1,
-            'region' => 'africa_asia_caribbean_latin_america_north_america_europe',
+            'region' => (string) $crawlerSetting('scheduled_region_scope', 'africa_asia_caribbean_latin_america_north_america_europe'),
             'slot' => $slotIndex,
             'slots_per_day' => count($hrmsTenderSlots),
             'max' => $scheduledMaxResults,
@@ -1113,12 +1151,12 @@ foreach (['erms_tenders' => 5, 'ebpc_tenders' => 10] as $focus => $minuteOffset)
     }
 }
 
-$sectorTenderSlots = config('country_intelligence.sector_tender_slots', []);
+$sectorTenderSlots = $crawlerTimeList('sector_tender_slots', config('country_intelligence.sector_tender_slots', []));
 
 foreach ($sectorTenderSlots as $slotIndex => $runTime) {
     $scheduleCountryMonitor($runTime, [
         'cycle' => 1,
-        'region' => 'africa_asia_caribbean_latin_america_north_america_europe',
+        'region' => (string) $crawlerSetting('scheduled_region_scope', 'africa_asia_caribbean_latin_america_north_america_europe'),
         'slot' => $slotIndex,
         'slots_per_day' => count($sectorTenderSlots),
         'max' => $scheduledMaxResults,
@@ -1126,13 +1164,13 @@ foreach ($sectorTenderSlots as $slotIndex => $runTime) {
     ], 'sls-country-sector-tenders-' . $slotIndex);
 }
 
-$scheduleGlobalTenderSweep = function (string $focus, string $runTime, string $name): void {
-    Schedule::call(function () use ($focus) {
+$scheduleGlobalTenderSweep = function (string $focus, string $runTime, string $name) use ($crawlerSetting): void {
+    Schedule::call(function () use ($focus, $crawlerSetting) {
         app(CountryIntelligenceMonitor::class)->run(
-            maxResults: 80,
+            maxResults: (int) $crawlerSetting('global_tender_sweep_max_results', 80),
             dryRun: false,
             focus: $focus,
-            region: 'africa_asia_caribbean_latin_america_north_america_europe',
+            region: (string) $crawlerSetting('scheduled_region_scope', 'africa_asia_caribbean_latin_america_north_america_europe'),
         );
     })
         ->name($name)
@@ -1141,38 +1179,52 @@ $scheduleGlobalTenderSweep = function (string $focus, string $runTime, string $n
         ->onOneServer();
 };
 
-$scheduleGlobalTenderSweep('hrms_tenders', env('SLS_GLOBAL_HRMS_TENDER_SWEEP_TIME', '02:35'), 'sls-global-hrms-tender-sweep');
+$scheduleGlobalTenderSweep('hrms_tenders', (string) $crawlerSetting('global_hrms_tender_sweep_time', env('SLS_GLOBAL_HRMS_TENDER_SWEEP_TIME', '02:35')), 'sls-global-hrms-tender-sweep');
 
-$scheduleGlobalTenderSweep('erms_tenders', env('SLS_GLOBAL_ERMS_TENDER_SWEEP_TIME', '03:05'), 'sls-global-erms-tender-sweep');
+$scheduleGlobalTenderSweep('erms_tenders', (string) $crawlerSetting('global_erms_tender_sweep_time', env('SLS_GLOBAL_ERMS_TENDER_SWEEP_TIME', '03:05')), 'sls-global-erms-tender-sweep');
 
-$scheduleGlobalTenderSweep('ebpc_tenders', env('SLS_GLOBAL_EBPC_TENDER_SWEEP_TIME', '03:15'), 'sls-global-ebpc-tender-sweep');
+$scheduleGlobalTenderSweep('ebpc_tenders', (string) $crawlerSetting('global_ebpc_tender_sweep_time', env('SLS_GLOBAL_EBPC_TENDER_SWEEP_TIME', '03:15')), 'sls-global-ebpc-tender-sweep');
 
-$scheduleGlobalTenderSweep('social_security', env('SLS_GLOBAL_SOCIAL_TENDER_SWEEP_TIME', '02:55'), 'sls-global-social-security-tender-sweep');
+$scheduleGlobalTenderSweep('social_security', (string) $crawlerSetting('global_social_tender_sweep_time', env('SLS_GLOBAL_SOCIAL_TENDER_SWEEP_TIME', '02:55')), 'sls-global-social-security-tender-sweep');
 
 Schedule::call(function () {
+    $crawlerSetting = function (string $key, mixed $default = null): mixed {
+        try {
+            if (! Schema::hasTable('crawler_settings')) {
+                return $default;
+            }
+
+            $value = DB::table('crawler_settings')->where('setting_key', $key)->value('setting_value');
+
+            return filled($value) ? $value : $default;
+        } catch (\Throwable) {
+            return $default;
+        }
+    };
+
     app(CountryIntelligenceMonitor::class)->run(
-        maxResults: 120,
+        maxResults: (int) $crawlerSetting('global_social_news_max_results', 120),
         dryRun: false,
         focus: 'social_security',
-        region: 'africa_asia_caribbean_latin_america_north_america_europe',
+        region: (string) $crawlerSetting('scheduled_region_scope', 'africa_asia_caribbean_latin_america_north_america_europe'),
     );
 })
     ->name('sls-global-social-security-news-sweep')
-    ->dailyAt(env('SLS_GLOBAL_SOCIAL_NEWS_SWEEP_TIME', '03:20'))
+    ->dailyAt((string) $crawlerSetting('global_social_news_sweep_time', env('SLS_GLOBAL_SOCIAL_NEWS_SWEEP_TIME', '03:20')))
     ->withoutOverlapping()
     ->onOneServer();
 
-Schedule::call(function () {
-    app(TenderDocumentProcessor::class)->process((int) env('SLS_TENDER_DOCUMENT_PROCESS_LIMIT', 20));
+Schedule::call(function () use ($crawlerSetting) {
+    app(TenderDocumentProcessor::class)->process((int) $crawlerSetting('tender_document_process_limit', env('SLS_TENDER_DOCUMENT_PROCESS_LIMIT', 20)));
 })
     ->name('sls-process-tender-documents')
     ->everyThirtyMinutes()
     ->withoutOverlapping()
     ->onOneServer();
 
-Schedule::call(function () {
+Schedule::call(function () use ($crawlerSetting) {
     Artisan::call('sls:translate-country-update-titles', [
-        '--limit' => (int) env('SLS_TITLE_TRANSLATION_BACKFILL_LIMIT', 100),
+        '--limit' => (int) $crawlerSetting('title_translation_backfill_limit', env('SLS_TITLE_TRANSLATION_BACKFILL_LIMIT', 100)),
     ]);
 })
     ->name('sls-title-translation-backfill')
@@ -1180,9 +1232,9 @@ Schedule::call(function () {
     ->withoutOverlapping()
     ->onOneServer();
 
-Schedule::call(function () {
+Schedule::call(function () use ($crawlerSetting) {
     Artisan::call('sls:clean-crawler-contacts', [
-        '--limit' => (int) env('SLS_CRAWLER_CONTACT_CLEAN_LIMIT', 5000),
+        '--limit' => (int) $crawlerSetting('crawler_contact_clean_limit', env('SLS_CRAWLER_CONTACT_CLEAN_LIMIT', 5000)),
     ]);
 })
     ->name('sls-clean-crawler-contacts')
@@ -1190,9 +1242,9 @@ Schedule::call(function () {
     ->withoutOverlapping()
     ->onOneServer();
 
-Schedule::call(function () {
+Schedule::call(function () use ($crawlerSetting) {
     Artisan::call('sls:resolve-crawler-contact-names', [
-        '--limit' => (int) env('SLS_CRAWLER_CONTACT_RESOLVE_LIMIT', 200),
+        '--limit' => (int) $crawlerSetting('crawler_contact_resolve_limit', env('SLS_CRAWLER_CONTACT_RESOLVE_LIMIT', 200)),
     ]);
 })
     ->name('sls-resolve-crawler-contact-names')
@@ -1200,10 +1252,10 @@ Schedule::call(function () {
     ->withoutOverlapping()
     ->onOneServer();
 
-Schedule::call(function () {
+Schedule::call(function () use ($crawlerSetting) {
     Artisan::call('sls:worker-health-check', [
         '--focus' => 'sector_tenders',
-        '--minutes' => env('SLS_WORKER_STALE_MINUTES', 45),
+        '--minutes' => $crawlerSetting('worker_stale_minutes', env('SLS_WORKER_STALE_MINUTES', 45)),
     ]);
 })
     ->name('sls-worker-health-check')
