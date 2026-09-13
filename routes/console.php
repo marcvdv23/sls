@@ -21,6 +21,7 @@ use App\Models\MarketOrganizationContact;
 use App\Models\SlsOperationRun;
 use App\Models\UniversitySurveyTarget;
 use App\Models\DemoSession;
+use App\Models\Country;
 use App\Models\CountryMonitorRun;
 use App\Models\CountryUpdate;
 use App\Models\IntelligenceSource;
@@ -974,6 +975,171 @@ Artisan::command('sls:process-demo-media-batch {sessionIds : Comma-separated dem
         }
     }
 })->purpose('Process multiple demo media sessions sequentially');
+
+Artisan::command('sls:cleanup-cross-country-duplicates {--apply : Mark wrong-country source-domain duplicates as rejected}', function () {
+    $normalizeDomain = function (?string $domain): ?string {
+        $domain = Str::lower(trim((string) $domain));
+        $domain = preg_replace('/^https?:\/\//', '', $domain);
+        $domain = preg_replace('/\/.*$/', '', (string) $domain);
+        $domain = preg_replace('/:\d+$/', '', (string) $domain);
+        $domain = preg_replace('/^www\./', '', (string) $domain);
+
+        return filled($domain) ? $domain : null;
+    };
+
+    $hostFromUrl = function (?string $url) use ($normalizeDomain): ?string {
+        $url = trim((string) $url);
+
+        if ($url === '') {
+            return null;
+        }
+
+        $host = parse_url(Str::startsWith($url, ['http://', 'https://']) ? $url : 'https://' . $url, PHP_URL_HOST);
+
+        return $normalizeDomain($host);
+    };
+
+    $hostMatchesDomain = function (string $host, string $domain): bool {
+        return $host === $domain || Str::endsWith($host, '.' . $domain);
+    };
+
+    $countriesByIso = Country::query()
+        ->whereNotNull('iso_code')
+        ->get(['id', 'name', 'iso_code'])
+        ->keyBy(fn (Country $country) => Str::upper((string) $country->iso_code));
+
+    $domainsByIso = collect();
+
+    collect(array_replace_recursive(
+        config('country_intelligence.monitored_countries', []),
+        config('country_intelligence.countries', [])
+    ))->each(function (array $countryConfig, string $iso) use (&$domainsByIso, $normalizeDomain): void {
+        $iso = Str::upper($iso);
+
+        foreach ($countryConfig['sources'] ?? [] as $source) {
+            $domain = $normalizeDomain($source['domain'] ?? $source['url'] ?? null);
+
+            if ($domain) {
+                $domainsByIso->push(['iso' => $iso, 'domain' => $domain]);
+            }
+        }
+    });
+
+    if (Schema::hasTable('intelligence_sources')) {
+        IntelligenceSource::query()
+            ->where('is_enabled', true)
+            ->whereNotNull('country_iso')
+            ->whereNotNull('domain')
+            ->get(['country_iso', 'domain'])
+            ->each(function (IntelligenceSource $source) use (&$domainsByIso, $normalizeDomain): void {
+                $domain = $normalizeDomain($source->domain);
+
+                if ($domain) {
+                    $domainsByIso->push([
+                        'iso' => Str::upper((string) $source->country_iso),
+                        'domain' => $domain,
+                    ]);
+                }
+            });
+    }
+
+    $domainsByIso = $domainsByIso
+        ->filter(fn (array $row) => filled($row['iso'] ?? null) && filled($row['domain'] ?? null))
+        ->unique(fn (array $row) => $row['iso'] . '|' . $row['domain'])
+        ->sortByDesc(fn (array $row) => strlen($row['domain']))
+        ->values();
+
+    $candidates = collect();
+    $scanned = 0;
+
+    CountryUpdate::query()
+        ->with('country:id,name,iso_code')
+        ->where('review_status', 'unreviewed')
+        ->whereNotNull('source_url')
+        ->orderBy('id')
+        ->chunkById(500, function ($updates) use (&$candidates, &$scanned, $hostFromUrl, $hostMatchesDomain, $domainsByIso, $countriesByIso): void {
+            foreach ($updates as $update) {
+                $scanned++;
+                $host = $hostFromUrl($update->source_url);
+                $itemIso = Str::upper((string) $update->country?->iso_code);
+
+                if (! $host || ! $itemIso) {
+                    continue;
+                }
+
+                $owner = $domainsByIso->first(fn (array $row) => $hostMatchesDomain($host, $row['domain']));
+
+                if (! $owner || $owner['iso'] === $itemIso) {
+                    continue;
+                }
+
+                $ownerCountry = $countriesByIso->get($owner['iso']);
+
+                $candidates->push([
+                    'id' => $update->id,
+                    'source_url' => $update->source_url,
+                    'host' => $host,
+                    'country_iso' => $itemIso,
+                    'country_name' => $update->country?->name,
+                    'owner_iso' => $owner['iso'],
+                    'owner_name' => $ownerCountry?->name,
+                    'title' => $update->title_english ?: $update->title,
+                ]);
+            }
+        });
+
+    $this->info('Scanned unreviewed rows with source URLs: ' . $scanned);
+    $this->info('Wrong-country source-domain rows found: ' . $candidates->count());
+
+    if ($candidates->isEmpty()) {
+        return 0;
+    }
+
+    $candidates
+        ->groupBy('host')
+        ->sortByDesc(fn ($rows) => $rows->count())
+        ->take(15)
+        ->each(function ($rows, string $host): void {
+            $first = $rows->first();
+            $this->line(sprintf(
+                '%s: %d row(s), belongs to %s, examples filed under %s',
+                $host,
+                $rows->count(),
+                trim(($first['owner_name'] ?? 'unknown') . ' (' . ($first['owner_iso'] ?? '?') . ')'),
+                $rows->pluck('country_iso')->unique()->take(8)->implode(', ')
+            ));
+        });
+
+    if (! $this->option('apply')) {
+        $this->warn('Dry run only. Re-run with --apply to mark these rows as rejected.');
+
+        return 0;
+    }
+
+    $now = now();
+    $updated = 0;
+
+    foreach ($candidates->chunk(500) as $chunk) {
+        foreach ($chunk as $candidate) {
+            $updated += CountryUpdate::query()
+                ->whereKey($candidate['id'])
+                ->where('review_status', 'unreviewed')
+                ->update([
+                    'review_status' => 'rejected',
+                    'rejection_reason_code' => 'wrong_country_source_domain',
+                    'rejection_reason' => 'Rejected by cleanup: source domain ' . $candidate['host']
+                        . ' belongs to ' . ($candidate['owner_name'] ?? $candidate['owner_iso'])
+                        . ', not ' . ($candidate['country_name'] ?? $candidate['country_iso']) . '.',
+                    'rejected_at' => $now,
+                    'updated_at' => $now,
+                ]);
+        }
+    }
+
+    $this->info('Rejected wrong-country duplicate rows: ' . $updated);
+
+    return 0;
+})->purpose('Reject unreviewed items filed under the wrong country because their source domain belongs to another country');
 
 Artisan::command('sls:worker-health-check {--focus=sector_tenders : Monitor focus to check} {--minutes=45 : Alert if no completed run in this many minutes}', function () {
     $focus = (string) $this->option('focus');
