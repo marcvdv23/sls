@@ -357,17 +357,9 @@ class CountryIntelligenceMonitor
         }
 
         $iso = strtoupper((string) ($countryConfig['iso_code'] ?? ''));
-        $region = Str::lower((string) ($countryConfig['region'] ?? ''));
-
         return IntelligenceSource::query()
             ->where('is_enabled', true)
-            ->where(function ($query) use ($iso, $region) {
-                $query->where('country_iso', $iso);
-
-                if ($region !== '') {
-                    $query->orWhereRaw('LOWER(region) = ?', [$region]);
-                }
-            })
+            ->where('country_iso', $iso)
             ->get()
             ->map(fn (IntelligenceSource $source) => $this->intelligenceSourceToCrawlerSource($source))
             ->filter(fn (array $source) => filled($source['domain'] ?? null) || filled($source['url'] ?? null))
