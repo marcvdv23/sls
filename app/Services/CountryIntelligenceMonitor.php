@@ -94,7 +94,10 @@ class CountryIntelligenceMonitor
 
         $items = $candidateItems
             ->map(fn (array $item) => $this->normalizeItem($item, $countryConfig, $focus))
-            ->filter(fn (array $item) => $item['source_url'] && $this->itemMatchesCountry($item, $countryConfig) && $this->isRelevant($item, $focus))
+            ->filter(fn (array $item) => $item['source_url']
+                && $this->itemMatchesCountry($item, $countryConfig)
+                && $this->isRelevant($item, $focus)
+                && $this->itemPublicationIsFreshEnough($item, $focus))
             ->unique('source_url')
             ->sortByDesc('relevance_score')
             ->take($maxResults)
@@ -1419,6 +1422,47 @@ class CountryIntelligenceMonitor
 
         return $this->hasSocialSecuritySubjectSignal($text)
             && $item['relevance_score'] >= 2.0;
+    }
+
+    private function itemPublicationIsFreshEnough(array $item, string $focus): bool
+    {
+        if ($focus !== 'social_security') {
+            return true;
+        }
+
+        $matchText = Str::lower((string) ($item['raw_match_text'] ?? implode(' ', [
+            $item['title'] ?? '',
+            $item['summary'] ?? '',
+            $item['source_name'] ?? '',
+            $item['source_url'] ?? '',
+        ])));
+
+        if ($this->hasTenderSignal($matchText)) {
+            return true;
+        }
+
+        $publicationDate = $item['publication_date'] ?? null;
+
+        if (blank($publicationDate)) {
+            return true;
+        }
+
+        $maxAgeDays = $this->crawlerSettingInteger(
+            'news_recent_publication_days',
+            config('country_intelligence.news_recent_publication_days', 90)
+        );
+
+        if ($maxAgeDays <= 0) {
+            return true;
+        }
+
+        try {
+            return Carbon::parse((string) $publicationDate)
+                ->startOfDay()
+                ->greaterThanOrEqualTo(now()->subDays($maxAgeDays)->startOfDay());
+        } catch (Throwable) {
+            return true;
+        }
     }
 
     private function itemMatchesCountry(array $item, array $countryConfig): bool

@@ -7089,6 +7089,12 @@ $crawlerSettingDefinitions = fn (): array => [
         'value_type' => 'string',
         'default' => (string) config('country_intelligence.gdelt_timespan', '30d'),
     ],
+    'news_recent_publication_days' => [
+        'label' => 'News publication freshness days',
+        'description' => 'Maximum age for non-tender news items by publication date. Use 0 to disable. Tender/procurement-looking items are not limited by this setting.',
+        'value_type' => 'integer',
+        'default' => (string) config('country_intelligence.news_recent_publication_days', 90),
+    ],
     'world_bank_procurement_endpoint' => [
         'label' => 'World Bank procurement endpoint',
         'description' => 'Official World Bank procurement notice API endpoint.',

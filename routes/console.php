@@ -1141,6 +1141,133 @@ Artisan::command('sls:cleanup-cross-country-duplicates {--apply : Mark wrong-cou
     return 0;
 })->purpose('Reject unreviewed items filed under the wrong country because their source domain belongs to another country');
 
+Artisan::command('sls:cleanup-stale-news-items {--days= : Override the configured non-tender news publication-age limit} {--apply : Mark stale non-tender news items as rejected}', function () {
+    $settingValue = null;
+
+    try {
+        if (Schema::hasTable('crawler_settings')) {
+            $settingValue = DB::table('crawler_settings')
+                ->where('setting_key', 'news_recent_publication_days')
+                ->value('setting_value');
+        }
+    } catch (Throwable) {
+        $settingValue = null;
+    }
+
+    $maxAgeDays = (int) ($this->option('days') ?: $settingValue ?: config('country_intelligence.news_recent_publication_days', 90));
+
+    if ($maxAgeDays <= 0) {
+        $this->warn('Stale-news cleanup is disabled because the age limit is 0.');
+
+        return 0;
+    }
+
+    $cutoff = now()->subDays($maxAgeDays)->startOfDay();
+    $hasTenderSignal = function (string $text): bool {
+        return Str::contains(Str::lower($text), [
+            'tender',
+            'procurement',
+            'rfp',
+            'request for proposal',
+            'request for expression of interest',
+            'expression of interest',
+            'request for bids',
+            'invitation for bids',
+            'bid',
+            'proposal',
+            'contract',
+            'consulting services',
+            'goods',
+            'works',
+            'world bank procurement',
+        ]);
+    };
+
+    $candidates = collect();
+    $scanned = 0;
+
+    CountryUpdate::query()
+        ->with('country:id,name,iso_code')
+        ->where('review_status', 'unreviewed')
+        ->whereNotNull('publication_date')
+        ->whereDate('publication_date', '<', $cutoff->toDateString())
+        ->orderBy('publication_date')
+        ->orderBy('id')
+        ->chunkById(500, function ($updates) use (&$candidates, &$scanned, $hasTenderSignal): void {
+            foreach ($updates as $update) {
+                $scanned++;
+                $text = implode(' ', [
+                    $update->title,
+                    $update->title_english,
+                    $update->summary,
+                    $update->summary_english,
+                    $update->source_name,
+                    $update->source_url,
+                ]);
+
+                if ($hasTenderSignal($text)) {
+                    continue;
+                }
+
+                $candidates->push([
+                    'id' => $update->id,
+                    'publication_date' => optional($update->publication_date)->toDateString(),
+                    'country' => trim(($update->country?->name ?? 'Unknown') . ' (' . ($update->country?->iso_code ?? '?') . ')'),
+                    'source_name' => $update->source_name,
+                    'title' => $update->title_english ?: $update->title,
+                ]);
+            }
+        });
+
+    $this->info('Publication cutoff: before ' . $cutoff->toDateString() . ' (' . $maxAgeDays . ' day limit)');
+    $this->info('Scanned old unreviewed rows: ' . $scanned);
+    $this->info('Stale non-tender news rows found: ' . $candidates->count());
+
+    $candidates
+        ->sortByDesc('publication_date')
+        ->take(20)
+        ->each(function (array $candidate): void {
+            $this->line(sprintf(
+                '#%d | %s | %s | %s | %s',
+                $candidate['id'],
+                $candidate['publication_date'] ?? 'no date',
+                $candidate['country'],
+                $candidate['source_name'],
+                Str::limit((string) $candidate['title'], 120)
+            ));
+        });
+
+    if ($candidates->isEmpty()) {
+        return 0;
+    }
+
+    if (! $this->option('apply')) {
+        $this->warn('Dry run only. Re-run with --apply to reject stale non-tender news items.');
+
+        return 0;
+    }
+
+    $now = now();
+    $updated = 0;
+
+    foreach ($candidates->chunk(500) as $chunk) {
+        $updated += CountryUpdate::query()
+            ->whereIn('id', $chunk->pluck('id')->all())
+            ->where('review_status', 'unreviewed')
+            ->update([
+                'review_status' => 'rejected',
+                'rejection_reason_code' => 'stale_news_publication_date',
+                'rejection_reason' => 'Rejected by cleanup: non-tender news item older than the configured publication freshness window of ' . $maxAgeDays . ' days.',
+                'rejected_at' => $now,
+                'updated_at' => $now,
+            ]);
+    }
+
+    $this->info('Rejected stale non-tender news rows: ' . $updated);
+
+    return 0;
+})->purpose('Reject old unreviewed non-tender news items based on the configured publication-date freshness window');
+
 Artisan::command('sls:worker-health-check {--focus=sector_tenders : Monitor focus to check} {--minutes=45 : Alert if no completed run in this many minutes}', function () {
     $focus = (string) $this->option('focus');
     $thresholdMinutes = max(5, (int) $this->option('minutes'));
