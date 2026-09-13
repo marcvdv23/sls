@@ -25,6 +25,8 @@ class CountryIntelligenceMonitor
     /** @var array<string, \Illuminate\Support\Collection<int, array<string, mixed>>> */
     private array $developmentPartnerTenderCache = [];
 
+    private ?Collection $countrySourceDomainsByIso = null;
+
     public function __construct(private TitleTranslationService $translator)
     {
     }
@@ -1421,6 +1423,15 @@ class CountryIntelligenceMonitor
 
     private function itemMatchesCountry(array $item, array $countryConfig): bool
     {
+        $host = Str::of(parse_url((string) ($item['source_url'] ?? ''), PHP_URL_HOST) ?: '')
+            ->lower()
+            ->replace('www.', '')
+            ->toString();
+
+        if ($host !== '' && $this->sourceHostBelongsToDifferentCountry($host, $countryConfig)) {
+            return false;
+        }
+
         $text = Str::lower(implode(' ', [
             $item['title'] ?? '',
             $item['summary'] ?? '',
@@ -1438,16 +1449,88 @@ class CountryIntelligenceMonitor
             return true;
         }
 
-        $host = Str::of(parse_url((string) ($item['source_url'] ?? ''), PHP_URL_HOST) ?: '')
-            ->lower()
-            ->replace('www.', '')
-            ->toString();
-
         return collect($countryConfig['sources'] ?? [])
             ->pluck('domain')
             ->map(fn (?string $domain) => Str::of((string) $domain)->lower()->replace('www.', '')->toString())
             ->filter()
-            ->contains(fn (string $domain) => $host !== '' && Str::contains($host, $domain));
+            ->contains(fn (string $domain) => $host !== '' && $this->hostMatchesDomain($host, $domain));
+    }
+
+    private function sourceHostBelongsToDifferentCountry(string $host, array $countryConfig): bool
+    {
+        $currentIso = strtoupper((string) ($countryConfig['iso_code'] ?? ''));
+
+        if ($currentIso === '') {
+            return false;
+        }
+
+        return $this->countrySourceDomainsByIso()
+            ->except($currentIso)
+            ->flatten()
+            ->contains(fn (string $domain) => $this->hostMatchesDomain($host, $domain));
+    }
+
+    private function countrySourceDomainsByIso(): Collection
+    {
+        if ($this->countrySourceDomainsByIso !== null) {
+            return $this->countrySourceDomainsByIso;
+        }
+
+        $domainsByIso = collect();
+        $configuredCountrySets = [
+            config('country_intelligence.monitored_countries', []),
+            config('country_intelligence.countries', []),
+        ];
+
+        foreach ($configuredCountrySets as $configuredCountries) {
+            foreach ($configuredCountries as $iso => $countryConfig) {
+                $iso = strtoupper((string) ($countryConfig['iso_code'] ?? $iso));
+
+                if ($iso === '') {
+                    continue;
+                }
+
+                $domains = collect($countryConfig['sources'] ?? [])
+                    ->pluck('domain')
+                    ->map(fn (?string $domain) => Str::of((string) $domain)->lower()->replace('www.', '')->toString())
+                    ->filter()
+                    ->values();
+
+                if ($domains->isNotEmpty()) {
+                    $domainsByIso[$iso] = collect($domainsByIso->get($iso, []))->merge($domains);
+                }
+            }
+        }
+
+        if (Schema::hasTable('intelligence_sources')) {
+            IntelligenceSource::query()
+                ->where('is_enabled', true)
+                ->whereNotNull('country_iso')
+                ->whereNotNull('domain')
+                ->get(['country_iso', 'domain'])
+                ->each(function (IntelligenceSource $source) use (&$domainsByIso) {
+                    $iso = strtoupper((string) $source->country_iso);
+                    $domain = Str::of((string) $source->domain)->lower()->replace('www.', '')->toString();
+
+                    if ($iso !== '' && $domain !== '') {
+                        $domainsByIso[$iso] = collect($domainsByIso->get($iso, []))->push($domain);
+                    }
+                });
+        }
+
+        $this->countrySourceDomainsByIso = $domainsByIso
+            ->map(fn ($domains) => collect($domains)->filter()->unique()->values())
+            ->filter(fn (Collection $domains) => $domains->isNotEmpty());
+
+        return $this->countrySourceDomainsByIso;
+    }
+
+    private function hostMatchesDomain(string $host, string $domain): bool
+    {
+        $host = Str::of($host)->lower()->replace('www.', '')->toString();
+        $domain = Str::of($domain)->lower()->replace('www.', '')->toString();
+
+        return $host !== '' && $domain !== '' && ($host === $domain || Str::endsWith($host, '.' . $domain));
     }
 
     private function hasTenderSignal(string $text): bool
