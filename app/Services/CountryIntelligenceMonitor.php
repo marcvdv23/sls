@@ -75,6 +75,10 @@ class CountryIntelligenceMonitor
             $candidateItems = $candidateItems->merge($this->searchGdelt($query, max(6, min($maxResults, 12))));
         }
 
+        if ($focus === 'social_security') {
+            $candidateItems = $candidateItems->merge($this->searchNewsAggregators($countryConfig, max(8, min($maxResults, 20))));
+        }
+
         $candidateItems = $candidateItems->merge($this->searchWorldBankProcurement($countryConfig, $focus, max(5, $maxResults)));
 
         if (in_array($focus, ['social_security', 'hrms_tenders', 'erms_tenders', 'ebpc_tenders', 'sector_tenders'], true)) {
@@ -596,6 +600,137 @@ class CountryIntelligenceMonitor
         return collect();
     }
 
+    private function searchNewsAggregators(array $countryConfig, int $maxRecords): Collection
+    {
+        $sources = $this->newsAggregatorSources();
+
+        if ($sources->isEmpty()) {
+            return collect();
+        }
+
+        $queryLimit = $this->crawlerSettingInteger(
+            'news_aggregator_queries_per_country',
+            config('country_intelligence.news_aggregator_queries_per_country', 6)
+        );
+        $resultsPerQuery = $this->crawlerSettingInteger(
+            'news_aggregator_results_per_query',
+            config('country_intelligence.news_aggregator_results_per_query', 10)
+        );
+
+        $queries = $this->newsAggregatorQueries($countryConfig)
+            ->take(max(1, $queryLimit));
+
+        return $queries
+            ->flatMap(fn (string $query) => $sources->flatMap(
+                fn (array $source) => $this->queryNewsAggregator($source, $query, min($maxRecords, max(3, $resultsPerQuery)))
+            ))
+            ->unique(fn (array $item) => (string) ($item['url'] ?? ''))
+            ->values();
+    }
+
+    private function newsAggregatorSources(): Collection
+    {
+        $sources = collect(config('country_intelligence.news_aggregator_sources', []));
+
+        if (Schema::hasTable('intelligence_sources')) {
+            $sources = $sources->merge(
+                IntelligenceSource::query()
+                    ->where('is_enabled', true)
+                    ->where('source_class', 'news_aggregator')
+                    ->get()
+                    ->map(fn (IntelligenceSource $source) => $this->intelligenceSourceToCrawlerSource($source))
+            );
+        }
+
+        return $sources
+            ->filter(fn (array $source) => filled($source['url'] ?? null))
+            ->unique(fn (array $source) => Str::lower((string) ($source['connector'] ?? $source['access_method'] ?? '')) . '|' . Str::lower((string) ($source['url'] ?? '')))
+            ->values();
+    }
+
+    private function newsAggregatorQueries(array $countryConfig): Collection
+    {
+        $names = collect($countryConfig['search_names'] ?? [$countryConfig['name']])
+            ->prepend((string) ($countryConfig['name'] ?? ''))
+            ->merge(config('country_intelligence.localized_country_names.' . ($countryConfig['iso_code'] ?? ''), []))
+            ->map(fn (string $name) => trim($name))
+            ->filter()
+            ->unique()
+            ->take(3)
+            ->values();
+
+        $terms = collect([
+            'social security',
+            'pension',
+            'pensions',
+            'pension reform',
+            'pension payments',
+            'social protection',
+            'national insurance',
+            'provident fund',
+            'retirement benefits',
+            'contribution',
+        ])
+            ->merge($this->localizedFocusTerms($countryConfig, 'social_security')->take(8))
+            ->filter()
+            ->unique()
+            ->values();
+
+        return $names
+            ->flatMap(fn (string $name) => $terms->map(fn (string $term) => '"' . $name . '" "' . $term . '"'))
+            ->unique()
+            ->values();
+    }
+
+    private function queryNewsAggregator(array $source, string $query, int $maxRecords): Collection
+    {
+        $connector = (string) ($source['connector'] ?? $source['access_method'] ?? '');
+        $baseUrl = rtrim((string) ($source['url'] ?? ''), '/');
+
+        if ($baseUrl === '') {
+            return collect();
+        }
+
+        $freshnessDays = $this->crawlerSettingInteger(
+            'news_recent_publication_days',
+            config('country_intelligence.news_recent_publication_days', 90)
+        );
+        $effectiveQuery = $freshnessDays > 0 ? $query . ' when:' . $freshnessDays . 'd' : $query;
+
+        $url = match ($connector) {
+            'google_news_rss' => $baseUrl . '?' . http_build_query([
+                'q' => $effectiveQuery,
+                'hl' => 'en-US',
+                'gl' => 'US',
+                'ceid' => 'US:en',
+            ]),
+            'bing_news_rss' => $baseUrl . (Str::contains($baseUrl, '?') ? '&' : '?') . http_build_query([
+                'q' => $query,
+            ]),
+            default => $baseUrl . (Str::contains($baseUrl, '?') ? '&' : '?') . http_build_query([
+                'q' => $query,
+            ]),
+        };
+
+        $request = Http::timeout(8)->connectTimeout(4)->accept('application/rss+xml, application/xml, text/xml');
+
+        if (! $this->crawlerSettingBoolean('verify_ssl', config('country_intelligence.verify_ssl', false))) {
+            $request = $request->withoutVerifying();
+        }
+
+        try {
+            $response = $request->get($url);
+        } catch (Throwable) {
+            return collect();
+        }
+
+        if (! $response->ok() || trim($response->body()) === '') {
+            return collect();
+        }
+
+        return $this->parseFeedItems($response->body(), $source, $maxRecords);
+    }
+
     private function parseFeedItems(string $xml, array $source, int $maxRecords): Collection
     {
         $previous = libxml_use_internal_errors(true);
@@ -610,15 +745,26 @@ class CountryIntelligenceMonitor
         if (isset($feed->channel->item)) {
             return collect($feed->channel->item)
                 ->take($maxRecords)
-                ->map(fn ($item) => [
-                    'title' => $this->plainText((string) $item->title),
-                    'url' => trim((string) $item->link),
-                    'domain' => (string) ($source['domain'] ?? parse_url(trim((string) $item->link), PHP_URL_HOST)),
-                    'sourcecountry' => (string) ($source['name'] ?? ''),
-                    'seendate' => (string) ($item->pubDate ?? $item->children('dc', true)->date ?? ''),
-                    'excerpt' => $this->plainText((string) ($item->description ?? '')),
-                    'content' => $this->plainText((string) ($item->children('content', true)->encoded ?? '')),
-                ])
+                ->map(function ($item) use ($source) {
+                    $link = trim((string) $item->link);
+                    $itemSource = $item->source ?? null;
+                    $itemSourceAttributes = $itemSource ? $itemSource->attributes() : null;
+                    $itemSourceUrl = $itemSourceAttributes ? (string) ($itemSourceAttributes['url'] ?? '') : '';
+                    $itemSourceName = $this->plainText((string) ($itemSource ?? ''));
+                    $domain = parse_url($itemSourceUrl ?: $link, PHP_URL_HOST) ?: (string) ($source['domain'] ?? '');
+
+                    return [
+                        'title' => $this->plainText((string) $item->title),
+                        'url' => $link,
+                        'domain' => $domain,
+                        'sourcecountry' => $itemSourceName !== ''
+                            ? ((string) ($source['name'] ?? 'News aggregator') . ': ' . $itemSourceName)
+                            : (string) ($source['name'] ?? ''),
+                        'seendate' => (string) ($item->pubDate ?? $item->children('dc', true)->date ?? ''),
+                        'excerpt' => $this->plainText((string) ($item->description ?? '')),
+                        'content' => $this->plainText((string) ($item->children('content', true)->encoded ?? '')),
+                    ];
+                })
                 ->filter(fn (array $item) => $item['title'] !== '' && $item['url'] !== '')
                 ->values();
         }

@@ -33,6 +33,8 @@ return [
     'global_sweep_portal_source_limit' => (int) env('COUNTRY_INTEL_GLOBAL_SWEEP_PORTAL_SOURCE_LIMIT', 80),
     'global_news_country_query_limit' => (int) env('COUNTRY_INTEL_GLOBAL_NEWS_COUNTRY_QUERY_LIMIT', 90),
     'news_recent_publication_days' => (int) env('COUNTRY_INTEL_NEWS_RECENT_PUBLICATION_DAYS', 90),
+    'news_aggregator_queries_per_country' => (int) env('COUNTRY_INTEL_NEWS_AGGREGATOR_QUERIES_PER_COUNTRY', 6),
+    'news_aggregator_results_per_query' => (int) env('COUNTRY_INTEL_NEWS_AGGREGATOR_RESULTS_PER_QUERY', 10),
     'news_aggregator_sources' => [
         [
             'name' => 'Google News RSS',

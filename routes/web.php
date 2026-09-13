@@ -7095,6 +7095,18 @@ $crawlerSettingDefinitions = fn (): array => [
         'value_type' => 'integer',
         'default' => (string) config('country_intelligence.news_recent_publication_days', 90),
     ],
+    'news_aggregator_queries_per_country' => [
+        'label' => 'News aggregator queries per country',
+        'description' => 'Maximum Google/Bing News RSS query patterns tried for each country during social-security news crawls.',
+        'value_type' => 'integer',
+        'default' => (string) config('country_intelligence.news_aggregator_queries_per_country', 6),
+    ],
+    'news_aggregator_results_per_query' => [
+        'label' => 'News aggregator results per query',
+        'description' => 'Maximum RSS items read from each news aggregator query before country/relevance/freshness filtering.',
+        'value_type' => 'integer',
+        'default' => (string) config('country_intelligence.news_aggregator_results_per_query', 10),
+    ],
     'world_bank_procurement_endpoint' => [
         'label' => 'World Bank procurement endpoint',
         'description' => 'Official World Bank procurement notice API endpoint.',
