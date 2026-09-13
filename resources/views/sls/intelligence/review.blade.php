@@ -61,6 +61,12 @@
         .title-link { color:var(--text-primary); text-decoration:none; }
         .title-link:hover { color:var(--accent-primary); text-decoration:underline; }
         .pagination-wrap { display:flex; justify-content:space-between; gap:12px; align-items:center; flex-wrap:wrap; margin-top:12px; }
+        .pager-links { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+        .pager-links a,
+        .pager-links span { display:inline-flex; align-items:center; justify-content:center; min-width:2rem; height:2rem; border:1px solid var(--border-subtle); border-radius:6px; padding:0 8px; font-size:13px; font-weight:800; text-decoration:none; }
+        .pager-links a { color:var(--accent-primary); background:var(--bg-primary); }
+        .pager-links .active { color:#fff; background:var(--accent-primary); border-color:var(--accent-primary); }
+        .pager-links .disabled { color:var(--text-secondary); background:var(--bg-muted); }
         .inline-update-form { display:flex; align-items:center; gap:6px; min-width:0; }
         .inline-update-form select { min-width:0; padding:5px 7px; font-size:12px; }
         .inline-update-form button { flex:0 0 auto; padding:5px 8px; font-size:12px; }
@@ -427,7 +433,27 @@
             </div>
             <div class="pagination-wrap">
                 <p class="muted">Page {{ $updates->currentPage() }} of {{ $updates->lastPage() }} | {{ $displayLimit }} items per page</p>
-                {{ $updates->links() }}
+                <nav class="pager-links" aria-label="Review desk pagination">
+                    @if ($updates->onFirstPage())
+                        <span class="disabled">Previous</span>
+                    @else
+                        <a href="{{ $updates->previousPageUrl() }}">Previous</a>
+                    @endif
+
+                    @foreach ($updates->getUrlRange(1, $updates->lastPage()) as $pageNumber => $url)
+                        @if ($pageNumber === $updates->currentPage())
+                            <span class="active">{{ $pageNumber }}</span>
+                        @else
+                            <a href="{{ $url }}">{{ $pageNumber }}</a>
+                        @endif
+                    @endforeach
+
+                    @if ($updates->hasMorePages())
+                        <a href="{{ $updates->nextPageUrl() }}">Next</a>
+                    @else
+                        <span class="disabled">Next</span>
+                    @endif
+                </nav>
             </div>
         </section>
     </div>
