@@ -48,6 +48,8 @@
         .copy-row { display:grid; grid-template-columns:minmax(0, 1fr) 5.5rem; gap:8px; align-items:start; }
         .serial-copy-row { display:grid; gap:5px; align-items:start; }
         .copy-value { min-width:0; overflow-wrap:anywhere; }
+        .title-meta { display:flex; flex-wrap:wrap; gap:4px 8px; margin-bottom:4px; color:var(--text-secondary); font-size:11px; font-weight:800; line-height:1.25; }
+        .title-meta span { white-space:nowrap; }
         .serial-copy-row .copy-value { white-space:nowrap; overflow-wrap:normal; font-family:"JetBrains Mono", ui-monospace, monospace; }
         .serial-copy-row .copy-button { justify-self:start; }
         .row-action-stack { display:grid; gap:4px; justify-items:start; align-content:start; min-width:5.5rem; }
@@ -307,6 +309,17 @@
                                 <td class="title-cell">
                                     <div class="copy-row">
                                         <span class="copy-value">
+                                            <span class="title-meta">
+                                                <span>Published {{ $update->publication_date?->toDateString() ?: 'not captured' }}</span>
+                                                <span>
+                                                    Retrieved
+                                                    @if ($update->retrieved_at)
+                                                        {{ $update->retrieved_at->copy()->timezone($austinTz)->format('Y-m-d H:i') }} Austin
+                                                    @else
+                                                        not captured
+                                                    @endif
+                                                </span>
+                                            </span>
                                             <?php if ($needsTranslation): ?>
                                                 <span class="translation-pending">Translation pending</span>
                                             <?php elseif ($update->source_url): ?>
