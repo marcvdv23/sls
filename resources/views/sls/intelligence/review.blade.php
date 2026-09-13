@@ -10,6 +10,7 @@
     <a class="button secondary" href="#country-search">Country search</a>
     <a class="button secondary" href="{{ route('sls.intelligence.contacts') }}">Contact directory</a>
     <a class="button secondary" href="{{ route('sls.intelligence.sources', ['region' => $region]) }}">Source coverage</a>
+    <a class="button secondary" href="{{ route('sls.intelligence.coverage', ['focus' => $focus, 'region' => $region]) }}">Agent coverage</a>
     <a class="button secondary" href="{{ route('sls.intelligence.dropped', ['focus' => $focus === 'all' ? null : $focus]) }}">Dropped items</a>
 @endsection
 
@@ -59,6 +60,7 @@
         .copy-button.copied { border-color:var(--accent-success); color:var(--accent-success); }
         .title-link { color:var(--text-primary); text-decoration:none; }
         .title-link:hover { color:var(--accent-primary); text-decoration:underline; }
+        .pagination-wrap { display:flex; justify-content:space-between; gap:12px; align-items:center; flex-wrap:wrap; margin-top:12px; }
         .inline-update-form { display:flex; align-items:center; gap:6px; min-width:0; }
         .inline-update-form select { min-width:0; padding:5px 7px; font-size:12px; }
         .inline-update-form button { flex:0 0 auto; padding:5px 8px; font-size:12px; }
@@ -88,8 +90,8 @@
     <div class="stack">
         <section class="review-summary">
             <div class="panel stat">
-                <strong>{{ $updates->count() }}</strong>
-                <span class="muted">captured items in this view</span>
+                <strong>{{ $totalMatchingUpdates }}</strong>
+                <span class="muted">matching captured items</span>
             </div>
             <div class="panel stat">
                 <strong>{{ $researchedCountries }}</strong>
@@ -130,7 +132,7 @@
                 <input type="hidden" name="published" value="{{ $publishedFilter }}">
                 <input type="hidden" name="retrieved" value="{{ $retrievedFilter }}">
                 <input type="hidden" name="type" value="{{ $typeFilter }}">
-                <input type="hidden" name="limit" value="{{ $displayLimit }}">
+                <input type="hidden" name="per_page" value="{{ $displayLimit }}">
                 <label class="field">
                     Country name or ISO code
                     <input name="country_q" value="{{ $countrySearchQuery }}" placeholder="Example: Trinidad, Ghana, Brazil, TT">
@@ -219,7 +221,10 @@
             <div>
                 <p class="eyebrow">Captured Items</p>
                 <h2>{{ $countrySearchQuery !== '' ? 'Review Desk items for country search' : 'All tenders, RFPs, and intelligence items found' }}</h2>
-                <p class="muted">Showing the latest {{ $displayLimit }} matching items in the unified Review Desk. Use filters or Country Search to narrow the list further.</p>
+                <p class="muted">
+                    Showing {{ $updates->firstItem() ?? 0 }}-{{ $updates->lastItem() ?? 0 }} of {{ $totalMatchingUpdates }} matching items, ordered by retrieval date first.
+                    Use filters or Country Search to narrow the list further.
+                </p>
                 <?php if (in_array($publishedFilter, ['last30', 'last60', 'last120'], true) || in_array($typeFilter, ['tenders', 'news'], true)): ?>
                     <p class="muted">
                         Showing
@@ -256,7 +261,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <?php if ($updates->isNotEmpty()): ?>
+                        <?php if ($updates->count() > 0): ?>
                         <?php foreach ($updates as $update): ?>
                             <?php
                                 $serialNumber = str_pad((string) $update->id, 5, '0', STR_PAD_LEFT);
@@ -420,58 +425,9 @@
                     </tbody>
                 </table>
             </div>
-        </section>
-
-        <section class="panel stack">
-            <div>
-                <p class="eyebrow">Agent Coverage</p>
-                <h2>When each country was last researched</h2>
-            </div>
-            <div class="table-wrap">
-                <table class="data-table review-table">
-                    <thead>
-                        <tr>
-                            <th>Country</th>
-                            <th>Region</th>
-                            <th>Last researched (Austin time)</th>
-                            <th>Next scheduled run (Austin time)</th>
-                            <th>Last captured item (Austin time)</th>
-                            <th>Items in last run</th>
-                            <th>Status</th>
-                            <th>Sources checked</th>
-                            <th>Queue</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($countryStatus as $country): ?>
-                            <tr>
-                                <td>{{ $country['name'] }} <span class="muted">({{ $country['iso'] }})</span></td>
-                                <td>{{ $country['region'] }}</td>
-                                <td>{{ $country['last_researched']?->copy()->timezone($austinTz)->format('Y-m-d H:i') ?? 'Not recorded yet' }}</td>
-                                <td>{{ $country['next_scheduled_run'] }}</td>
-                                <td>{{ $country['last_update']?->copy()->timezone($austinTz)->format('Y-m-d H:i') ?? 'No item captured' }}</td>
-                                <td>{{ $country['items_found'] ?? '-' }}</td>
-                                <td>
-                                    <span class="pill {{ $country['status'] === 'completed' ? 'good' : 'warn' }}">{{ $country['status'] }}</span>
-                                </td>
-                                <td class="summary-cell">{{ collect($country['sources_checked'])->take(6)->implode(', ') ?: 'No run log yet' }}</td>
-                                <td>
-                                    <?php if ($country['priority_requested_at']): ?>
-                                        <span class="pill warn">Priority queued</span>
-                                    <?php else: ?>
-                                        <form method="post" action="{{ route('sls.intelligence.priorities.store') }}">
-                                            @csrf
-                                            <input type="hidden" name="country_iso" value="{{ $country['iso'] }}">
-                                            <input type="hidden" name="country_name" value="{{ $country['name'] }}">
-                                            <input type="hidden" name="focus" value="{{ $country['priority_focus'] }}">
-                                            <button class="secondary tiny" type="submit">Run next</button>
-                                        </form>
-                                    <?php endif; ?>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
+            <div class="pagination-wrap">
+                <p class="muted">Page {{ $updates->currentPage() }} of {{ $updates->lastPage() }} | {{ $displayLimit }} items per page</p>
+                {{ $updates->links() }}
             </div>
         </section>
     </div>

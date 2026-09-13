@@ -65,6 +65,7 @@ use App\Support\SocialSecurityAdminNameCleaner;
 use App\Support\TitleLanguage;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
@@ -2731,10 +2732,8 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
     $countrySearchStatus = Str::of((string) $request->query('country_status', 'all'))->lower()->toString();
     $activeTypeFilter = in_array($countrySearchType, ['tenders', 'news'], true) ? $countrySearchType : $typeFilter;
     $activeStatusFilter = $countrySearchQuery !== '' ? $countrySearchStatus : $statusFilter;
-    $defaultDisplayLimit = in_array($publishedFilter, ['last30', 'last60', 'last120'], true) || in_array($retrievedFilter, ['last7', 'last14', 'last30'], true) || in_array($activeTypeFilter, ['tenders', 'news'], true) || $countrySearchQuery !== ''
-        ? 500
-        : 25;
-    $displayLimit = min(500, max(25, (int) $request->query('limit', $defaultDisplayLimit)));
+    $perPage = min(500, max(25, (int) $request->query('per_page', $request->query('limit', 100))));
+    $page = max(1, (int) $request->query('page', 1));
 
     $configuredCountries = $allMapCountries();
 
@@ -2816,7 +2815,7 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
     $countryIds = $dbCountries->pluck('id')->all();
     $hasTenderSignal = fn (CountryUpdate $update): bool => CountryUpdateClassifier::isTender($update);
 
-    $updates = CountryUpdate::query()
+    $filteredUpdates = CountryUpdate::query()
         ->with(['country', 'journalistArticles.journalist'])
         ->when($activeStatusFilter === 'rejected', fn ($query) => $query->where('review_status', 'rejected'))
         ->when($activeStatusFilter !== 'rejected', function ($query) use ($activeStatusFilter) {
@@ -2837,9 +2836,9 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
             'last14' => 14,
             default => 7,
         })))
-        ->latest('publication_date')
         ->latest('retrieved_at')
-        ->limit(1200)
+        ->latest('publication_date')
+        ->limit(5000)
         ->get()
         ->map(function (CountryUpdate $update) {
             $update->inferred_focus = CountryUpdateClassifier::inferFocus($update);
@@ -2850,8 +2849,8 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
         ->when(in_array($activeTypeFilter, ['tenders', 'news'], true), fn ($updates) => $updates->filter(fn (CountryUpdate $update) => $activeTypeFilter === 'tenders' ? $hasTenderSignal($update) : ! $hasTenderSignal($update)))
         ->unique(fn (CountryUpdate $update) => filled($update->source_url) ? Str::lower($update->source_url) : 'update:' . $update->id)
         ->sortBy([
-            fn (CountryUpdate $update) => in_array($retrievedFilter, ['last7', 'last14', 'last30'], true) ? -1 * ($update->retrieved_at?->timestamp ?? 0) : -1 * ($update->publication_date?->timestamp ?? 0),
-            fn (CountryUpdate $update) => in_array($retrievedFilter, ['last7', 'last14', 'last30'], true) ? -1 * ($update->publication_date?->timestamp ?? 0) : -1 * ($update->retrieved_at?->timestamp ?? 0),
+            fn (CountryUpdate $update) => -1 * ($update->retrieved_at?->timestamp ?? 0),
+            fn (CountryUpdate $update) => -1 * ($update->publication_date?->timestamp ?? 0),
             fn (CountryUpdate $update) => match (true) {
                 $hasTenderSignal($update) && $update->inferred_focus === 'social_security' => 0,
                 $hasTenderSignal($update) && $update->inferred_focus === 'hrms_tenders' => 1,
@@ -2860,8 +2859,19 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
                 default => 4,
             },
         ])
-        ->take($displayLimit)
         ->values();
+
+    $totalMatchingUpdates = $filteredUpdates->count();
+    $updates = new LengthAwarePaginator(
+        $filteredUpdates->forPage($page, $perPage)->values(),
+        $totalMatchingUpdates,
+        $perPage,
+        $page,
+        [
+            'path' => $request->url(),
+            'query' => $request->query(),
+        ],
+    );
 
     $latestRunIds = CountryMonitorRun::query()
         ->selectRaw('MAX(id) as id')
@@ -2874,7 +2884,7 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
         ->whereIn('id', $latestRunIds)
         ->get()
         ->keyBy(fn (CountryMonitorRun $run) => (string) $run->country_id);
-    $latestUpdatesByCountry = $updates
+    $latestUpdatesByCountry = $filteredUpdates
         ->sortByDesc(fn (CountryUpdate $update) => $update->retrieved_at?->timestamp ?? 0)
         ->groupBy('country_id');
     $priorityFocus = $focus === 'all' ? 'social_security' : $focus;
@@ -2903,10 +2913,10 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
             ->get();
 
         $countrySearchSummary = [
-            'total' => $updates->count(),
-            'tenders' => $updates->filter(fn (CountryUpdate $update) => $hasTenderSignal($update))->count(),
-            'news' => $updates->filter(fn (CountryUpdate $update) => ! $hasTenderSignal($update))->count(),
-            'rejected' => $updates->where('review_status', 'rejected')->count(),
+            'total' => $totalMatchingUpdates,
+            'tenders' => $filteredUpdates->filter(fn (CountryUpdate $update) => $hasTenderSignal($update))->count(),
+            'news' => $filteredUpdates->filter(fn (CountryUpdate $update) => ! $hasTenderSignal($update))->count(),
+            'rejected' => $filteredUpdates->where('review_status', 'rejected')->count(),
         ];
     }
 
@@ -2941,7 +2951,8 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
         'publishedFilter' => $publishedFilter,
         'typeFilter' => $typeFilter,
         'retrievedFilter' => $retrievedFilter,
-        'displayLimit' => $displayLimit,
+        'displayLimit' => $perPage,
+        'totalMatchingUpdates' => $totalMatchingUpdates,
         'focuses' => $focuses,
         'totalCountries' => $countryStatus->count(),
         'researchedCountries' => $countryStatus->filter(fn (array $country) => $country['last_researched'] !== null)->count(),
@@ -2954,6 +2965,107 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
         'austinTz' => 'America/Chicago',
     ]);
 })->name('sls.intelligence.review');
+
+Route::get('/sls/intelligence/coverage', function (Request $request) use ($allMapCountries) {
+    $focuses = config('country_intelligence.focuses', []);
+    $focus = array_key_exists((string) $request->query('focus', 'social_security'), $focuses)
+        ? (string) $request->query('focus', 'social_security')
+        : 'social_security';
+    $region = Str::of((string) $request->query('region', 'all'))->lower()->toString();
+
+    $configuredCountries = $allMapCountries();
+
+    if (in_array($region, ['africa', 'caribbean', 'asia', 'latin_america', 'north_america', 'europe'], true)) {
+        $configuredCountries = $configuredCountries
+            ->filter(fn (array $country) => Str::lower($country['region_group']) === str_replace('_', ' ', $region))
+            ->values();
+    } elseif (in_array($region, ['africa_asia', 'asia_africa'], true)) {
+        $configuredCountries = $configuredCountries
+            ->filter(fn (array $country) => in_array(Str::lower($country['region_group']), ['africa', 'asia'], true))
+            ->values();
+    } elseif (in_array($region, ['africa_asia_caribbean', 'caribbean_africa_asia'], true)) {
+        $configuredCountries = $configuredCountries
+            ->filter(fn (array $country) => in_array(Str::lower($country['region_group']), ['africa', 'asia', 'caribbean'], true))
+            ->values();
+    } elseif (in_array($region, ['africa_asia_caribbean_latin_america', 'africa_asia_latin_america_caribbean'], true)) {
+        $configuredCountries = $configuredCountries
+            ->filter(fn (array $country) => in_array(Str::lower($country['region_group']), ['africa', 'asia', 'caribbean', 'latin america'], true))
+            ->values();
+    } elseif (in_array($region, ['africa_asia_caribbean_latin_america_north_america', 'africa_asia_caribbean_latin_america_north_america_europe', 'all_core_regions'], true)) {
+        $configuredCountries = $configuredCountries
+            ->filter(fn (array $country) => in_array(Str::lower($country['region_group']), ['africa', 'asia', 'caribbean', 'latin america', 'north america', 'europe'], true))
+            ->values();
+    } elseif (in_array($region, ['africa_asia_latin_america', 'latin_america_africa_asia'], true)) {
+        $configuredCountries = $configuredCountries
+            ->filter(fn (array $country) => in_array(Str::lower($country['region_group']), ['africa', 'asia', 'latin america'], true))
+            ->values();
+    }
+
+    $countryIsoCodes = $region === 'all'
+        ? Country::query()->whereNotNull('iso_code')->pluck('iso_code')->all()
+        : $configuredCountries->pluck('iso')->all();
+    $dbCountries = Country::query()
+        ->whereIn('iso_code', $countryIsoCodes)
+        ->get()
+        ->keyBy(fn (Country $country) => strtoupper((string) $country->iso_code));
+    $countryIds = $dbCountries->pluck('id')->all();
+
+    $latestRunIds = CountryMonitorRun::query()
+        ->selectRaw('MAX(id) as id')
+        ->whereIn('country_id', $countryIds)
+        ->when($focus !== 'all', fn ($query) => $query->where('focus', $focus))
+        ->groupBy('country_id');
+    $latestRuns = CountryMonitorRun::query()
+        ->with('country')
+        ->whereIn('id', $latestRunIds)
+        ->get()
+        ->keyBy(fn (CountryMonitorRun $run) => (string) $run->country_id);
+    $latestUpdatesByCountry = CountryUpdate::query()
+        ->whereIn('country_id', $countryIds)
+        ->where('review_status', '!=', 'rejected')
+        ->latest('retrieved_at')
+        ->limit(5000)
+        ->get()
+        ->groupBy('country_id');
+    $pendingPriorities = Schema::hasTable('intelligence_monitor_priorities')
+        ? IntelligenceMonitorPriority::query()
+            ->where('status', 'pending')
+            ->where('focus', $focus)
+            ->pluck('requested_at', 'country_iso')
+            ->mapWithKeys(fn ($requestedAt, string $iso) => [strtoupper($iso) => $requestedAt])
+        : collect();
+
+    $countryStatus = $configuredCountries->map(function (array $country) use ($dbCountries, $latestRuns, $latestUpdatesByCountry, $focus, $pendingPriorities) {
+        $iso = strtoupper((string) ($country['iso'] ?? ''));
+        $dbCountry = $dbCountries->get($iso);
+        $latestRun = $dbCountry ? $latestRuns->get((string) $dbCountry->id) : null;
+        $latestUpdate = $dbCountry ? $latestUpdatesByCountry->get($dbCountry->id, collect())->first() : null;
+
+        return [
+            'name' => $country['name'],
+            'iso' => $iso,
+            'region' => $country['region_group'] ?? 'Unknown',
+            'last_researched' => $latestRun?->finished_at ?? $latestUpdate?->retrieved_at,
+            'next_scheduled_run' => 'Not scheduled',
+            'last_update' => $latestUpdate?->retrieved_at,
+            'items_found' => $latestRun?->items_found,
+            'status' => $latestRun?->status ?? ($latestUpdate ? 'Before run log' : ($dbCountry ? 'No run log yet' : 'Not initialized')),
+            'sources_checked' => $latestRun?->sources_checked ?? [],
+            'priority_focus' => $focus,
+            'priority_requested_at' => $pendingPriorities->get($iso),
+        ];
+    })->sortBy(['region', 'name'])->values();
+
+    return view('sls.intelligence.coverage', [
+        'countryStatus' => $countryStatus,
+        'focus' => $focus,
+        'region' => $region,
+        'focuses' => $focuses,
+        'totalCountries' => $countryStatus->count(),
+        'researchedCountries' => $countryStatus->filter(fn (array $country) => $country['last_researched'] !== null)->count(),
+        'austinTz' => 'America/Chicago',
+    ]);
+})->name('sls.intelligence.coverage');
 
 
 Route::get('/sls/intelligence/intake-log', function (Request $request) {
