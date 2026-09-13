@@ -1922,6 +1922,7 @@ class CountryIntelligenceMonitor
             ->first();
 
         $payload = [
+            'country_id' => $country->id,
             'country_topic_id' => $topic?->id,
             'title' => $item['title'],
             'title_english' => $item['title_english'] ?? $item['title'],
