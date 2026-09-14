@@ -32,6 +32,7 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schedule;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use App\Support\CountryUpdateClassifier;
 use App\Support\TitleLanguage;
 use Carbon\Carbon;
 
@@ -1364,6 +1365,133 @@ Artisan::command('sls:cleanup-bad-aggregator-titles {--apply : Mark bad aggregat
 
     return 0;
 })->purpose('Reject unreviewed Google/Bing news aggregator rows whose title is an opaque token or URL');
+
+Artisan::command('sls:review-desk-audit {--since=2026-06-01 : Count items retrieved on or after this date} {--page-size=100 : Number of default Review Desk rows to inspect}', function () {
+    $since = Carbon::parse((string) $this->option('since'))->startOfDay();
+    $pageSize = max(25, min(500, (int) $this->option('page-size')));
+
+    $this->info('Review Desk audit since ' . $since->toDateString());
+
+    $allSince = CountryUpdate::query()
+        ->whereNotNull('retrieved_at')
+        ->where('retrieved_at', '>=', $since);
+
+    $this->line('');
+    $this->info('Rows retrieved since cutoff, by review status:');
+    (clone $allSince)
+        ->selectRaw("review_status, COUNT(*) AS rows_count, MIN(id) AS first_serial, MAX(id) AS last_serial, MIN(retrieved_at) AS oldest_retrieved, MAX(retrieved_at) AS newest_retrieved")
+        ->groupBy('review_status')
+        ->orderByDesc('rows_count')
+        ->get()
+        ->each(fn ($row) => $this->line(sprintf(
+            '%s: %d row(s), serials %s-%s, retrieved %s to %s',
+            $row->review_status,
+            $row->rows_count,
+            $row->first_serial,
+            $row->last_serial,
+            $row->oldest_retrieved,
+            $row->newest_retrieved
+        )));
+
+    $totalSince = (clone $allSince)->count();
+    $activeSince = (clone $allSince)->where('review_status', '!=', 'rejected')->count();
+    $rejectedSince = (clone $allSince)->where('review_status', 'rejected')->count();
+
+    $this->line('');
+    $this->info('Summary:');
+    $this->line('Total retrieved since cutoff: ' . $totalSince);
+    $this->line('Active in Review Desk by default: ' . $activeSince);
+    $this->line('Hidden because rejected/dropped: ' . $rejectedSince);
+
+    $this->line('');
+    $this->info('Retrieved month x review status:');
+    (clone $allSince)
+        ->selectRaw("DATE_FORMAT(retrieved_at, '%Y-%m') AS retrieved_month, review_status, COUNT(*) AS rows_count")
+        ->groupByRaw("DATE_FORMAT(retrieved_at, '%Y-%m'), review_status")
+        ->orderByDesc('retrieved_month')
+        ->orderBy('review_status')
+        ->get()
+        ->each(fn ($row) => $this->line(sprintf('%s | %s | %d', $row->retrieved_month, $row->review_status, $row->rows_count)));
+
+    $this->line('');
+    $this->info('Rejected rows since cutoff, by reason:');
+    (clone $allSince)
+        ->where('review_status', 'rejected')
+        ->selectRaw("COALESCE(rejection_reason_code, 'no_reason') AS reason_code, COUNT(*) AS rows_count")
+        ->groupByRaw("COALESCE(rejection_reason_code, 'no_reason')")
+        ->orderByDesc('rows_count')
+        ->get()
+        ->each(fn ($row) => $this->line(sprintf('%s: %d', $row->reason_code, $row->rows_count)));
+
+    $activeRows = CountryUpdate::query()
+        ->with('country:id,name,iso_code')
+        ->where('review_status', '!=', 'rejected')
+        ->orderByDesc('retrieved_at')
+        ->orderByDesc('publication_date')
+        ->limit(5000)
+        ->get()
+        ->map(function (CountryUpdate $update) {
+            $update->inferred_focus = CountryUpdateClassifier::inferFocus($update);
+
+            return $update;
+        })
+        ->unique(fn (CountryUpdate $update) => filled($update->source_url) ? Str::lower($update->source_url) : 'update:' . $update->id)
+        ->sortBy([
+            fn (CountryUpdate $update) => -1 * ($update->retrieved_at?->timestamp ?? 0),
+            fn (CountryUpdate $update) => -1 * ($update->publication_date?->timestamp ?? 0),
+            fn (CountryUpdate $update) => match (true) {
+                CountryUpdateClassifier::isTender($update) && $update->inferred_focus === 'social_security' => 0,
+                CountryUpdateClassifier::isTender($update) && $update->inferred_focus === 'hrms_tenders' => 1,
+                CountryUpdateClassifier::isTender($update) && $update->inferred_focus === 'erms_tenders' => 2,
+                CountryUpdateClassifier::isTender($update) && $update->inferred_focus === 'ebpc_tenders' => 3,
+                default => 4,
+            },
+        ])
+        ->values();
+
+    $firstPage = $activeRows->take($pageSize);
+
+    $this->line('');
+    $this->info('Default Review Desk first ' . $firstPage->count() . ' rows, by publication month:');
+    $firstPage
+        ->groupBy(fn (CountryUpdate $update) => $update->publication_date?->format('Y-m') ?: 'no_publication_date')
+        ->sortKeysDesc()
+        ->each(fn ($rows, string $month) => $this->line($month . ': ' . $rows->count()));
+
+    $this->line('');
+    $this->info('Default Review Desk first ' . $firstPage->count() . ' rows, by retrieved month:');
+    $firstPage
+        ->groupBy(fn (CountryUpdate $update) => $update->retrieved_at?->format('Y-m') ?: 'no_retrieved_date')
+        ->sortKeysDesc()
+        ->each(fn ($rows, string $month) => $this->line($month . ': ' . $rows->count()));
+
+    $this->line('');
+    $this->info('Most recent default Review Desk rows:');
+    $firstPage
+        ->take(25)
+        ->each(function (CountryUpdate $update): void {
+            $this->line(sprintf(
+                '#%05d | retrieved %s | published %s | %s | %s | %s',
+                $update->id,
+                $update->retrieved_at?->toDateTimeString() ?: 'not captured',
+                $update->publication_date?->toDateString() ?: 'not captured',
+                $update->country?->iso_code ?: '?',
+                $update->source_name ?: 'unknown source',
+                Str::limit((string) ($update->title_english ?: $update->title), 120)
+            ));
+        });
+
+    $activeRetrievedSince = $activeRows->filter(fn (CountryUpdate $update) => $update->retrieved_at && $update->retrieved_at->greaterThanOrEqualTo($since));
+
+    $this->line('');
+    $this->info('Active default Review Desk rows retrieved since cutoff: ' . $activeRetrievedSince->count());
+    $activeRetrievedSince
+        ->groupBy(fn (CountryUpdate $update) => $update->publication_date?->format('Y-m') ?: 'no_publication_date')
+        ->sortKeysDesc()
+        ->each(fn ($rows, string $month) => $this->line('published ' . $month . ': ' . $rows->count()));
+
+    return 0;
+})->purpose('Explain how many recent retrieved stories exist and why they do or do not appear in the default Review Desk');
 
 Artisan::command('sls:worker-health-check {--focus=sector_tenders : Monitor focus to check} {--minutes=45 : Alert if no completed run in this many minutes}', function () {
     $focus = (string) $this->option('focus');
