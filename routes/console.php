@@ -1268,6 +1268,103 @@ Artisan::command('sls:cleanup-stale-news-items {--days= : Override the configure
     return 0;
 })->purpose('Reject old unreviewed non-tender news items based on the configured publication-date freshness window');
 
+Artisan::command('sls:cleanup-bad-aggregator-titles {--apply : Mark bad aggregator-title rows as rejected}', function () {
+    $looksBad = function (?string $value): bool {
+        $title = trim((string) $value);
+
+        if ($title === '') {
+            return false;
+        }
+
+        if (filter_var($title, FILTER_VALIDATE_URL)) {
+            return true;
+        }
+
+        $compact = preg_replace('/\s+/', '', $title) ?? $title;
+
+        return strlen($compact) >= 40
+            && $compact === $title
+            && preg_match('/^[A-Za-z0-9_-]+$/', $compact) === 1;
+    };
+
+    $candidates = collect();
+    $scanned = 0;
+
+    CountryUpdate::query()
+        ->with('country:id,name,iso_code')
+        ->where('review_status', 'unreviewed')
+        ->where(function ($query) {
+            $query->where('source_name', 'like', '%Google News RSS%')
+                ->orWhere('source_name', 'like', '%Bing News RSS%');
+        })
+        ->orderBy('id')
+        ->chunkById(500, function ($updates) use (&$candidates, &$scanned, $looksBad): void {
+            foreach ($updates as $update) {
+                $scanned++;
+
+                if (! $looksBad($update->title) && ! $looksBad($update->title_english) && ! $looksBad($update->title_original)) {
+                    continue;
+                }
+
+                $candidates->push([
+                    'id' => $update->id,
+                    'country' => trim(($update->country?->name ?? 'Unknown') . ' (' . ($update->country?->iso_code ?? '?') . ')'),
+                    'publication_date' => optional($update->publication_date)->toDateString(),
+                    'retrieved_at' => optional($update->retrieved_at)->toDateTimeString(),
+                    'source_name' => $update->source_name,
+                    'title' => $update->title_english ?: $update->title ?: $update->title_original,
+                ]);
+            }
+        });
+
+    $this->info('Scanned unreviewed news aggregator rows: ' . $scanned);
+    $this->info('Bad aggregator-title rows found: ' . $candidates->count());
+
+    $candidates
+        ->take(30)
+        ->each(function (array $candidate): void {
+            $this->line(sprintf(
+                '#%d | %s | published %s | retrieved %s | %s | %s',
+                $candidate['id'],
+                $candidate['country'],
+                $candidate['publication_date'] ?? 'no date',
+                $candidate['retrieved_at'] ?? 'no retrieval date',
+                $candidate['source_name'],
+                Str::limit((string) $candidate['title'], 120)
+            ));
+        });
+
+    if ($candidates->isEmpty()) {
+        return 0;
+    }
+
+    if (! $this->option('apply')) {
+        $this->warn('Dry run only. Re-run with --apply to reject bad aggregator-title rows.');
+
+        return 0;
+    }
+
+    $now = now();
+    $updated = 0;
+
+    foreach ($candidates->chunk(500) as $chunk) {
+        $updated += CountryUpdate::query()
+            ->whereIn('id', $chunk->pluck('id')->all())
+            ->where('review_status', 'unreviewed')
+            ->update([
+                'review_status' => 'rejected',
+                'rejection_reason_code' => 'bad_aggregator_title',
+                'rejection_reason' => 'Rejected by cleanup: news aggregator returned an opaque token or URL instead of a readable story title.',
+                'rejected_at' => $now,
+                'updated_at' => $now,
+            ]);
+    }
+
+    $this->info('Rejected bad aggregator-title rows: ' . $updated);
+
+    return 0;
+})->purpose('Reject unreviewed Google/Bing news aggregator rows whose title is an opaque token or URL');
+
 Artisan::command('sls:worker-health-check {--focus=sector_tenders : Monitor focus to check} {--minutes=45 : Alert if no completed run in this many minutes}', function () {
     $focus = (string) $this->option('focus');
     $thresholdMinutes = max(5, (int) $this->option('minutes'));

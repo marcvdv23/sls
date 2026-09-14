@@ -765,7 +765,7 @@ class CountryIntelligenceMonitor
                         'content' => $this->plainText((string) ($item->children('content', true)->encoded ?? '')),
                     ];
                 })
-                ->filter(fn (array $item) => $item['title'] !== '' && $item['url'] !== '')
+                ->filter(fn (array $item) => $this->feedItemHasUsableTitle($item))
                 ->values();
         }
 
@@ -795,7 +795,7 @@ class CountryIntelligenceMonitor
                         'content' => $this->plainText((string) ($entry->content ?? '')),
                     ];
                 })
-                ->filter(fn (array $item) => $item['title'] !== '' && $item['url'] !== '')
+                ->filter(fn (array $item) => $this->feedItemHasUsableTitle($item))
                 ->values();
         }
 
@@ -1388,6 +1388,11 @@ class CountryIntelligenceMonitor
     {
         $title = trim((string) Arr::get($item, 'title', ''));
         $url = trim((string) Arr::get($item, 'url', ''));
+        if (! $this->feedTitleLooksUsable($title, $url)) {
+            $title = '';
+            $url = '';
+        }
+
         $domain = trim((string) Arr::get($item, 'domain', parse_url($url, PHP_URL_HOST) ?: ''));
         $sourceName = $this->sourceNameForDomain($domain, $countryConfig) ?: trim((string) Arr::get($item, 'sourcecountry', ''));
         $publishedAt = $this->parseGdeltDate((string) Arr::get($item, 'seendate', ''));
@@ -2161,6 +2166,35 @@ class CountryIntelligenceMonitor
     private function plainText(string $value): string
     {
         return trim(preg_replace('/\s+/', ' ', html_entity_decode(strip_tags($value), ENT_QUOTES | ENT_HTML5, 'UTF-8')) ?? '');
+    }
+
+    private function feedItemHasUsableTitle(array $item): bool
+    {
+        return $this->feedTitleLooksUsable((string) ($item['title'] ?? ''), (string) ($item['url'] ?? ''));
+    }
+
+    private function feedTitleLooksUsable(string $title, string $url = ''): bool
+    {
+        $title = trim($title);
+        $url = trim($url);
+
+        if ($title === '' || $url === '') {
+            return false;
+        }
+
+        if (filter_var($title, FILTER_VALIDATE_URL)) {
+            return false;
+        }
+
+        $compact = preg_replace('/\s+/', '', $title) ?? $title;
+
+        if (strlen($compact) >= 40
+            && $compact === $title
+            && preg_match('/^[A-Za-z0-9_-]+$/', $compact) === 1) {
+            return false;
+        }
+
+        return true;
     }
 
     private function focusKey(string $focus): string

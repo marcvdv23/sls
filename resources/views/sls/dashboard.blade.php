@@ -27,11 +27,12 @@
         .map-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 14px; border-bottom:1px solid var(--border-subtle); }
         #dashboard-world-map { width:100%; min-height:430px; }
         .leaflet-container { font:inherit; background:#eef5f8; }
-        .map-popup { display:grid; gap:5px; max-width:320px; }
+        .leaflet-popup-content { max-width:min(340px, calc(100vw - 48px)); }
+        .map-popup { display:grid; gap:5px; max-width:320px; overflow-wrap:anywhere; word-break:break-word; }
         .map-popup h3 { font-size:.95rem; margin:0; }
         .map-popup p { font-size:.8rem; line-height:1.3; margin:0; }
         .map-popup-actions { display:grid; gap:6px; margin-top:5px; }
-        .map-popup-actions select { width:100%; min-height:34px; border:1px solid var(--border-subtle); border-radius:7px; background:var(--bg-secondary); color:var(--text-primary); font:inherit; font-size:.82rem; padding:4px 8px; }
+        .map-popup-actions select { width:100%; max-width:100%; min-height:34px; box-sizing:border-box; border:1px solid var(--border-subtle); border-radius:7px; background:var(--bg-secondary); color:var(--text-primary); font:inherit; font-size:.82rem; padding:4px 8px; }
         .map-popup-actions button { width:100%; }
         .map-popup-status { color:var(--text-secondary); font-size:.76rem; min-height:1em; }
         .region-count { color:var(--accent-primary); font-family:"JetBrains Mono", monospace; font-weight:800; text-decoration:none; }
