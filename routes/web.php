@@ -2725,7 +2725,10 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
     $region = Str::of((string) $request->query('region', 'all'))->lower()->toString();
     $statusFilter = Str::of((string) $request->query('status', 'all'))->lower()->toString();
     $publishedFilter = Str::of((string) $request->query('published', ''))->lower()->toString();
-    $retrievedFilter = Str::of((string) $request->query('retrieved', ''))->lower()->toString();
+    $retrievedFilter = Str::of((string) $request->query('retrieved', 'current'))->lower()->toString();
+    if (! in_array($retrievedFilter, ['current', 'last7', 'last14', 'last30', 'last90', 'all'], true)) {
+        $retrievedFilter = 'current';
+    }
     $typeFilter = Str::of((string) $request->query('type', ''))->lower()->toString();
     $countrySearchQuery = trim((string) $request->query('country_q', ''));
     $countrySearchType = Str::of((string) $request->query('country_type', 'all'))->lower()->toString();
@@ -2734,6 +2737,7 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
     $activeStatusFilter = $countrySearchQuery !== '' ? $countrySearchStatus : $statusFilter;
     $perPage = min(500, max(25, (int) $request->query('per_page', $request->query('limit', 100))));
     $page = max(1, (int) $request->query('page', 1));
+    $reviewDeskCurrentStart = Carbon::parse('2026-06-01')->startOfDay();
 
     $configuredCountries = $allMapCountries();
 
@@ -2831,11 +2835,13 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
             'last60' => 60,
             default => 30,
         })->toDateString()))
-        ->when(in_array($retrievedFilter, ['last7', 'last14', 'last30'], true), fn ($query) => $query->whereNotNull('retrieved_at')->where('retrieved_at', '>=', now()->subDays(match ($retrievedFilter) {
-            'last30' => 30,
-            'last14' => 14,
-            default => 7,
-        })))
+        ->when($retrievedFilter !== 'all', fn ($query) => $query->whereNotNull('retrieved_at')->where('retrieved_at', '>=', match ($retrievedFilter) {
+            'last90' => now()->subDays(90),
+            'last30' => now()->subDays(30),
+            'last14' => now()->subDays(14),
+            'last7' => now()->subDays(7),
+            default => $reviewDeskCurrentStart,
+        }))
         ->latest('retrieved_at')
         ->latest('publication_date')
         ->limit(5000)
@@ -2951,6 +2957,7 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
         'publishedFilter' => $publishedFilter,
         'typeFilter' => $typeFilter,
         'retrievedFilter' => $retrievedFilter,
+        'reviewDeskCurrentStart' => $reviewDeskCurrentStart,
         'displayLimit' => $perPage,
         'totalMatchingUpdates' => $totalMatchingUpdates,
         'focuses' => $focuses,

@@ -113,6 +113,13 @@
             <p class="eyebrow">Filters</p>
             <h2>Review by product focus and region</h2>
             <div class="filters">
+                @php($baseFilterQuery = [
+                    'focus' => $focus,
+                    'region' => $region,
+                    'published' => $publishedFilter ?: null,
+                    'type' => $typeFilter ?: null,
+                    'per_page' => $displayLimit,
+                ])
                 <a class="button {{ $focus === 'all' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => 'all', 'region' => $region]) }}">All items</a>
                 <?php foreach ($focuses as $focusKey => $focusConfig): ?>
                     <a class="button {{ $focus === $focusKey ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => $focusKey, 'region' => $region]) }}">{{ $focusConfig['label'] }}</a>
@@ -124,6 +131,13 @@
                 <a class="button {{ $region === 'latin_america' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => $focus, 'region' => 'latin_america']) }}">Latin America</a>
                 <a class="button {{ $region === 'north_america' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => $focus, 'region' => 'north_america']) }}">North America</a>
                 <a class="button {{ $region === 'europe' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => $focus, 'region' => 'europe']) }}">Europe</a>
+            </div>
+            <div class="filters">
+                <a class="button {{ $retrievedFilter === 'current' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', array_filter($baseFilterQuery + ['retrieved' => 'current'])) }}">Current intake</a>
+                <a class="button {{ $retrievedFilter === 'last7' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', array_filter($baseFilterQuery + ['retrieved' => 'last7'])) }}">Retrieved 7 days</a>
+                <a class="button {{ $retrievedFilter === 'last30' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', array_filter($baseFilterQuery + ['retrieved' => 'last30'])) }}">Retrieved 30 days</a>
+                <a class="button {{ $retrievedFilter === 'last90' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', array_filter($baseFilterQuery + ['retrieved' => 'last90'])) }}">Retrieved 90 days</a>
+                <a class="button {{ $retrievedFilter === 'all' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', array_filter($baseFilterQuery + ['retrieved' => 'all'])) }}">All backlog</a>
             </div>
         </section>
 
@@ -230,6 +244,22 @@
                 <p class="muted">
                     Showing {{ $updates->firstItem() ?? 0 }}-{{ $updates->lastItem() ?? 0 }} of {{ $totalMatchingUpdates }} matching items, ordered by retrieval date first.
                     Use filters or Country Search to narrow the list further.
+                </p>
+                <p class="muted">
+                    Retrieval view:
+                    @if ($retrievedFilter === 'current')
+                        current intake retrieved since {{ $reviewDeskCurrentStart->toDateString() }}.
+                    @elseif ($retrievedFilter === 'last90')
+                        items retrieved in the last 90 days.
+                    @elseif ($retrievedFilter === 'last30')
+                        items retrieved in the last 30 days.
+                    @elseif ($retrievedFilter === 'last14')
+                        items retrieved in the last 14 days.
+                    @elseif ($retrievedFilter === 'last7')
+                        items retrieved in the last 7 days.
+                    @else
+                        all active backlog, including old May items.
+                    @endif
                 </p>
                 <?php if (in_array($publishedFilter, ['last30', 'last60', 'last120'], true) || in_array($typeFilter, ['tenders', 'news'], true)): ?>
                     <p class="muted">
