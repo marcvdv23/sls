@@ -28,6 +28,7 @@ use App\Models\IntelligenceSource;
 use App\Models\KnowledgeChunk;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schedule;
 use Illuminate\Support\Facades\Schema;
@@ -1365,6 +1366,232 @@ Artisan::command('sls:cleanup-bad-aggregator-titles {--apply : Mark bad aggregat
 
     return 0;
 })->purpose('Reject unreviewed Google/Bing news aggregator rows whose title is an opaque token or URL');
+
+Artisan::command('sls:repair-news-aggregator-urls {--id= : Repair one country update id} {--limit=100 : Maximum rows to inspect} {--apply : Save repaired URLs and titles}', function () {
+    $isGoogleNewsRssArticleUrl = function (string $url): bool {
+        $host = Str::lower((string) parse_url($url, PHP_URL_HOST));
+        $path = (string) parse_url($url, PHP_URL_PATH);
+
+        return Str::contains($host, 'news.google.')
+            && Str::contains($path, '/rss/articles/');
+    };
+
+    $resolvedAggregatorUrlLooksUseful = function (string $url) use ($isGoogleNewsRssArticleUrl): bool {
+        return filter_var($url, FILTER_VALIDATE_URL)
+            && ! $isGoogleNewsRssArticleUrl($url);
+    };
+
+    $plainText = fn (string $value): string => trim(preg_replace('/\s+/', ' ', html_entity_decode(strip_tags($value), ENT_QUOTES | ENT_HTML5, 'UTF-8')) ?? '');
+
+    $titleLooksBad = function (?string $value): bool {
+        $title = trim((string) $value);
+
+        if ($title === '') {
+            return false;
+        }
+
+        if (filter_var($title, FILTER_VALIDATE_URL)) {
+            return true;
+        }
+
+        $compact = preg_replace('/\s+/', '', $title) ?? $title;
+
+        return strlen($compact) >= 40
+            && $compact === $title
+            && preg_match('/^[A-Za-z0-9_-]+$/', $compact) === 1;
+    };
+
+    $titleFromHtml = function (string $html) use ($plainText): string {
+        if ($html === '' || preg_match('/<title[^>]*>(.*?)<\/title>/is', $html, $match) !== 1) {
+            return '';
+        }
+
+        return Str::limit($plainText($match[1] ?? ''), 500, '');
+    };
+
+    $titleFromUrl = function (string $url) use ($isGoogleNewsRssArticleUrl): string {
+        $path = (string) parse_url($url, PHP_URL_PATH);
+        $slug = trim((string) preg_replace('/\.[a-z0-9]{2,5}$/i', '', basename($path)));
+
+        if ($slug === '' || $slug === '/' || $isGoogleNewsRssArticleUrl($url)) {
+            return '';
+        }
+
+        return Str::headline(str_replace(['-', '_'], ' ', $slug));
+    };
+
+    $firstPublisherUrlFromHtml = function (string $html) use ($resolvedAggregatorUrlLooksUseful): string {
+        if ($html === '' || preg_match_all('/https?:\\\\?\/\\\\?\/[^"\'<>\s]+/i', $html, $matches) !== 1) {
+            return '';
+        }
+
+        foreach ($matches[0] as $candidate) {
+            $candidate = stripslashes(html_entity_decode($candidate, ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+            $candidate = rtrim($candidate, '.,);]');
+            $host = Str::lower((string) parse_url($candidate, PHP_URL_HOST));
+
+            if ($resolvedAggregatorUrlLooksUseful($candidate) && ! Str::contains($host, ['google.', 'gstatic.com'])) {
+                return $candidate;
+            }
+        }
+
+        return '';
+    };
+
+    $normalizeFingerprintUrl = function (string $url): string {
+        $url = trim(html_entity_decode($url, ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+
+        if ($url === '') {
+            return '';
+        }
+
+        $parts = parse_url($url);
+
+        if (! is_array($parts) || blank($parts['host'] ?? null)) {
+            return Str::lower(rtrim($url, "/ \t\n\r\0\x0B"));
+        }
+
+        $scheme = Str::lower((string) ($parts['scheme'] ?? 'https'));
+        $host = preg_replace('/^www\./', '', Str::lower((string) $parts['host'])) ?: Str::lower((string) $parts['host']);
+        $path = rtrim('/' . ltrim((string) ($parts['path'] ?? ''), '/'), '/') ?: '/';
+        $queryString = '';
+
+        if (filled($parts['query'] ?? null)) {
+            parse_str((string) $parts['query'], $query);
+            foreach (['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'fbclid', 'gclid', 'mc_cid', 'mc_eid', 'oc', 'cid'] as $key) {
+                unset($query[$key]);
+            }
+            ksort($query);
+            $queryString = http_build_query($query);
+        }
+
+        return $scheme . '://' . $host . $path . ($queryString !== '' ? '?' . $queryString : '');
+    };
+
+    $fingerprint = fn (string $url): ?string => ($normalized = $normalizeFingerprintUrl($url)) === '' ? null : hash('sha256', $normalized);
+
+    $resolve = function (string $url) use ($firstPublisherUrlFromHtml, $resolvedAggregatorUrlLooksUseful, $titleFromHtml): array {
+        $request = Http::timeout(12)
+            ->connectTimeout(5)
+            ->accept('*/*')
+            ->withHeaders([
+                'User-Agent' => 'Mozilla/5.0 1G-SLS intelligence monitor',
+            ])
+            ->withOptions([
+                'allow_redirects' => [
+                    'max' => 8,
+                    'track_redirects' => true,
+                ],
+            ]);
+
+        try {
+            $response = $request->withoutVerifying()->get($url);
+        } catch (\Throwable) {
+            return ['url' => '', 'title' => ''];
+        }
+
+        $body = (string) $response->body();
+        $finalUrl = (string) ($response->handlerStats()['url'] ?? '');
+
+        if (! $resolvedAggregatorUrlLooksUseful($finalUrl)) {
+            $finalUrl = $firstPublisherUrlFromHtml($body);
+        }
+
+        return [
+            'url' => $finalUrl,
+            'title' => $titleFromHtml($body),
+        ];
+    };
+
+    $query = CountryUpdate::query()
+        ->where('source_url', 'like', '%news.google.%')
+        ->orderByDesc('retrieved_at')
+        ->orderByDesc('id');
+
+    if (filled($this->option('id'))) {
+        $query->whereKey((int) $this->option('id'));
+    } else {
+        $query->where('review_status', '!=', 'rejected')
+            ->limit(max(1, (int) $this->option('limit')));
+    }
+
+    $updates = $query->get();
+    $repairs = collect();
+
+    foreach ($updates as $update) {
+        if (! $isGoogleNewsRssArticleUrl((string) $update->source_url)) {
+            continue;
+        }
+
+        $resolved = $resolve((string) $update->source_url);
+
+        if (! $resolvedAggregatorUrlLooksUseful($resolved['url'] ?? '')) {
+            continue;
+        }
+
+        $newTitle = '';
+        if ($titleLooksBad($update->title) || $titleLooksBad($update->title_english) || $titleLooksBad($update->title_original)) {
+            $newTitle = trim((string) ($resolved['title'] ?: $titleFromUrl($resolved['url'])));
+        }
+
+        $repairs->push([
+            'id' => $update->id,
+            'old_url' => $update->source_url,
+            'new_url' => $resolved['url'],
+            'old_title' => $update->title_english ?: $update->title,
+            'new_title' => $newTitle,
+        ]);
+    }
+
+    $this->info('Google News RSS wrapper rows inspected: ' . $updates->count());
+    $this->info('Repairable rows found: ' . $repairs->count());
+
+    $repairs->take(30)->each(function (array $repair): void {
+        $this->line(sprintf(
+            '#%d | %s -> %s | title: %s%s',
+            $repair['id'],
+            Str::limit($repair['old_url'], 70),
+            Str::limit($repair['new_url'], 90),
+            Str::limit((string) $repair['old_title'], 60),
+            $repair['new_title'] !== '' ? ' -> ' . Str::limit($repair['new_title'], 80) : ''
+        ));
+    });
+
+    if ($repairs->isEmpty()) {
+        return 0;
+    }
+
+    if (! $this->option('apply')) {
+        $this->warn('Dry run only. Re-run with --apply to save repaired source URLs and titles.');
+
+        return 0;
+    }
+
+    $updated = 0;
+    $now = now();
+
+    foreach ($repairs as $repair) {
+        $payload = [
+            'source_url' => $repair['new_url'],
+            'source_fingerprint' => $fingerprint($repair['new_url']),
+            'updated_at' => $now,
+        ];
+
+        if ($repair['new_title'] !== '') {
+            $payload['title'] = $repair['new_title'];
+            $payload['title_english'] = $repair['new_title'];
+            $payload['title_original'] = $repair['new_title'];
+        }
+
+        $updated += CountryUpdate::query()
+            ->whereKey($repair['id'])
+            ->update($payload);
+    }
+
+    $this->info('Repaired Google News RSS wrapper rows: ' . $updated);
+
+    return 0;
+})->purpose('Resolve stored Google News RSS wrapper URLs to final publisher URLs and repair token titles');
 
 Artisan::command('sls:review-desk-audit {--since=2026-06-01 : Count items retrieved on or after this date} {--page-size=100 : Number of default Review Desk rows to inspect}', function () {
     $since = Carbon::parse((string) $this->option('since'))->startOfDay();

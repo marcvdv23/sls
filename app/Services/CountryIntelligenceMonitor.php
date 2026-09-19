@@ -747,15 +747,21 @@ class CountryIntelligenceMonitor
                 ->take($maxRecords)
                 ->map(function ($item) use ($source) {
                     $link = trim((string) $item->link);
+                    $resolvedLink = $this->resolveNewsAggregatorLink($link);
                     $itemSource = $item->source ?? null;
                     $itemSourceAttributes = $itemSource ? $itemSource->attributes() : null;
                     $itemSourceUrl = $itemSourceAttributes ? (string) ($itemSourceAttributes['url'] ?? '') : '';
                     $itemSourceName = $this->plainText((string) ($itemSource ?? ''));
-                    $domain = parse_url($itemSourceUrl ?: $link, PHP_URL_HOST) ?: (string) ($source['domain'] ?? '');
+                    $domain = parse_url($itemSourceUrl ?: $resolvedLink['url'] ?: $link, PHP_URL_HOST) ?: (string) ($source['domain'] ?? '');
+                    $title = $this->plainText((string) $item->title);
+
+                    if (! $this->feedTitleLooksUsable($title, $resolvedLink['url'])) {
+                        $title = $resolvedLink['title'] ?: $this->titleFromUrl($resolvedLink['url']);
+                    }
 
                     return [
-                        'title' => $this->plainText((string) $item->title),
-                        'url' => $link,
+                        'title' => $title,
+                        'url' => $resolvedLink['url'] ?: $link,
                         'domain' => $domain,
                         'sourcecountry' => $itemSourceName !== ''
                             ? ((string) ($source['name'] ?? 'News aggregator') . ': ' . $itemSourceName)
@@ -785,10 +791,17 @@ class CountryIntelligenceMonitor
                         }
                     }
 
+                    $resolvedLink = $this->resolveNewsAggregatorLink($link);
+                    $title = $this->plainText((string) $entry->title);
+
+                    if (! $this->feedTitleLooksUsable($title, $resolvedLink['url'])) {
+                        $title = $resolvedLink['title'] ?: $this->titleFromUrl($resolvedLink['url']);
+                    }
+
                     return [
-                        'title' => $this->plainText((string) $entry->title),
-                        'url' => $link,
-                        'domain' => (string) ($source['domain'] ?? parse_url($link, PHP_URL_HOST)),
+                        'title' => $title,
+                        'url' => $resolvedLink['url'] ?: $link,
+                        'domain' => (string) ($source['domain'] ?? parse_url($resolvedLink['url'] ?: $link, PHP_URL_HOST)),
                         'sourcecountry' => (string) ($source['name'] ?? ''),
                         'seendate' => (string) ($entry->updated ?? $entry->published ?? ''),
                         'excerpt' => $this->plainText((string) ($entry->summary ?? '')),
@@ -2166,6 +2179,121 @@ class CountryIntelligenceMonitor
     private function plainText(string $value): string
     {
         return trim(preg_replace('/\s+/', ' ', html_entity_decode(strip_tags($value), ENT_QUOTES | ENT_HTML5, 'UTF-8')) ?? '');
+    }
+
+    /**
+     * Google News RSS article links are redirect wrappers. Store the final publisher URL
+     * so source pages open directly and dedupe happens against the real article.
+     *
+     * @return array{url: string, title: string}
+     */
+    private function resolveNewsAggregatorLink(string $url): array
+    {
+        $url = trim($url);
+
+        if (! $this->isGoogleNewsRssArticleUrl($url)) {
+            return ['url' => $url, 'title' => ''];
+        }
+
+        $request = Http::timeout(10)
+            ->connectTimeout(4)
+            ->accept('*/*')
+            ->withHeaders([
+                'User-Agent' => 'Mozilla/5.0 1G-SLS intelligence monitor',
+            ])
+            ->withOptions([
+                'allow_redirects' => [
+                    'max' => 8,
+                    'track_redirects' => true,
+                ],
+            ]);
+
+        if (! $this->crawlerSettingBoolean('verify_ssl', config('country_intelligence.verify_ssl', false))) {
+            $request = $request->withoutVerifying();
+        }
+
+        try {
+            $response = $request->get($url);
+        } catch (Throwable) {
+            return ['url' => $url, 'title' => ''];
+        }
+
+        $finalUrl = (string) ($response->handlerStats()['url'] ?? '');
+
+        if (! $this->resolvedAggregatorUrlLooksUseful($finalUrl)) {
+            $finalUrl = $this->firstPublisherUrlFromHtml((string) $response->body()) ?: $url;
+        }
+
+        return [
+            'url' => $finalUrl,
+            'title' => $this->titleFromHtml((string) $response->body()),
+        ];
+    }
+
+    private function isGoogleNewsRssArticleUrl(string $url): bool
+    {
+        $host = Str::lower((string) parse_url($url, PHP_URL_HOST));
+        $path = (string) parse_url($url, PHP_URL_PATH);
+
+        return Str::contains($host, 'news.google.')
+            && Str::contains($path, '/rss/articles/');
+    }
+
+    private function resolvedAggregatorUrlLooksUseful(string $url): bool
+    {
+        if (! filter_var($url, FILTER_VALIDATE_URL)) {
+            return false;
+        }
+
+        return ! $this->isGoogleNewsRssArticleUrl($url);
+    }
+
+    private function firstPublisherUrlFromHtml(string $html): string
+    {
+        if ($html === '') {
+            return '';
+        }
+
+        if (preg_match_all('/https?:\\\\?\/\\\\?\/[^"\'<>\s]+/i', $html, $matches) !== 1) {
+            return '';
+        }
+
+        foreach ($matches[0] as $candidate) {
+            $candidate = stripslashes(html_entity_decode($candidate, ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+            $candidate = rtrim($candidate, '.,);]');
+
+            if ($this->resolvedAggregatorUrlLooksUseful($candidate)
+                && ! Str::contains(Str::lower((string) parse_url($candidate, PHP_URL_HOST)), ['google.', 'gstatic.com'])) {
+                return $candidate;
+            }
+        }
+
+        return '';
+    }
+
+    private function titleFromHtml(string $html): string
+    {
+        if ($html === '') {
+            return '';
+        }
+
+        if (preg_match('/<title[^>]*>(.*?)<\/title>/is', $html, $match) !== 1) {
+            return '';
+        }
+
+        return Str::limit($this->plainText($match[1] ?? ''), 500, '');
+    }
+
+    private function titleFromUrl(string $url): string
+    {
+        $path = (string) parse_url($url, PHP_URL_PATH);
+        $slug = trim((string) preg_replace('/\.[a-z0-9]{2,5}$/i', '', basename($path)));
+
+        if ($slug === '' || $slug === '/' || $this->isGoogleNewsRssArticleUrl($url)) {
+            return '';
+        }
+
+        return Str::headline(str_replace(['-', '_'], ' ', $slug));
     }
 
     private function feedItemHasUsableTitle(array $item): bool
