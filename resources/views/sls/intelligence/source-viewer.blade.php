@@ -171,8 +171,10 @@
                     </div>
                 </form>
 
-                <form class="source-tool" method="post" action="{{ route('sls.intelligence.updates.markRead', $update) }}">
+                <form id="source-action-form" class="source-tool" method="post" action="{{ route('sls.intelligence.updates.markRead', $update) }}">
                     @csrf
+                    <input type="hidden" name="reminder_due_at" id="source-action-reminder-due-at">
+                    <input type="hidden" name="favorite_note" id="source-action-favorite-note">
                     <label for="map_action_status">Close / action</label>
                     <div class="compact-row">
                         <select id="map_action_status" name="map_action_status">
@@ -196,7 +198,7 @@
                         <input id="reminder_due_at" type="datetime-local" name="reminder_due_at" value="{{ old('reminder_due_at', $update->reminder_due_at?->copy()->timezone('America/Chicago')->format('Y-m-d\TH:i')) }}">
                         <button class="source-button-link" type="submit">Save</button>
                     </div>
-                    <input name="favorite_note" placeholder="Reminder note" value="{{ old('favorite_note', $update->favorite_note) }}">
+                    <input id="visible_favorite_note" name="favorite_note" placeholder="Reminder note" value="{{ old('favorite_note', $update->favorite_note) }}">
                     <small class="muted">Saved follow-ups appear in <a href="{{ route('sls.intelligence.favorites', ['status' => 'open']) }}">Favorites & Reminders</a>.</small>
                 </form>
 
@@ -244,7 +246,20 @@
         const orgInput = document.getElementById('organization_name');
         const orgIdInput = document.getElementById('market_organization_id');
         const suggestionBox = document.getElementById('org-suggestions');
+        const sourceActionForm = document.getElementById('source-action-form');
+        const actionStatus = document.getElementById('map_action_status');
+        const visibleReminderDueAt = document.getElementById('reminder_due_at');
+        const visibleFavoriteNote = document.getElementById('visible_favorite_note');
+        const actionReminderDueAt = document.getElementById('source-action-reminder-due-at');
+        const actionFavoriteNote = document.getElementById('source-action-favorite-note');
         let orgSearchTimer = null;
+
+        sourceActionForm?.addEventListener('submit', () => {
+            if (actionStatus?.value === 'follow_up') {
+                actionReminderDueAt.value = visibleReminderDueAt?.value || '';
+                actionFavoriteNote.value = visibleFavoriteNote?.value || '';
+            }
+        });
 
         function clearOrgSuggestions() {
             suggestionBox.innerHTML = '';

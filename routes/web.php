@@ -3794,6 +3794,8 @@ Route::post('/sls/intelligence/updates/{countryUpdate}/mark-read', function (Req
     $data = $request->validate([
         'map_action_status' => ['required', 'string', 'in:no_action_required,action_taken,follow_up'],
         'map_action_note' => ['nullable', 'string', 'max:2000'],
+        'reminder_due_at' => ['nullable', 'date'],
+        'favorite_note' => ['nullable', 'string', 'max:5000'],
     ]);
 
     $payload = [
@@ -3809,7 +3811,10 @@ Route::post('/sls/intelligence/updates/{countryUpdate}/mark-read', function (Req
     if ($data['map_action_status'] === 'follow_up') {
         $payload['is_favorite'] = true;
         $payload['favorited_at'] = $countryUpdate->favorited_at ?: now();
-        $payload['favorite_note'] = $countryUpdate->favorite_note ?: ($data['map_action_note'] ?? null);
+        $payload['favorite_note'] = $data['favorite_note'] ?? $countryUpdate->favorite_note ?? $data['map_action_note'] ?? null;
+        $payload['reminder_due_at'] = filled($data['reminder_due_at'] ?? null)
+            ? Carbon::parse($data['reminder_due_at'])
+            : $countryUpdate->reminder_due_at;
         $payload['reminder_completed_at'] = null;
     }
 
