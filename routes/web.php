@@ -3796,7 +3796,7 @@ Route::post('/sls/intelligence/updates/{countryUpdate}/mark-read', function (Req
         'map_action_note' => ['nullable', 'string', 'max:2000'],
     ]);
 
-    $countryUpdate->update([
+    $payload = [
         'review_status' => $countryUpdate->review_status === 'rejected' ? 'rejected' : 'approved',
         'map_opened_at' => $countryUpdate->map_opened_at ?: now(),
         'map_opened_by_user_id' => $countryUpdate->map_opened_by_user_id ?: auth()->id(),
@@ -3804,9 +3804,20 @@ Route::post('/sls/intelligence/updates/{countryUpdate}/mark-read', function (Req
         'map_action_note' => $data['map_action_note'] ?? null,
         'map_processed_at' => now(),
         'map_processed_by_user_id' => auth()->id(),
-    ]);
+    ];
 
-    return back()->with('status', 'Story marked as processed. It remains filed under its country and tagged organizations.');
+    if ($data['map_action_status'] === 'follow_up') {
+        $payload['is_favorite'] = true;
+        $payload['favorited_at'] = $countryUpdate->favorited_at ?: now();
+        $payload['favorite_note'] = $countryUpdate->favorite_note ?: ($data['map_action_note'] ?? null);
+        $payload['reminder_completed_at'] = null;
+    }
+
+    $countryUpdate->update($payload);
+
+    return back()->with('status', $data['map_action_status'] === 'follow_up'
+        ? 'Follow-up saved. It now appears in Favorites & Reminders.'
+        : 'Story marked as processed. It remains filed under its country and tagged organizations.');
 })->name('sls.intelligence.updates.markRead');
 
 Route::get('/sls/intelligence/updates/{countryUpdate}/organization-search', function (Request $request, CountryUpdate $countryUpdate) {

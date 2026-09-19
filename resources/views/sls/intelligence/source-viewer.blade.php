@@ -176,13 +176,16 @@
                     <label for="map_action_status">Close / action</label>
                     <div class="compact-row">
                         <select id="map_action_status" name="map_action_status">
-                            <option value="no_action_required">Read, no follow-up</option>
-                            <option value="action_taken">Action taken</option>
-                            <option value="follow_up">Follow-up needed</option>
+                            <option value="no_action_required" @selected(old('map_action_status', $update->map_action_status ?: 'no_action_required') === 'no_action_required')>Read, no follow-up</option>
+                            <option value="action_taken" @selected(old('map_action_status', $update->map_action_status) === 'action_taken')>Action taken</option>
+                            <option value="follow_up" @selected(old('map_action_status', $update->map_action_status) === 'follow_up')>Follow-up needed</option>
                         </select>
                         <button class="source-button-link" type="submit">Save</button>
                     </div>
                     <input name="map_action_note" placeholder="Optional action note" value="{{ old('map_action_note', $update->map_action_note) }}">
+                    @if ($update->map_action_status === 'follow_up')
+                        <small class="muted">This item is in <a href="{{ route('sls.intelligence.favorites', ['status' => 'open']) }}">Favorites & Reminders</a>{{ $update->reminder_due_at ? ' for ' . $update->reminder_due_at->copy()->timezone('America/Chicago')->format('Y-m-d H:i') . ' Austin' : ' with no due date yet' }}.</small>
+                    @endif
                 </form>
 
                 <form id="follow-up" class="source-tool" method="post" action="{{ route('sls.intelligence.updates.favorite', $update) }}">
@@ -194,6 +197,7 @@
                         <button class="source-button-link" type="submit">Save</button>
                     </div>
                     <input name="favorite_note" placeholder="Reminder note" value="{{ old('favorite_note', $update->favorite_note) }}">
+                    <small class="muted">Saved follow-ups appear in <a href="{{ route('sls.intelligence.favorites', ['status' => 'open']) }}">Favorites & Reminders</a>.</small>
                 </form>
 
                 <form class="source-tool" method="post" action="{{ route('sls.intelligence.updates.organizations.store', $update) }}" id="organization-tag-form">
