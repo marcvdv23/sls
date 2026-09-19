@@ -886,6 +886,23 @@ Route::get('/sls', function () use ($orderedProducts, $allMapCountries, $relevan
     $publishedWindowDays = 120;
     $publishedWindowKey = 'last120';
     $publishedSince = now()->subDays($publishedWindowDays)->toDateString();
+    $hasUsableDashboardTitle = function (CountryUpdate $update): bool {
+        $title = trim((string) ($update->title_english ?: $update->title ?: $update->title_original));
+
+        if ($title === '' || filter_var($title, FILTER_VALIDATE_URL)) {
+            return false;
+        }
+
+        $compact = preg_replace('/\s+/', '', $title) ?? $title;
+
+        if (strlen($compact) >= 40
+            && $compact === $title
+            && preg_match('/^[A-Za-z0-9_-]+$/', $compact) === 1) {
+            return false;
+        }
+
+        return true;
+    };
     $recentPublishedItems = CountryUpdate::query()
         ->with(['country', 'journalistArticles.journalist'])
         ->where('review_status', '!=', 'rejected')
@@ -898,6 +915,7 @@ Route::get('/sls', function () use ($orderedProducts, $allMapCountries, $relevan
             return $update;
         })
         ->unique(fn (CountryUpdate $update) => filled($update->source_url) ? Str::lower($update->source_url) : 'update:' . $update->id)
+        ->filter($hasUsableDashboardTitle)
         ->values();
     $retrievedWindowDays = 7;
     $retrievedWindowKey = 'last7';
@@ -914,6 +932,7 @@ Route::get('/sls', function () use ($orderedProducts, $allMapCountries, $relevan
             return $update;
         })
         ->unique(fn (CountryUpdate $update) => filled($update->source_url) ? Str::lower($update->source_url) : 'update:' . $update->id)
+        ->filter($hasUsableDashboardTitle)
         ->values();
     $hasTenderSignal = function (CountryUpdate $update): bool {
         $text = Str::lower($update->title . ' ' . $update->title_english . ' ' . $update->title_original . ' ' . $update->summary . ' ' . $update->source_name . ' ' . $update->source_url);

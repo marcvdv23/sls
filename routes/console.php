@@ -1268,7 +1268,7 @@ Artisan::command('sls:cleanup-stale-news-items {--days= : Override the configure
     return 0;
 })->purpose('Reject old unreviewed non-tender news items based on the configured publication-date freshness window');
 
-Artisan::command('sls:cleanup-bad-aggregator-titles {--apply : Mark bad aggregator-title rows as rejected}', function () {
+Artisan::command('sls:cleanup-bad-aggregator-titles {--all-statuses : Include approved/processed active rows, not only unreviewed} {--apply : Mark bad aggregator-title rows as rejected}', function () {
     $looksBad = function (?string $value): bool {
         $title = trim((string) $value);
 
@@ -1292,10 +1292,13 @@ Artisan::command('sls:cleanup-bad-aggregator-titles {--apply : Mark bad aggregat
 
     CountryUpdate::query()
         ->with('country:id,name,iso_code')
-        ->where('review_status', 'unreviewed')
+        ->when(! $this->option('all-statuses'), fn ($query) => $query->where('review_status', 'unreviewed'))
+        ->when($this->option('all-statuses'), fn ($query) => $query->where('review_status', '!=', 'rejected'))
         ->where(function ($query) {
             $query->where('source_name', 'like', '%Google News RSS%')
-                ->orWhere('source_name', 'like', '%Bing News RSS%');
+                ->orWhere('source_name', 'like', '%Bing News RSS%')
+                ->orWhere('source_url', 'like', '%news.google.%')
+                ->orWhere('source_url', 'like', '%bing.com/news%');
         })
         ->orderBy('id')
         ->chunkById(500, function ($updates) use (&$candidates, &$scanned, $looksBad): void {
@@ -1317,7 +1320,7 @@ Artisan::command('sls:cleanup-bad-aggregator-titles {--apply : Mark bad aggregat
             }
         });
 
-    $this->info('Scanned unreviewed news aggregator rows: ' . $scanned);
+    $this->info('Scanned news aggregator rows: ' . $scanned);
     $this->info('Bad aggregator-title rows found: ' . $candidates->count());
 
     $candidates
@@ -1350,7 +1353,7 @@ Artisan::command('sls:cleanup-bad-aggregator-titles {--apply : Mark bad aggregat
     foreach ($candidates->chunk(500) as $chunk) {
         $updated += CountryUpdate::query()
             ->whereIn('id', $chunk->pluck('id')->all())
-            ->where('review_status', 'unreviewed')
+            ->where('review_status', '!=', 'rejected')
             ->update([
                 'review_status' => 'rejected',
                 'rejection_reason_code' => 'bad_aggregator_title',
