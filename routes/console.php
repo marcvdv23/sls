@@ -42,7 +42,8 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Artisan::command('sls:backup-local', function () {
-    $scriptPath = base_path('scripts/backup-1g-sls.ps1');
+    $isWindows = PHP_OS_FAMILY === 'Windows';
+    $scriptPath = base_path($isWindows ? 'scripts/backup-1g-sls.ps1' : 'scripts/backup-1g-sls.sh');
 
     if (! is_file($scriptPath)) {
         $this->error('Backup script was not found: ' . $scriptPath);
@@ -50,15 +51,12 @@ Artisan::command('sls:backup-local', function () {
         return 1;
     }
 
-    $process = new \Symfony\Component\Process\Process([
-        'powershell.exe',
-        '-NoProfile',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-File',
-        $scriptPath,
-    ], base_path());
-    $process->setTimeout(600);
+    $command = $isWindows
+        ? ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $scriptPath]
+        : ['bash', $scriptPath];
+
+    $process = new \Symfony\Component\Process\Process($command, base_path());
+    $process->setTimeout(900);
     $process->run();
 
     $output = trim($process->getOutput());

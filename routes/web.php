@@ -1623,7 +1623,9 @@ Route::get('/sls', function () use ($orderedProducts, $allMapCountries, $relevan
     $trackedRegions = $trackedCountries->pluck('region')->filter()->unique()->sort()->values();
     $trackedLanguages = $trackedCountries->pluck('default_language_code')->filter()->map(fn ($code) => strtoupper($code))->unique()->sort()->values();
     $dashboardMapCountries = $relevantCountryUpdates($allMapCountries(), 'social_security', $publishedSince);
-    $backupRoot = 'C:\\Users\\marcv\\Documents\\1G-SLS-Backups';
+    $backupRoot = PHP_OS_FAMILY === 'Windows'
+        ? 'C:\\Users\\marcv\\Documents\\1G-SLS-Backups'
+        : storage_path('app/backups');
     $latestBackup = null;
 
     if (is_dir($backupRoot)) {
@@ -1858,19 +1860,17 @@ Route::get('/sls/tracked-countries/export', function () {
 })->name('sls.trackedCountries.export');
 
 Route::post('/sls/system/backup', function () {
-    $scriptPath = base_path('scripts/backup-1g-sls.ps1');
+    $isWindows = PHP_OS_FAMILY === 'Windows';
+    $scriptPath = base_path($isWindows ? 'scripts/backup-1g-sls.ps1' : 'scripts/backup-1g-sls.sh');
 
     abort_unless(is_file($scriptPath), 404, 'Backup script was not found.');
 
-    $process = new Process([
-        'powershell.exe',
-        '-NoProfile',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-File',
-        $scriptPath,
-    ], base_path());
-    $process->setTimeout(600);
+    $command = $isWindows
+        ? ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $scriptPath]
+        : ['bash', $scriptPath];
+
+    $process = new Process($command, base_path());
+    $process->setTimeout(900);
     $process->run();
 
     if (! $process->isSuccessful()) {
