@@ -2378,9 +2378,72 @@ class CountryIntelligenceMonitor
             return $existing;
         }
 
+        $semanticDuplicate = $this->findSemanticDuplicate($country, $payload);
+
+        if ($semanticDuplicate) {
+            if ($fingerprint !== null && blank($semanticDuplicate->source_fingerprint)) {
+                $semanticDuplicate->forceFill(['source_fingerprint' => $fingerprint])->save();
+            }
+
+            return $semanticDuplicate;
+        }
+
         return CountryUpdate::query()->create($payload + [
             'review_status' => 'unreviewed',
         ]);
+    }
+
+    private function findSemanticDuplicate(Country $country, array $payload): ?CountryUpdate
+    {
+        $titleKey = $this->semanticTitleKey((string) ($payload['title_english'] ?? $payload['title'] ?? ''));
+
+        if (Str::length($titleKey) < 18) {
+            return null;
+        }
+
+        $sourceIdentity = $this->semanticSourceIdentity((string) ($payload['source_name'] ?? ''), (string) ($payload['source_url'] ?? ''));
+
+        $query = CountryUpdate::query()
+            ->where('country_id', $country->id)
+            ->where('review_status', '!=', 'rejected');
+
+        if (filled($payload['publication_date'] ?? null)) {
+            $query->whereDate('publication_date', (string) $payload['publication_date']);
+        } else {
+            $query->whereNull('publication_date');
+        }
+
+        return $query
+            ->orderByDesc('retrieved_at')
+            ->orderByDesc('id')
+            ->get()
+            ->first(fn (CountryUpdate $update) =>
+                $this->semanticTitleKey((string) ($update->title_english ?: $update->title ?: $update->title_original)) === $titleKey
+                && $this->semanticSourceIdentity((string) $update->source_name, (string) $update->source_url) === $sourceIdentity
+            );
+    }
+
+    private function semanticTitleKey(string $title): string
+    {
+        $title = Str::lower(Str::ascii(trim($title)));
+        $title = preg_replace('/\s+-\s+[a-z0-9][a-z0-9.-]+\.[a-z]{2,}\s*$/i', '', $title) ?? $title;
+        $title = preg_replace('/[^a-z0-9]+/', ' ', $title) ?? $title;
+
+        return trim($title);
+    }
+
+    private function semanticSourceIdentity(string $sourceName, string $sourceUrl): string
+    {
+        $sourceName = Str::lower($sourceName);
+
+        if (preg_match('/([a-z0-9][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)+\.[a-z]{2,})/i', $sourceName, $match) === 1) {
+            return preg_replace('/^www\./', '', Str::lower($match[1])) ?: Str::lower($match[1]);
+        }
+
+        $host = Str::lower((string) parse_url($sourceUrl, PHP_URL_HOST));
+        $host = preg_replace('/^www\./', '', $host) ?: $host;
+
+        return $host ?: $sourceName;
     }
 
     private function sourceFingerprint(string $url): ?string

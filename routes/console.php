@@ -1368,6 +1368,140 @@ Artisan::command('sls:cleanup-bad-aggregator-titles {--all-statuses : Include ap
     return 0;
 })->purpose('Reject unreviewed Google/Bing news aggregator rows whose title is an opaque token or URL');
 
+Artisan::command('sls:cleanup-title-duplicates {--apply : Mark older active duplicate rows as rejected}', function () {
+    $sourceIdentity = function (CountryUpdate $update): string {
+        $sourceName = Str::lower((string) $update->source_name);
+
+        if (preg_match('/([a-z0-9][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)+\.[a-z]{2,})/i', $sourceName, $match) === 1) {
+            return preg_replace('/^www\./', '', Str::lower($match[1])) ?: Str::lower($match[1]);
+        }
+
+        $host = Str::lower((string) parse_url((string) $update->source_url, PHP_URL_HOST));
+        $host = preg_replace('/^www\./', '', $host) ?: $host;
+
+        return $host ?: $sourceName;
+    };
+
+    $titleKey = function (CountryUpdate $update): string {
+        $title = trim((string) ($update->title_english ?: $update->title ?: $update->title_original));
+        $title = Str::lower(Str::ascii($title));
+        $title = preg_replace('/\s+-\s+[a-z0-9][a-z0-9.-]+\.[a-z]{2,}\s*$/i', '', $title) ?? $title;
+        $title = preg_replace('/[^a-z0-9]+/', ' ', $title) ?? $title;
+
+        return trim($title);
+    };
+
+    $duplicateKey = function (CountryUpdate $update) use ($sourceIdentity, $titleKey): ?string {
+        $title = $titleKey($update);
+
+        if (Str::length($title) < 18) {
+            return null;
+        }
+
+        return implode('|', [
+            (string) $update->country_id,
+            $update->publication_date?->toDateString() ?: 'no-date',
+            $sourceIdentity($update),
+            $title,
+        ]);
+    };
+
+    $updates = CountryUpdate::query()
+        ->with('country:id,name,iso_code')
+        ->where('review_status', '!=', 'rejected')
+        ->where(function ($query) {
+            $query->whereNotNull('title')
+                ->orWhereNotNull('title_english')
+                ->orWhereNotNull('title_original');
+        })
+        ->orderByDesc('retrieved_at')
+        ->orderByDesc('id')
+        ->get();
+
+    $groups = $updates
+        ->mapToGroups(function (CountryUpdate $update) use ($duplicateKey) {
+            $key = $duplicateKey($update);
+
+            return $key ? [$key => $update] : [];
+        })
+        ->filter(fn ($rows) => $rows->count() > 1);
+
+    $duplicates = collect();
+
+    $groups->each(function ($rows) use (&$duplicates): void {
+        $keeper = $rows
+            ->sortByDesc(fn (CountryUpdate $update) => sprintf(
+                '%010d-%010d',
+                $update->retrieved_at?->timestamp ?? 0,
+                $update->id
+            ))
+            ->first();
+
+        $rows
+            ->where('id', '!=', $keeper->id)
+            ->each(function (CountryUpdate $duplicate) use (&$duplicates, $keeper): void {
+                $duplicates->push([
+                    'id' => $duplicate->id,
+                    'keep_id' => $keeper->id,
+                    'country' => trim(($duplicate->country?->name ?? 'Unknown') . ' (' . ($duplicate->country?->iso_code ?? '?') . ')'),
+                    'publication_date' => $duplicate->publication_date?->toDateString(),
+                    'retrieved_at' => $duplicate->retrieved_at?->toDateTimeString(),
+                    'source_name' => $duplicate->source_name,
+                    'title' => $duplicate->title_english ?: $duplicate->title ?: $duplicate->title_original,
+                ]);
+            });
+    });
+
+    $this->info('Active rows scanned: ' . $updates->count());
+    $this->info('Duplicate groups found: ' . $groups->count());
+    $this->info('Older duplicate rows found: ' . $duplicates->count());
+
+    $duplicates
+        ->take(40)
+        ->each(function (array $duplicate): void {
+            $this->line(sprintf(
+                '#%d duplicate of #%d | %s | published %s | retrieved %s | %s | %s',
+                $duplicate['id'],
+                $duplicate['keep_id'],
+                $duplicate['country'],
+                $duplicate['publication_date'] ?? 'no date',
+                $duplicate['retrieved_at'] ?? 'no retrieval date',
+                $duplicate['source_name'],
+                Str::limit((string) $duplicate['title'], 120)
+            ));
+        });
+
+    if ($duplicates->isEmpty()) {
+        return 0;
+    }
+
+    if (! $this->option('apply')) {
+        $this->warn('Dry run only. Re-run with --apply to reject older duplicate rows.');
+
+        return 0;
+    }
+
+    $now = now();
+    $updated = 0;
+
+    foreach ($duplicates->chunk(500) as $chunk) {
+        $updated += CountryUpdate::query()
+            ->whereIn('id', $chunk->pluck('id')->all())
+            ->where('review_status', '!=', 'rejected')
+            ->update([
+                'review_status' => 'rejected',
+                'rejection_reason_code' => 'duplicate_title_source',
+                'rejection_reason' => 'Rejected by cleanup: duplicate title, country, publication date, and source identity. Newest matching row was kept.',
+                'rejected_at' => $now,
+                'updated_at' => $now,
+            ]);
+    }
+
+    $this->info('Rejected older duplicate rows: ' . $updated);
+
+    return 0;
+})->purpose('Reject older active duplicates with the same country, normalized title, publication date, and source identity');
+
 Artisan::command('sls:repair-news-aggregator-urls {--id= : Repair one country update id} {--limit=100 : Maximum rows to inspect} {--apply : Save repaired URLs and titles}', function () {
     $isGoogleNewsRssArticleUrl = function (string $url): bool {
         $host = Str::lower((string) parse_url($url, PHP_URL_HOST));
