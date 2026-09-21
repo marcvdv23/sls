@@ -1642,12 +1642,13 @@ class CountryIntelligenceMonitor
             return false;
         }
 
-        $text = Str::lower(implode(' ', [
+        $text = Str::lower((string) ($item['raw_match_text'] ?? implode(' ', [
             $item['title'] ?? '',
-            $item['summary'] ?? '',
+            $item['title_english'] ?? '',
+            $item['title_original'] ?? '',
             $item['source_url'] ?? '',
             $item['source_name'] ?? '',
-        ]));
+        ])));
 
         $countryNames = collect($countryConfig['search_names'] ?? [$countryConfig['name']])
             ->prepend((string) ($countryConfig['name'] ?? ''))

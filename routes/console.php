@@ -1451,6 +1451,122 @@ Artisan::command('sls:cleanup-static-profile-updates {--apply : Mark active stat
     return 0;
 })->purpose('Reject active aggregator captures that point to static country profile/listing pages');
 
+Artisan::command('sls:cleanup-aggregator-country-mismatches {--apply : Mark active news aggregator rows as rejected when their real title/source text does not mention the assigned country}', function () {
+    $countryConfigs = collect(config('country_intelligence.monitored_countries', []))
+        ->merge(config('country_intelligence.countries', []));
+
+    $countryNames = function (Country $country) use ($countryConfigs): \Illuminate\Support\Collection {
+        $config = $countryConfigs->get((string) $country->iso_code, []);
+
+        return collect([
+            $country->name,
+            $country->iso_code,
+        ])
+            ->merge($config['search_names'] ?? [])
+            ->merge(config('country_intelligence.localized_country_names.' . $country->iso_code, []))
+            ->map(fn ($name) => Str::lower(trim((string) $name)))
+            ->filter(fn (string $name) => strlen($name) >= 4)
+            ->unique()
+            ->values();
+    };
+
+    $realItemText = function (CountryUpdate $update): string {
+        return Str::lower(implode(' ', array_filter([
+            $update->title,
+            $update->title_english,
+            $update->title_original,
+            $update->source_name,
+            $update->source_url,
+        ])));
+    };
+
+    $candidates = collect();
+    $scanned = 0;
+
+    CountryUpdate::query()
+        ->with('country:id,name,iso_code')
+        ->where('review_status', '!=', 'rejected')
+        ->where(function ($query) {
+            $query->where('source_name', 'like', '%Google News%')
+                ->orWhere('source_name', 'like', '%Bing News%');
+        })
+        ->orderBy('id')
+        ->chunkById(500, function ($updates) use (&$candidates, &$scanned, $countryNames, $realItemText): void {
+            foreach ($updates as $update) {
+                $scanned++;
+
+                if (! $update->country) {
+                    continue;
+                }
+
+                $text = $realItemText($update);
+                $names = $countryNames($update->country);
+
+                if ($names->contains(fn (string $name) => Str::contains($text, $name))) {
+                    continue;
+                }
+
+                $candidates->push([
+                    'id' => $update->id,
+                    'country' => trim($update->country->name . ' (' . ($update->country->iso_code ?? '?') . ')'),
+                    'publication_date' => $update->publication_date?->toDateString(),
+                    'retrieved_at' => $update->retrieved_at?->toDateTimeString(),
+                    'source_name' => $update->source_name,
+                    'source_url' => $update->source_url,
+                    'title' => $update->title_english ?: $update->title ?: $update->title_original,
+                ]);
+            }
+        });
+
+    $this->info('Active news aggregator rows scanned: ' . $scanned);
+    $this->info('Country-mismatch rows found: ' . $candidates->count());
+
+    $candidates
+        ->take(60)
+        ->each(function (array $candidate): void {
+            $this->line(sprintf(
+                '#%d | %s | published %s | retrieved %s | %s | %s | %s',
+                $candidate['id'],
+                $candidate['country'],
+                $candidate['publication_date'] ?? 'no date',
+                $candidate['retrieved_at'] ?? 'no retrieval date',
+                $candidate['source_name'],
+                Str::limit((string) $candidate['title'], 100),
+                Str::limit((string) $candidate['source_url'], 110)
+            ));
+        });
+
+    if ($candidates->isEmpty()) {
+        return 0;
+    }
+
+    if (! $this->option('apply')) {
+        $this->warn('Dry run only. Re-run with --apply to reject country-mismatch news aggregator rows.');
+
+        return 0;
+    }
+
+    $now = now();
+    $updated = 0;
+
+    foreach ($candidates->chunk(500) as $chunk) {
+        $updated += CountryUpdate::query()
+            ->whereIn('id', $chunk->pluck('id')->all())
+            ->where('review_status', '!=', 'rejected')
+            ->update([
+                'review_status' => 'rejected',
+                'rejection_reason_code' => 'aggregator_country_mismatch',
+                'rejection_reason' => 'Rejected by cleanup: news aggregator row was assigned to a country that is not mentioned in the real title, source name, or source URL.',
+                'rejected_at' => $now,
+                'updated_at' => $now,
+            ]);
+    }
+
+    $this->info('Rejected country-mismatch news aggregator rows: ' . $updated);
+
+    return 0;
+})->purpose('Reject Google/Bing news rows whose real source text does not mention the assigned country');
+
 Artisan::command('sls:cleanup-title-duplicates {--apply : Mark older active duplicate rows as rejected}', function () {
     $sourceIdentity = function (CountryUpdate $update): string {
         $sourceName = Str::lower((string) $update->source_name);
