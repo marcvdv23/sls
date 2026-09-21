@@ -34,6 +34,7 @@ use Illuminate\Support\Facades\Schedule;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use App\Support\CountryUpdateClassifier;
+use App\Support\CountryUpdateNoiseRules;
 use App\Support\TitleLanguage;
 use Carbon\Carbon;
 
@@ -1367,6 +1368,88 @@ Artisan::command('sls:cleanup-bad-aggregator-titles {--all-statuses : Include ap
 
     return 0;
 })->purpose('Reject unreviewed Google/Bing news aggregator rows whose title is an opaque token or URL');
+
+Artisan::command('sls:cleanup-static-profile-updates {--apply : Mark active static profile/listing rows as rejected}', function () {
+    $candidates = collect();
+    $scanned = 0;
+
+    CountryUpdate::query()
+        ->with('country:id,name,iso_code')
+        ->where('review_status', '!=', 'rejected')
+        ->whereNotNull('source_url')
+        ->where(function ($query) {
+            $query->where('source_name', 'like', '%Google News%')
+                ->orWhere('source_name', 'like', '%Bing News%');
+        })
+        ->orderBy('id')
+        ->chunkById(500, function ($updates) use (&$candidates, &$scanned): void {
+            foreach ($updates as $update) {
+                $scanned++;
+
+                if (! CountryUpdateNoiseRules::isStaticReferenceAggregatorItem($update)) {
+                    continue;
+                }
+
+                $candidates->push([
+                    'id' => $update->id,
+                    'country' => trim(($update->country?->name ?? 'Unknown') . ' (' . ($update->country?->iso_code ?? '?') . ')'),
+                    'publication_date' => $update->publication_date?->toDateString(),
+                    'retrieved_at' => $update->retrieved_at?->toDateTimeString(),
+                    'source_name' => $update->source_name,
+                    'source_url' => $update->source_url,
+                    'title' => $update->title_english ?: $update->title ?: $update->title_original,
+                ]);
+            }
+        });
+
+    $this->info('Active aggregator rows scanned: ' . $scanned);
+    $this->info('Static profile/listing rows found: ' . $candidates->count());
+
+    $candidates
+        ->take(40)
+        ->each(function (array $candidate): void {
+            $this->line(sprintf(
+                '#%d | %s | published %s | retrieved %s | %s | %s | %s',
+                $candidate['id'],
+                $candidate['country'],
+                $candidate['publication_date'] ?? 'no date',
+                $candidate['retrieved_at'] ?? 'no retrieval date',
+                $candidate['source_name'],
+                Str::limit((string) $candidate['title'], 80),
+                Str::limit((string) $candidate['source_url'], 120)
+            ));
+        });
+
+    if ($candidates->isEmpty()) {
+        return 0;
+    }
+
+    if (! $this->option('apply')) {
+        $this->warn('Dry run only. Re-run with --apply to reject static profile/listing rows.');
+
+        return 0;
+    }
+
+    $now = now();
+    $updated = 0;
+
+    foreach ($candidates->chunk(500) as $chunk) {
+        $updated += CountryUpdate::query()
+            ->whereIn('id', $chunk->pluck('id')->all())
+            ->where('review_status', '!=', 'rejected')
+            ->update([
+                'review_status' => 'rejected',
+                'rejection_reason_code' => 'static_reference_page',
+                'rejection_reason' => 'Rejected by cleanup: news aggregator returned a static country profile/listing page instead of a current story or tender.',
+                'rejected_at' => $now,
+                'updated_at' => $now,
+            ]);
+    }
+
+    $this->info('Rejected static profile/listing rows: ' . $updated);
+
+    return 0;
+})->purpose('Reject active aggregator captures that point to static country profile/listing pages');
 
 Artisan::command('sls:cleanup-title-duplicates {--apply : Mark older active duplicate rows as rejected}', function () {
     $sourceIdentity = function (CountryUpdate $update): string {

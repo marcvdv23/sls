@@ -8,6 +8,7 @@ use App\Models\CountryTopic;
 use App\Models\CountryUpdate;
 use App\Models\IntelligenceKeyword;
 use App\Models\IntelligenceSource;
+use App\Support\CountryUpdateNoiseRules;
 use App\Support\TitleLanguage;
 use Carbon\Carbon;
 use Illuminate\Support\Arr;
@@ -101,7 +102,8 @@ class CountryIntelligenceMonitor
             ->filter(fn (array $item) => $item['source_url']
                 && $this->itemMatchesCountry($item, $countryConfig)
                 && $this->isRelevant($item, $focus)
-                && $this->itemPublicationIsFreshEnough($item, $focus))
+                && $this->itemPublicationIsFreshEnough($item, $focus)
+                && ! CountryUpdateNoiseRules::isStaticReferenceAggregatorItem($item))
             ->unique('source_url')
             ->sortByDesc('relevance_score')
             ->take($maxResults)
