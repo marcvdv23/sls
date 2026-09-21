@@ -1053,6 +1053,7 @@ Route::get('/sls', function () use ($orderedProducts, $allMapCountries, $relevan
     $recentRetrievedSocialSecurityNews = $recentRetrievedItems
         ->filter(fn (CountryUpdate $update) => $update->inferred_focus === 'social_security' && ! $hasTenderSignal($update));
     $latestCapturedItem = fn ($items) => $items
+        ->filter($hasUsableDashboardTitle)
         ->sortByDesc(fn (CountryUpdate $update) => $update->retrieved_at?->timestamp ?? 0)
         ->first();
     $capturedSummary = fn ($tenderItems, string $focus, ?string $newsFocus = null, $newsItems = null) => [
@@ -1065,6 +1066,7 @@ Route::get('/sls', function () use ($orderedProducts, $allMapCountries, $relevan
         'news_url' => $newsFocus ? route('sls.intelligence.review', ['focus' => $newsFocus, 'region' => 'all', 'published' => 'all', 'retrieved' => $retrievedWindowKey, 'type' => 'news', 'limit' => 500]) : null,
     ];
     $latestItem = fn ($items) => $items
+        ->filter($hasUsableDashboardTitle)
         ->sortByDesc(fn (CountryUpdate $update) => sprintf(
             '%010d-%010d',
             $update->publication_date?->timestamp ?? 0,
