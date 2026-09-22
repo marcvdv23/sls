@@ -15,8 +15,8 @@
         .serp-form .span-6 { grid-column: span 6; }
         .serp-form .span-12 { grid-column: span 12; }
         .serp-form textarea { min-height: 96px; }
-        .serp-form textarea.keyword-list { min-height: 180px; }
         .serp-form textarea.keyword-additions { min-height: 84px; }
+        .serp-keyword-select { width: 100%; min-width: 0; }
         .serp-country-select { width: 100%; min-width: 0; }
         .serp-country-count { display: block; margin-top: 3px; }
         .check-row { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
@@ -87,6 +87,7 @@
 @php
     $latestRun = $recentRuns->first();
     $latestItems = collect($latestRun?->items ?? []);
+    $selectedPredefinedKeywords = old('predefined_keywords', $defaultKeywords ?? []);
 @endphp
 
 @section('content')
@@ -128,7 +129,7 @@
                                     @endforeach
                                 </select>
                             </label>
-                            <label class="span-3">Results per country
+                            <label class="span-3">Results per query
                                 <input type="number" name="results_per_country" min="1" max="20" value="{{ old('results_per_country', 10) }}">
                             </label>
                             <label class="span-3">Region
@@ -160,9 +161,20 @@
                                 <input name="custom_query_template" value="{{ old('custom_query_template') }}" placeholder='"{country}" ({keywords}) (tender OR RFP OR procurement OR "expression of interest")'>
                                 <span class="muted small">Placeholders: <code>{country}</code>, <code>{iso}</code>, <code>{keywords}</code>. Leave blank to use the saved template.</span>
                             </label>
-                            <label class="span-12">Predefined keywords, editable
-                                <textarea class="keyword-list" name="predefined_keywords_text">{{ old('predefined_keywords_text', $defaultKeywordText ?? '') }}</textarea>
-                                <span class="muted small">Edit this list before running. SLS searches these as alternatives, not as one exact phrase.</span>
+                            <label class="span-6">Search mode
+                                <select name="keyword_search_mode">
+                                    <option value="per_keyword" @selected(old('keyword_search_mode', 'per_keyword') === 'per_keyword')>Separate search for each selected keyword</option>
+                                    <option value="grouped" @selected(old('keyword_search_mode') === 'grouped')>One grouped OR search per country</option>
+                                </select>
+                                <span class="muted small">Separate searches are cleaner; grouped searches use fewer API calls.</span>
+                            </label>
+                            <label class="span-6">Predefined keywords
+                                <select class="serp-keyword-select" name="predefined_keywords[]" multiple size="10">
+                                    @foreach (($defaultKeywords ?? []) as $keyword)
+                                        <option value="{{ $keyword }}" @selected(in_array($keyword, $selectedPredefinedKeywords, true))>{{ $keyword }}</option>
+                                    @endforeach
+                                </select>
+                                <span class="muted small">Select one or more. Ctrl/Command-click to pick several.</span>
                             </label>
                             <label class="span-12">Add your own keywords, one per line
                                 <textarea class="keyword-additions" name="custom_keywords_text" placeholder="country-specific term&#10;product synonym&#10;donor phrase">{{ old('custom_keywords_text') }}</textarea>

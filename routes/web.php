@@ -2051,6 +2051,7 @@ $serpApiSearchState = function () {
             'countries' => collect(),
             'regions' => collect(),
             'languageOptions' => [],
+            'defaultKeywords' => [],
             'monthlyStats' => collect(),
             'recentRuns' => collect(),
             'migrationMissing' => true,
@@ -2114,6 +2115,7 @@ $serpApiSearchState = function () {
                 'pt' => 'Portuguese',
                 'ar' => 'Arabic',
             ],
+            'defaultKeywords' => $defaultSerpApiKeywords,
             'defaultKeywordText' => implode("\n", $defaultSerpApiKeywords),
             'monthlyStats' => $monthlyStats,
             'recentRuns' => $recentRuns->take(10)->values(),
@@ -2127,6 +2129,7 @@ $serpApiSearchState = function () {
             'countries' => collect(),
             'regions' => collect(),
             'languageOptions' => [],
+            'defaultKeywords' => [],
             'monthlyStats' => collect(),
             'recentRuns' => collect(),
             'migrationMissing' => true,
@@ -2169,12 +2172,15 @@ Route::post('/sls/serpapi-searches/run', function (Request $request) use ($start
     $data = $request->validate([
         'template_id' => ['nullable', 'integer', 'exists:serpapi_search_templates,id'],
         'custom_query_template' => ['nullable', 'string', 'max:2000'],
+        'predefined_keywords' => ['nullable', 'array'],
+        'predefined_keywords.*' => ['string', 'max:180'],
         'predefined_keywords_text' => ['nullable', 'string', 'max:10000'],
         'custom_keywords_text' => ['nullable', 'string', 'max:5000'],
         'countries' => ['array'],
         'countries.*' => ['string', 'max:10'],
         'region' => ['nullable', 'string', 'max:120'],
         'language' => ['nullable', 'string', 'max:10'],
+        'keyword_search_mode' => ['required', 'in:grouped,per_keyword'],
         'results_per_country' => ['required', 'integer', 'min:1', 'max:20'],
         'dry_run' => ['nullable', 'boolean'],
         'capture' => ['nullable', 'boolean'],
@@ -2210,7 +2216,13 @@ Route::post('/sls/serpapi-searches/run', function (Request $request) use ($start
             ->values();
     };
 
-    $predefinedKeywords = $keywordLines($data['predefined_keywords_text'] ?? '');
+    $selectedPredefinedKeywords = collect($data['predefined_keywords'] ?? [])
+        ->map(fn ($keyword) => trim((string) $keyword))
+        ->filter()
+        ->values();
+    $predefinedKeywords = $selectedPredefinedKeywords->isNotEmpty()
+        ? $selectedPredefinedKeywords
+        : $keywordLines($data['predefined_keywords_text'] ?? '');
     $customKeywords = $keywordLines($data['custom_keywords_text'] ?? '');
     $keywords = $predefinedKeywords
         ->merge($customKeywords)
@@ -2237,6 +2249,7 @@ Route::post('/sls/serpapi-searches/run', function (Request $request) use ($start
         'countries' => $countries,
         'region' => $data['region'] ?? null,
         'language' => $data['language'] ?? null,
+        'keyword_search_mode' => $data['keyword_search_mode'],
         'results_per_country' => (int) $data['results_per_country'],
         'dry_run' => (bool) ($data['dry_run'] ?? true),
         'capture' => (bool) ($data['capture'] ?? true),

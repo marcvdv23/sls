@@ -35,6 +35,12 @@ class SerpApiSearchService
         $dryRun = (bool) ($parameters['dry_run'] ?? true);
         $capture = (bool) ($parameters['capture'] ?? true);
         $focus = (string) ($parameters['focus'] ?? 'social_security');
+        $keywordSearchMode = (string) ($parameters['keyword_search_mode'] ?? 'grouped');
+        $keywordGroups = $keywords->isEmpty()
+            ? collect([[]])
+            : ($keywordSearchMode === 'per_keyword'
+                ? $keywords->map(fn (string $keyword) => [$keyword])->values()
+                : collect([$keywords->all()]));
 
         $summary = [
             'countries' => $countries->count(),
@@ -47,66 +53,71 @@ class SerpApiSearchService
         $items = [];
 
         foreach ($countries as $country) {
-            $query = $this->buildQuery($queryTemplate, $keywords->all(), $country);
-            $summary['queries']++;
+            foreach ($keywordGroups as $keywordGroup) {
+                $query = $this->buildQuery($queryTemplate, $keywordGroup, $country);
+                $summary['queries']++;
+                $keywordLabel = collect($keywordGroup)->implode(' | ');
 
-            try {
-                $results = $this->search($apiKey, $query, $resultsPerCountry);
-            } catch (Throwable $exception) {
-                $summary['errors']++;
-                $item = [
-                    'country_id' => $country->id,
-                    'country' => $country->name,
-                    'iso_code' => $country->iso_code,
-                    'query' => $query,
-                    'status' => 'error',
-                    'error' => $exception->getMessage(),
-                    'searched_at' => now()->toDateTimeString(),
-                ];
-                $items[] = $item;
-                $onItem ? $onItem($item, $summary, $items) : null;
+                try {
+                    $results = $this->search($apiKey, $query, $resultsPerCountry);
+                } catch (Throwable $exception) {
+                    $summary['errors']++;
+                    $item = [
+                        'country_id' => $country->id,
+                        'country' => $country->name,
+                        'iso_code' => $country->iso_code,
+                        'query' => $query,
+                        'keyword' => $keywordLabel,
+                        'status' => 'error',
+                        'error' => $exception->getMessage(),
+                        'searched_at' => now()->toDateTimeString(),
+                    ];
+                    $items[] = $item;
+                    $onItem ? $onItem($item, $summary, $items) : null;
 
-                continue;
-            }
-
-            foreach ($results as $result) {
-                $summary['results']++;
-                $sourceUrl = (string) ($result['link'] ?? '');
-                $title = trim((string) ($result['title'] ?? ''));
-                $sourceName = trim((string) ($result['source'] ?? parse_url($sourceUrl, PHP_URL_HOST) ?: 'SerpAPI result'));
-                $snippet = trim((string) ($result['snippet'] ?? ''));
-                $publicationDate = $this->parseResultDate((string) ($result['date'] ?? ''));
-                $countryUpdateId = null;
-                $status = 'found';
-
-                if ($capture && ! $dryRun && $sourceUrl !== '' && $title !== '') {
-                    $captured = $this->captureCountryUpdate($country, $focus, $title, $sourceName, $sourceUrl, $snippet, $publicationDate);
-                    $countryUpdateId = $captured['country_update_id'];
-                    $status = $captured['status'];
-
-                    if ($status === 'captured') {
-                        $summary['captured']++;
-                    } elseif ($status === 'duplicate') {
-                        $summary['duplicates']++;
-                    }
+                    continue;
                 }
 
-                $item = [
-                    'country_id' => $country->id,
-                    'country' => $country->name,
-                    'iso_code' => $country->iso_code,
-                    'query' => $query,
-                    'status' => $status,
-                    'title' => $title,
-                    'source_name' => $sourceName,
-                    'source_url' => $sourceUrl,
-                    'snippet' => $snippet,
-                    'publication_date' => $publicationDate,
-                    'country_update_id' => $countryUpdateId,
-                    'searched_at' => now()->toDateTimeString(),
-                ];
-                $items[] = $item;
-                $onItem ? $onItem($item, $summary, $items) : null;
+                foreach ($results as $result) {
+                    $summary['results']++;
+                    $sourceUrl = (string) ($result['link'] ?? '');
+                    $title = trim((string) ($result['title'] ?? ''));
+                    $sourceName = trim((string) ($result['source'] ?? parse_url($sourceUrl, PHP_URL_HOST) ?: 'SerpAPI result'));
+                    $snippet = trim((string) ($result['snippet'] ?? ''));
+                    $publicationDate = $this->parseResultDate((string) ($result['date'] ?? ''));
+                    $countryUpdateId = null;
+                    $status = 'found';
+
+                    if ($capture && ! $dryRun && $sourceUrl !== '' && $title !== '') {
+                        $captured = $this->captureCountryUpdate($country, $focus, $title, $sourceName, $sourceUrl, $snippet, $publicationDate);
+                        $countryUpdateId = $captured['country_update_id'];
+                        $status = $captured['status'];
+
+                        if ($status === 'captured') {
+                            $summary['captured']++;
+                        } elseif ($status === 'duplicate') {
+                            $summary['duplicates']++;
+                        }
+                    }
+
+                    $item = [
+                        'country_id' => $country->id,
+                        'country' => $country->name,
+                        'iso_code' => $country->iso_code,
+                        'query' => $query,
+                        'keyword' => $keywordLabel,
+                        'status' => $status,
+                        'title' => $title,
+                        'source_name' => $sourceName,
+                        'source_url' => $sourceUrl,
+                        'snippet' => $snippet,
+                        'publication_date' => $publicationDate,
+                        'country_update_id' => $countryUpdateId,
+                        'searched_at' => now()->toDateTimeString(),
+                    ];
+                    $items[] = $item;
+                    $onItem ? $onItem($item, $summary, $items) : null;
+                }
             }
         }
 
