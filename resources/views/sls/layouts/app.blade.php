@@ -45,7 +45,7 @@
                             ['World Map', route('sls.intelligence.world'), 'sls.intelligence.world', 'MAP'],
                             ['Sources', route('sls.intelligence.sources'), 'sls.intelligence.sources*', 'SRC'],
                             ['SerpAPI Searches', route('sls.serpapiSearches.index'), 'sls.serpapiSearches.*', 'SERP'],
-                            ['Crawlers & SerpAPI', route('sls.organizations.crawlers.show', 1), 'sls.organizations.crawlers.*', 'CRW'],
+                            ['Crawlers & SerpAPI', route('sls.organizations.crawlers.index'), 'sls.organizations.crawlers.*', 'CRW'],
                             ['Crawler Results', route('sls.organizations.crawlerResults'), 'sls.organizations.crawlerResults', 'RES'],
                             ['Keywords', route('sls.intelligence.keywords'), 'sls.intelligence.keywords*', '#'],
                             ['Source Contacts', route('sls.intelligence.contacts'), 'sls.intelligence.contacts', '@'],

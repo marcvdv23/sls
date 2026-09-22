@@ -4930,6 +4930,20 @@ Route::get('/sls/organizations/crawler-results', function (Request $request) use
     ]);
 })->name('sls.organizations.crawlerResults');
 
+Route::get('/sls/organizations/crawlers', function () use ($seedMarketCrawlers) {
+    $seedMarketCrawlers();
+
+    $crawler = MarketCrawler::query()
+        ->where('is_enabled', true)
+        ->orderBy('id')
+        ->first()
+        ?: MarketCrawler::query()->orderBy('id')->first();
+
+    abort_unless($crawler, 404, 'No crawlers are configured yet.');
+
+    return redirect()->route('sls.organizations.crawlers.show', $crawler);
+})->name('sls.organizations.crawlers.index');
+
 Route::get('/sls/organizations/crawlers/{crawler}', function (Request $request, MarketCrawler $crawler, UniversityMarketCrawlerService $universityCrawlerService) use ($marketCrawlerTypes, $seedMarketCrawlers, $sanctionedCountryIsos, $blockedOrganizationStatuses) {
     $seedMarketCrawlers();
     $crawler->refresh();

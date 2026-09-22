@@ -6,7 +6,7 @@
 
 @section('topbar_actions')
     <a class="button secondary" href="{{ route('sls.organizations.index') }}#crawler-registry">Crawler registry</a>
-    <a class="button secondary" href="{{ route('sls.organizations.crawlers.show', 1) }}">Crawlers & SerpAPI</a>
+    <a class="button secondary" href="{{ route('sls.organizations.crawlers.index') }}">Crawlers & SerpAPI</a>
     <a class="button" href="{{ route('sls.organizations.crawlerResults', array_merge(request()->except('export'), ['export' => 'csv'])) }}">Export CSV</a>
 @endsection
 
