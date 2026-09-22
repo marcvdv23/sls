@@ -46,7 +46,8 @@
             <section class="panel">
                 <p class="eyebrow">Setup required</p>
                 <h2>Run migrations first</h2>
-                <p class="muted">The SerpAPI search template table does not exist yet. Deploy this update and run <code>php artisan migrate</code>.</p>
+                <p class="muted">{{ $setupError ?? 'The SerpAPI search template table does not exist yet.' }}</p>
+                <p class="muted">Deploy this update and run <code>php artisan migrate</code>, then <code>php artisan optimize:clear</code>.</p>
             </section>
         @else
             <section class="stats-grid">

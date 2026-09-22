@@ -2003,7 +2003,13 @@ $startOperationRun = function (SlsOperationRun $run): void {
 };
 
 $serpApiSearchState = function () {
-    if (! Schema::hasTable('serpapi_search_templates')) {
+    try {
+        $templatesTableReady = Schema::hasTable('serpapi_search_templates');
+    } catch (Throwable $exception) {
+        $templatesTableReady = false;
+    }
+
+    if (! $templatesTableReady) {
         return view('sls.serpapi-searches.index', [
             'templates' => collect(),
             'countries' => collect(),
@@ -2012,6 +2018,7 @@ $serpApiSearchState = function () {
             'monthlyStats' => collect(),
             'recentRuns' => collect(),
             'migrationMissing' => true,
+            'setupError' => 'SerpAPI search templates are not ready yet. Run migrations and clear cache.',
         ]);
     }
 
@@ -2045,17 +2052,25 @@ $serpApiSearchState = function () {
             'language' => strtolower((string) ($country->default_language_code ?: '')),
         ]);
 
-    $monthlyStats = SlsOperationRun::query()
+    $recentRuns = SlsOperationRun::query()
         ->where('operation_key', 'serpapi_search')
-        ->selectRaw("DATE_FORMAT(COALESCE(started_at, created_at), '%Y-%m') as run_month")
-        ->selectRaw('COUNT(*) as runs_count')
-        ->selectRaw('SUM(COALESCE(CAST(JSON_UNQUOTE(JSON_EXTRACT(summary, "$.queries")) AS UNSIGNED), 0)) as query_count')
-        ->selectRaw('SUM(COALESCE(CAST(JSON_UNQUOTE(JSON_EXTRACT(summary, "$.results")) AS UNSIGNED), 0)) as result_count')
-        ->selectRaw('SUM(COALESCE(CAST(JSON_UNQUOTE(JSON_EXTRACT(summary, "$.captured")) AS UNSIGNED), 0)) as captured_count')
-        ->groupBy('run_month')
-        ->orderByDesc('run_month')
-        ->limit(12)
+        ->latest('created_at')
+        ->limit(100)
         ->get();
+    $monthlyStats = $recentRuns
+        ->groupBy(fn (SlsOperationRun $run) => ($run->started_at ?: $run->created_at)?->format('Y-m') ?: 'Unknown')
+        ->map(function ($runs, string $month) {
+            return (object) [
+                'run_month' => $month,
+                'runs_count' => $runs->count(),
+                'query_count' => $runs->sum(fn (SlsOperationRun $run) => (int) data_get($run->summary, 'queries', $run->processed_count ?? 0)),
+                'result_count' => $runs->sum(fn (SlsOperationRun $run) => (int) data_get($run->summary, 'results', 0)),
+                'captured_count' => $runs->sum(fn (SlsOperationRun $run) => (int) data_get($run->summary, 'captured', $run->success_count ?? 0)),
+            ];
+        })
+        ->sortByDesc('run_month')
+        ->take(12)
+        ->values();
 
     return view('sls.serpapi-searches.index', [
         'templates' => SerpApiSearchTemplate::query()->orderByDesc('is_enabled')->orderBy('name')->get(),
@@ -2069,11 +2084,7 @@ $serpApiSearchState = function () {
             'ar' => 'Arabic',
         ],
         'monthlyStats' => $monthlyStats,
-        'recentRuns' => SlsOperationRun::query()
-            ->where('operation_key', 'serpapi_search')
-            ->latest('created_at')
-            ->limit(10)
-            ->get(),
+        'recentRuns' => $recentRuns->take(10)->values(),
         'migrationMissing' => false,
     ]);
 };
