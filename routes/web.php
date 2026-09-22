@@ -2153,16 +2153,16 @@ Route::post('/sls/serpapi-searches/run', function (Request $request) use ($start
         : null;
 
     $countryQuery = Country::query()->whereNotNull('iso_code');
+    if (filled($data['region'] ?? null)) {
+        $countryQuery->whereRaw('LOWER(region) = ?', [Str::lower((string) $data['region'])]);
+    }
+
+    if (filled($data['language'] ?? null)) {
+        $countryQuery->whereRaw('LOWER(default_language_code) = ?', [Str::lower((string) $data['language'])]);
+    }
+
     if (! empty($data['countries'])) {
         $countryQuery->whereIn('iso_code', array_map('strtoupper', $data['countries']));
-    } else {
-        if (filled($data['region'] ?? null)) {
-            $countryQuery->whereRaw('LOWER(region) = ?', [Str::lower((string) $data['region'])]);
-        }
-
-        if (filled($data['language'] ?? null)) {
-            $countryQuery->whereRaw('LOWER(default_language_code) = ?', [Str::lower((string) $data['language'])]);
-        }
     }
 
     $countries = $countryQuery->orderBy('name')->pluck('iso_code')->filter()->map(fn ($iso) => strtoupper((string) $iso))->values()->all();

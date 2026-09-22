@@ -16,6 +16,7 @@
         .serp-form .span-12 { grid-column: span 12; }
         .serp-form textarea { min-height: 96px; }
         .serp-country-select { width: 100%; min-width: 0; }
+        .serp-country-count { display: block; margin-top: 3px; }
         .check-row { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
         .check-row label { display: inline-flex; flex-direction: row; align-items: center; gap: 7px; }
         .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
@@ -34,6 +35,51 @@
             .serp-form .span-12 { grid-column: auto; }
         }
     </style>
+@endpush
+
+@push('scripts')
+    <script>
+        (() => {
+            const regionSelect = document.querySelector('[data-serp-region]');
+            const languageSelect = document.querySelector('[data-serp-language]');
+            const countrySelect = document.querySelector('[data-serp-countries]');
+            const countryCount = document.querySelector('[data-serp-country-count]');
+
+            if (!regionSelect || !languageSelect || !countrySelect) {
+                return;
+            }
+
+            const options = Array.from(countrySelect.options);
+
+            const applyCountryFilters = () => {
+                const region = (regionSelect.value || '').toLowerCase();
+                const language = (languageSelect.value || '').toLowerCase();
+                let visible = 0;
+
+                options.forEach((option) => {
+                    const matchesRegion = !region || (option.dataset.region || '').toLowerCase() === region;
+                    const matchesLanguage = !language || (option.dataset.language || '').toLowerCase() === language;
+                    const isVisible = matchesRegion && matchesLanguage;
+
+                    option.hidden = !isVisible;
+
+                    if (!isVisible) {
+                        option.selected = false;
+                    } else {
+                        visible += 1;
+                    }
+                });
+
+                if (countryCount) {
+                    countryCount.textContent = `${visible} countr${visible === 1 ? 'y' : 'ies'} match the current region and language filters.`;
+                }
+            };
+
+            regionSelect.addEventListener('change', applyCountryFilters);
+            languageSelect.addEventListener('change', applyCountryFilters);
+            applyCountryFilters();
+        })();
+    </script>
 @endpush
 
 @php
@@ -84,7 +130,7 @@
                                 <input type="number" name="results_per_country" min="1" max="20" value="{{ old('results_per_country', 10) }}">
                             </label>
                             <label class="span-3">Region
-                                <select name="region">
+                                <select name="region" data-serp-region>
                                     <option value="">Any region</option>
                                     @foreach ($regions as $region)
                                         <option value="{{ $region }}" @selected(old('region') === $region)>{{ $region }}</option>
@@ -92,20 +138,21 @@
                                 </select>
                             </label>
                             <label class="span-3">Language group
-                                <select name="language">
+                                <select name="language" data-serp-language>
                                     @foreach ($languageOptions as $value => $label)
                                         <option value="{{ $value }}" @selected(old('language') === $value)>{{ $label }}</option>
                                     @endforeach
                                 </select>
                             </label>
                             <label class="span-12">Specific countries
-                                <select class="serp-country-select" name="countries[]" multiple size="8">
+                                <select class="serp-country-select" name="countries[]" multiple size="8" data-serp-countries>
                                     @foreach ($countries as $country)
-                                        <option value="{{ $country['iso_code'] }}" @selected(in_array($country['iso_code'], old('countries', []), true))>
+                                        <option value="{{ $country['iso_code'] }}" data-region="{{ $country['region'] }}" data-language="{{ $country['language'] }}" @selected(in_array($country['iso_code'], old('countries', []), true))>
                                             {{ $country['name'] }} ({{ $country['iso_code'] }}) - {{ $country['region'] }}{{ $country['language'] ? ' / ' . strtoupper($country['language']) : '' }}
                                         </option>
                                     @endforeach
                                 </select>
+                                <span class="muted small serp-country-count" data-serp-country-count></span>
                             </label>
                             <label class="span-12">Custom query template
                                 <input name="custom_query_template" value="{{ old('custom_query_template') }}" placeholder='"{country}" ({keywords}) tender OR RFP'>
