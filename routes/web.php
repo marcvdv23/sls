@@ -2274,6 +2274,42 @@ Route::post('/sls/serpapi-searches/run', function (Request $request) use ($start
     return redirect()->route('sls.serpapiSearches.index')->with('status', 'SerpAPI search run queued. Refresh this page to see results.');
 })->name('sls.serpapiSearches.run');
 
+Route::post('/sls/serpapi-searches/runs/{run}/rerun', function (SlsOperationRun $run) use ($startOperationRun) {
+    abort_unless($run->operation_key === 'serpapi_search', 404);
+
+    $parameters = $run->parameters ?? [];
+    $countries = collect($parameters['countries'] ?? [])
+        ->map(fn ($iso) => strtoupper(trim((string) $iso)))
+        ->filter()
+        ->values()
+        ->all();
+
+    if ($countries === []) {
+        return redirect()
+            ->route('sls.serpapiSearches.index')
+            ->withErrors(['rerun' => 'This SerpAPI run cannot be rerun because it does not have any countries saved.']);
+    }
+
+    $templateName = trim((string) ($parameters['template_name'] ?? 'Custom SerpAPI search'));
+
+    $rerun = SlsOperationRun::query()->create([
+        'operation_key' => 'serpapi_search',
+        'operation_name' => 'SerpAPI: ' . $templateName,
+        'status' => 'queued',
+        'parameters' => $parameters,
+        'items' => [],
+        'summary' => [],
+        'dry_run' => (bool) ($parameters['dry_run'] ?? true),
+        'total_count' => count($countries),
+    ]);
+
+    $startOperationRun($rerun);
+
+    return redirect()
+        ->route('sls.serpapiSearches.index')
+        ->with('status', 'SerpAPI search rerun queued from run #' . $run->id . '. Refresh this page to see results.');
+})->name('sls.serpapiSearches.rerun');
+
 Route::post('/sls/operations/bank-domain-guesser', function (Request $request) use ($startOperationRun) {
     $data = $request->validate([
         'limit' => ['required', 'integer', 'min:1', 'max:500'],

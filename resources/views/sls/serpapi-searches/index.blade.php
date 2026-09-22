@@ -23,6 +23,8 @@
         .check-row label { display: inline-flex; flex-direction: row; align-items: center; gap: 7px; }
         .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
         .run-card { display: grid; gap: 8px; }
+        .run-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+        .inline-form { display: inline; }
         .result-table { min-width: 1100px; }
         .result-table td { vertical-align: top; }
         .muted.small { font-size: 12px; }
@@ -281,13 +283,23 @@
                                 <th>Filtered</th>
                                 <th>Captured</th>
                                 <th>Started</th>
+                                <th>Action</th>
                             </tr>
                         </thead>
                         <tbody>
                             @forelse ($recentRuns as $run)
                                 @php($summary = $run->summary ?? [])
+                                @php($parameters = $run->parameters ?? [])
                                 <tr>
-                                    <td>{{ $run->operation_name }}</td>
+                                    <td>
+                                        {{ $run->operation_name }}
+                                        <p class="muted small">
+                                            {{ collect($parameters['countries'] ?? [])->take(6)->implode(', ') }}{{ count($parameters['countries'] ?? []) > 6 ? ' +' . (count($parameters['countries'] ?? []) - 6) : '' }}
+                                            @if (! empty($parameters['keyword_search_mode']))
+                                                | {{ $parameters['keyword_search_mode'] === 'per_keyword' ? 'separate keyword searches' : 'grouped keyword search' }}
+                                            @endif
+                                        </p>
+                                    </td>
                                     <td><span class="pill {{ $run->status === 'completed' ? 'good' : ($run->status === 'failed' ? 'bad' : 'warn') }}">{{ $run->status }}</span></td>
                                     <td>{{ number_format((int) ($summary['countries'] ?? $run->total_count)) }}</td>
                                     <td>{{ number_format((int) ($summary['queries'] ?? $run->processed_count)) }}</td>
@@ -295,9 +307,17 @@
                                     <td>{{ number_format((int) ($summary['filtered_out'] ?? 0)) }}</td>
                                     <td>{{ number_format((int) ($summary['captured'] ?? $run->success_count)) }}</td>
                                     <td>{{ $run->started_at?->format('Y-m-d H:i') ?: $run->created_at?->format('Y-m-d H:i') }}</td>
+                                    <td>
+                                        <div class="run-actions">
+                                            <form class="inline-form" method="post" action="{{ route('sls.serpapiSearches.rerun', $run) }}">
+                                                @csrf
+                                                <button class="button secondary" type="submit">Run again</button>
+                                            </form>
+                                        </div>
+                                    </td>
                                 </tr>
                             @empty
-                                <tr><td colspan="8" class="muted">No SerpAPI runs yet.</td></tr>
+                                <tr><td colspan="9" class="muted">No SerpAPI runs yet.</td></tr>
                             @endforelse
                         </tbody>
                     </table>
