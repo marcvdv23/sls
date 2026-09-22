@@ -1974,7 +1974,9 @@ Route::get('/sls/operations', function () use ($bankDomainOperationState) {
 
 $startOperationRun = function (SlsOperationRun $run): void {
     $localPhp = 'C:\laragon\bin\php\php-8.3.30-Win32-vs16-x64\php.exe';
-    $php = is_file($localPhp) ? $localPhp : (PHP_BINARY ?: 'php');
+    $php = PHP_OS_FAMILY === 'Windows'
+        ? (is_file($localPhp) ? $localPhp : (PHP_BINARY ?: 'php'))
+        : ((new ExecutableFinder())->find('php') ?: (PHP_BINARY ?: 'php'));
     $artisan = base_path('artisan');
     $log = storage_path('logs/sls-operation-run-' . $run->id . '.log');
     $errorLog = storage_path('logs/sls-operation-run-' . $run->id . '-error.log');
