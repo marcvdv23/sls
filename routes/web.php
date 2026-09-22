@@ -2022,71 +2022,86 @@ $serpApiSearchState = function () {
         ]);
     }
 
-    if (SerpApiSearchTemplate::query()->count() === 0) {
-        SerpApiSearchTemplate::query()->create([
-            'name' => 'Social insurance software tenders and RFPs',
-            'focus' => 'social_security',
-            'query_template' => '"{country}" ({keywords})',
-            'keywords' => [
-                'social insurance software tender',
-                'social security management information system RFP',
-                'pension administration system procurement',
-                'beneficiary registry tender',
-                'contribution collection system procurement',
+    try {
+        if (SerpApiSearchTemplate::query()->count() === 0) {
+            SerpApiSearchTemplate::query()->create([
+                'name' => 'Social insurance software tenders and RFPs',
+                'focus' => 'social_security',
+                'query_template' => '"{country}" ({keywords})',
+                'keywords' => [
+                    'social insurance software tender',
+                    'social security management information system RFP',
+                    'pension administration system procurement',
+                    'beneficiary registry tender',
+                    'contribution collection system procurement',
+                ],
+                'results_per_country' => 10,
+                'is_enabled' => true,
+            ]);
+        }
+
+        $countries = Country::query()
+            ->whereNotNull('iso_code')
+            ->orderBy('region')
+            ->orderBy('name')
+            ->get()
+            ->map(fn (Country $country) => [
+                'id' => $country->id,
+                'name' => $country->name,
+                'iso_code' => strtoupper((string) $country->iso_code),
+                'region' => $country->region ?: 'Unassigned',
+                'language' => strtolower((string) ($country->default_language_code ?: '')),
+            ]);
+
+        $recentRuns = SlsOperationRun::query()
+            ->where('operation_key', 'serpapi_search')
+            ->latest('created_at')
+            ->limit(100)
+            ->get();
+        $monthlyStats = $recentRuns
+            ->groupBy(fn (SlsOperationRun $run) => ($run->started_at ?: $run->created_at)?->format('Y-m') ?: 'Unknown')
+            ->map(function ($runs, string $month) {
+                return (object) [
+                    'run_month' => $month,
+                    'runs_count' => $runs->count(),
+                    'query_count' => $runs->sum(fn (SlsOperationRun $run) => (int) data_get($run->summary, 'queries', $run->processed_count ?? 0)),
+                    'result_count' => $runs->sum(fn (SlsOperationRun $run) => (int) data_get($run->summary, 'results', 0)),
+                    'captured_count' => $runs->sum(fn (SlsOperationRun $run) => (int) data_get($run->summary, 'captured', $run->success_count ?? 0)),
+                ];
+            })
+            ->sortByDesc('run_month')
+            ->take(12)
+            ->values();
+
+        return view('sls.serpapi-searches.index', [
+            'templates' => SerpApiSearchTemplate::query()->orderByDesc('is_enabled')->orderBy('name')->get(),
+            'countries' => $countries,
+            'regions' => $countries->pluck('region')->filter()->unique()->sort()->values(),
+            'languageOptions' => [
+                '' => 'All languages',
+                'en' => 'English',
+                'fr' => 'French',
+                'pt' => 'Portuguese',
+                'ar' => 'Arabic',
             ],
-            'results_per_country' => 10,
-            'is_enabled' => true,
+            'monthlyStats' => $monthlyStats,
+            'recentRuns' => $recentRuns->take(10)->values(),
+            'migrationMissing' => false,
+        ]);
+    } catch (Throwable $exception) {
+        report($exception);
+
+        return view('sls.serpapi-searches.index', [
+            'templates' => collect(),
+            'countries' => collect(),
+            'regions' => collect(),
+            'languageOptions' => [],
+            'monthlyStats' => collect(),
+            'recentRuns' => collect(),
+            'migrationMissing' => true,
+            'setupError' => 'SerpAPI search page failed while loading: ' . $exception->getMessage(),
         ]);
     }
-
-    $countries = Country::query()
-        ->whereNotNull('iso_code')
-        ->orderBy('region')
-        ->orderBy('name')
-        ->get()
-        ->map(fn (Country $country) => [
-            'id' => $country->id,
-            'name' => $country->name,
-            'iso_code' => strtoupper((string) $country->iso_code),
-            'region' => $country->region ?: 'Unassigned',
-            'language' => strtolower((string) ($country->default_language_code ?: '')),
-        ]);
-
-    $recentRuns = SlsOperationRun::query()
-        ->where('operation_key', 'serpapi_search')
-        ->latest('created_at')
-        ->limit(100)
-        ->get();
-    $monthlyStats = $recentRuns
-        ->groupBy(fn (SlsOperationRun $run) => ($run->started_at ?: $run->created_at)?->format('Y-m') ?: 'Unknown')
-        ->map(function ($runs, string $month) {
-            return (object) [
-                'run_month' => $month,
-                'runs_count' => $runs->count(),
-                'query_count' => $runs->sum(fn (SlsOperationRun $run) => (int) data_get($run->summary, 'queries', $run->processed_count ?? 0)),
-                'result_count' => $runs->sum(fn (SlsOperationRun $run) => (int) data_get($run->summary, 'results', 0)),
-                'captured_count' => $runs->sum(fn (SlsOperationRun $run) => (int) data_get($run->summary, 'captured', $run->success_count ?? 0)),
-            ];
-        })
-        ->sortByDesc('run_month')
-        ->take(12)
-        ->values();
-
-    return view('sls.serpapi-searches.index', [
-        'templates' => SerpApiSearchTemplate::query()->orderByDesc('is_enabled')->orderBy('name')->get(),
-        'countries' => $countries,
-        'regions' => $countries->pluck('region')->filter()->unique()->sort()->values(),
-        'languageOptions' => [
-            '' => 'All languages',
-            'en' => 'English',
-            'fr' => 'French',
-            'pt' => 'Portuguese',
-            'ar' => 'Arabic',
-        ],
-        'monthlyStats' => $monthlyStats,
-        'recentRuns' => $recentRuns->take(10)->values(),
-        'migrationMissing' => false,
-    ]);
 };
 
 Route::get('/sls/serpapi-searches', function () use ($serpApiSearchState) {
