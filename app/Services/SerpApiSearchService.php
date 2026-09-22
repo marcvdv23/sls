@@ -84,7 +84,7 @@ class SerpApiSearchService
                     $title = trim((string) ($result['title'] ?? ''));
                     $sourceName = trim((string) ($result['source'] ?? parse_url($sourceUrl, PHP_URL_HOST) ?: 'SerpAPI result'));
                     $snippet = trim((string) ($result['snippet'] ?? ''));
-                    $resultFilter = $this->tenderResultFilter($title, $snippet, $sourceUrl, $keywordGroup);
+                    $resultFilter = $this->tenderResultFilter($title, $snippet, $sourceUrl, $keywordGroup, $country);
 
                     if (! $resultFilter['keep']) {
                         $summary['filtered_out']++;
@@ -177,28 +177,71 @@ class SerpApiSearchService
      * @param array<int, string> $keywords
      * @return array{keep: bool, reason: string}
      */
-    private function tenderResultFilter(string $title, string $snippet, string $sourceUrl, array $keywords): array
+    private function tenderResultFilter(string $title, string $snippet, string $sourceUrl, array $keywords, Country $country): array
     {
         $haystack = Str::lower($title . ' ' . $snippet . ' ' . $sourceUrl);
         $host = Str::lower((string) parse_url($sourceUrl, PHP_URL_HOST));
+        $path = Str::lower((string) parse_url($sourceUrl, PHP_URL_PATH));
+        $countryName = Str::lower((string) $country->name);
+        $countryIso = Str::lower((string) $country->iso_code);
+        $countrySlug = Str::slug((string) $country->name);
 
         $blockedDomains = [
+            'adp.com',
+            'apple.com',
+            'bluebisonsoftware.com',
             'capterra.',
+            'darwinbox.com',
+            'employmenthero.com',
+            'facebook.com',
+            'flaxem.com',
+            'focussoftnet.com',
+            'hibob.com',
+            'instagram.com',
             'g2.com',
             'getapp.',
+            'lattice.com',
+            'leverx.com',
+            'linkedin.com',
+            'paylocity.com',
             'softwareadvice.',
             'sourceforge.',
             'selecthub.',
             'trustradius.',
             'saasworthy.',
             'softwaresuggest.',
+            'ramco.com',
+            'reddit.com',
+            'rsmus.com',
             'peoplemanagingpeople.',
+            'triblockhr.com',
             'techradar.',
             'forbes.com',
+            'workzoom.com',
+            'youtube.com',
         ];
 
         if (Str::contains($host, $blockedDomains)) {
             return ['keep' => false, 'reason' => 'vendor directory or software review domain'];
+        }
+
+        if (Str::contains($path, ['/keywords/', '/keyword/'])
+            || preg_match('/\blatest\b.*\btenders?\b.*\b20\d{2}\b/i', $title)
+            || Str::contains($haystack, ['government & private tenders', 'online active and archive database', 'sourced directly from reliable government portals'])) {
+            return ['keep' => false, 'reason' => 'tender listing or keyword index page'];
+        }
+
+        if (Str::contains($haystack, ['rfp template', 'request for proposal template', 'invite ', 'book a demo', 'glossary'])) {
+            return ['keep' => false, 'reason' => 'vendor RFP/template or marketing page'];
+        }
+
+        if (Str::contains($path, '/government-tenders/')) {
+            $segments = collect(explode('/', trim($path, '/')))->values();
+            $countrySegment = $segments->first(fn (string $segment, int $index) => $index > 0 && $segments->get($index - 1) === 'government-tenders');
+
+            if ($countrySegment && $countrySegment !== $countrySlug) {
+                return ['keep' => false, 'reason' => 'tender page belongs to a different country'];
+            }
         }
 
         $procurementSignals = [
@@ -231,6 +274,10 @@ class SerpApiSearchService
             return ['keep' => false, 'reason' => 'missing tender/RFP intent'];
         }
 
+        if (! Str::contains($haystack, [$countryName, $countryIso])) {
+            return ['keep' => false, 'reason' => 'missing selected country'];
+        }
+
         $keywordNeedles = collect($keywords)
             ->flatMap(fn (string $keyword) => [$keyword, str_replace(' software', '', $keyword)])
             ->map(fn (string $keyword) => Str::lower(trim($keyword)))
@@ -256,6 +303,7 @@ class SerpApiSearchService
             'best ',
             'top ',
             'buyer guide',
+            'case study',
             'what is ',
             'our software',
             'software solution for',
