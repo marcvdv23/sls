@@ -48,6 +48,7 @@ class SerpApiSearchService
             'results' => 0,
             'captured' => 0,
             'duplicates' => 0,
+            'filtered_out' => 0,
             'errors' => 0,
         ];
         $items = [];
@@ -79,11 +80,19 @@ class SerpApiSearchService
                 }
 
                 foreach ($results as $result) {
-                    $summary['results']++;
                     $sourceUrl = (string) ($result['link'] ?? '');
                     $title = trim((string) ($result['title'] ?? ''));
                     $sourceName = trim((string) ($result['source'] ?? parse_url($sourceUrl, PHP_URL_HOST) ?: 'SerpAPI result'));
                     $snippet = trim((string) ($result['snippet'] ?? ''));
+                    $resultFilter = $this->tenderResultFilter($title, $snippet, $sourceUrl, $keywordGroup);
+
+                    if (! $resultFilter['keep']) {
+                        $summary['filtered_out']++;
+
+                        continue;
+                    }
+
+                    $summary['results']++;
                     $publicationDate = $this->parseResultDate((string) ($result['date'] ?? ''));
                     $countryUpdateId = null;
                     $status = 'found';
@@ -162,6 +171,102 @@ class SerpApiSearchService
             ->take($limit)
             ->values()
             ->all();
+    }
+
+    /**
+     * @param array<int, string> $keywords
+     * @return array{keep: bool, reason: string}
+     */
+    private function tenderResultFilter(string $title, string $snippet, string $sourceUrl, array $keywords): array
+    {
+        $haystack = Str::lower($title . ' ' . $snippet . ' ' . $sourceUrl);
+        $host = Str::lower((string) parse_url($sourceUrl, PHP_URL_HOST));
+
+        $blockedDomains = [
+            'capterra.',
+            'g2.com',
+            'getapp.',
+            'softwareadvice.',
+            'sourceforge.',
+            'selecthub.',
+            'trustradius.',
+            'saasworthy.',
+            'softwaresuggest.',
+            'peoplemanagingpeople.',
+            'techradar.',
+            'forbes.com',
+        ];
+
+        if (Str::contains($host, $blockedDomains)) {
+            return ['keep' => false, 'reason' => 'vendor directory or software review domain'];
+        }
+
+        $procurementSignals = [
+            'tender',
+            'rfp',
+            'rfi',
+            'rfq',
+            'eoi',
+            'request for proposal',
+            'request for proposals',
+            'request for information',
+            'request for quotation',
+            'expression of interest',
+            'invitation to bid',
+            'invitation for bid',
+            'invitation for bids',
+            'invitation to tender',
+            'bid notice',
+            'bidding document',
+            'bidding documents',
+            'procurement notice',
+            'contract notice',
+            'solicitation',
+            'terms of reference',
+            'consulting services',
+            'notice inviting',
+        ];
+
+        if (! Str::contains($haystack, $procurementSignals)) {
+            return ['keep' => false, 'reason' => 'missing tender/RFP intent'];
+        }
+
+        $keywordNeedles = collect($keywords)
+            ->flatMap(fn (string $keyword) => [$keyword, str_replace(' software', '', $keyword)])
+            ->map(fn (string $keyword) => Str::lower(trim($keyword)))
+            ->filter(fn (string $keyword) => strlen($keyword) >= 4)
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($keywordNeedles !== [] && ! Str::contains($haystack, $keywordNeedles)) {
+            return ['keep' => false, 'reason' => 'missing selected product keyword'];
+        }
+
+        $vendorSignals = [
+            'pricing',
+            'free trial',
+            'book a demo',
+            'request a demo',
+            'schedule a demo',
+            'features',
+            'compare',
+            'alternatives',
+            'reviews',
+            'best ',
+            'top ',
+            'buyer guide',
+            'what is ',
+            'our software',
+            'software solution for',
+            'software solutions for',
+        ];
+
+        if (Str::contains($haystack, $vendorSignals) && ! Str::contains($haystack, ['tender', 'rfp', 'rfi', 'rfq', 'eoi'])) {
+            return ['keep' => false, 'reason' => 'vendor marketing page'];
+        }
+
+        return ['keep' => true, 'reason' => 'matched tender/RFP intent'];
     }
 
     private function captureCountryUpdate(Country $country, string $focus, string $title, string $sourceName, string $sourceUrl, string $snippet, ?string $publicationDate): array

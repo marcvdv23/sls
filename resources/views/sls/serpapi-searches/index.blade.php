@@ -105,7 +105,7 @@
                     <div class="panel stat">
                         <strong>{{ $month->run_month }}</strong>
                         <span class="muted">{{ number_format((int) $month->query_count) }} SerpAPI call(s)</span>
-                        <span class="muted small">{{ number_format((int) $month->result_count) }} results, {{ number_format((int) $month->captured_count) }} captured</span>
+                        <span class="muted small">{{ number_format((int) $month->result_count) }} kept, {{ number_format((int) ($month->filtered_count ?? 0)) }} filtered, {{ number_format((int) $month->captured_count) }} captured</span>
                     </div>
                 @empty
                     <div class="panel stat"><strong>0</strong><span class="muted">SerpAPI calls tracked so far</span></div>
@@ -158,7 +158,7 @@
                                 <span class="muted small serp-country-count" data-serp-country-count></span>
                             </label>
                             <label class="span-12">Custom query template
-                                <input name="custom_query_template" value="{{ old('custom_query_template') }}" placeholder='"{country}" ({keywords}) (tender OR RFP OR procurement OR "expression of interest")'>
+                                <input name="custom_query_template" value="{{ old('custom_query_template') }}" placeholder='"{country}" ({keywords}) ("request for proposals" OR RFP OR tender OR "invitation to bid" OR "expression of interest" OR EOI OR RFI) -pricing -demo -"free trial" -"book a demo"'>
                                 <span class="muted small">Placeholders: <code>{country}</code>, <code>{iso}</code>, <code>{keywords}</code>. Leave blank to use the saved template.</span>
                             </label>
                             <label class="span-12">Search mode
@@ -277,7 +277,8 @@
                                 <th>Status</th>
                                 <th>Countries</th>
                                 <th>Calls</th>
-                                <th>Results</th>
+                                <th>Kept</th>
+                                <th>Filtered</th>
                                 <th>Captured</th>
                                 <th>Started</th>
                             </tr>
@@ -291,11 +292,12 @@
                                     <td>{{ number_format((int) ($summary['countries'] ?? $run->total_count)) }}</td>
                                     <td>{{ number_format((int) ($summary['queries'] ?? $run->processed_count)) }}</td>
                                     <td>{{ number_format((int) ($summary['results'] ?? 0)) }}</td>
+                                    <td>{{ number_format((int) ($summary['filtered_out'] ?? 0)) }}</td>
                                     <td>{{ number_format((int) ($summary['captured'] ?? $run->success_count)) }}</td>
                                     <td>{{ $run->started_at?->format('Y-m-d H:i') ?: $run->created_at?->format('Y-m-d H:i') }}</td>
                                 </tr>
                             @empty
-                                <tr><td colspan="7" class="muted">No SerpAPI runs yet.</td></tr>
+                                <tr><td colspan="8" class="muted">No SerpAPI runs yet.</td></tr>
                             @endforelse
                         </tbody>
                     </table>

@@ -2066,7 +2066,7 @@ $serpApiSearchState = function () {
             SerpApiSearchTemplate::query()->create([
                 'name' => 'HR, payroll, and HCM software tenders',
                 'focus' => 'hrms_tenders',
-                'query_template' => '"{country}" ({keywords}) (tender OR RFP OR procurement OR "expression of interest")',
+                'query_template' => '"{country}" ({keywords}) ("request for proposals" OR RFP OR tender OR "invitation to bid" OR "expression of interest" OR EOI OR RFI) -pricing -demo -"free trial" -"book a demo"',
                 'keywords' => $defaultSerpApiKeywords,
                 'results_per_country' => 10,
                 'is_enabled' => true,
@@ -2100,6 +2100,7 @@ $serpApiSearchState = function () {
                     'query_count' => $runs->sum(fn (SlsOperationRun $run) => (int) data_get($run->summary, 'queries', $run->processed_count ?? 0)),
                     'result_count' => $runs->sum(fn (SlsOperationRun $run) => (int) data_get($run->summary, 'results', 0)),
                     'captured_count' => $runs->sum(fn (SlsOperationRun $run) => (int) data_get($run->summary, 'captured', $run->success_count ?? 0)),
+                    'filtered_count' => $runs->sum(fn (SlsOperationRun $run) => (int) data_get($run->summary, 'filtered_out', 0)),
                 ];
             })
             ->sortByDesc('run_month')
@@ -2244,7 +2245,7 @@ Route::post('/sls/serpapi-searches/run', function (Request $request) use ($start
         'template_id' => $template?->id,
         'template_name' => $template?->name ?: 'Custom SerpAPI search',
         'focus' => $template?->focus ?: 'social_security',
-        'query_template' => trim((string) ($data['custom_query_template'] ?? '')) ?: ($template?->query_template ?: '"{country}" ({keywords}) (tender OR RFP OR procurement OR "expression of interest")'),
+        'query_template' => trim((string) ($data['custom_query_template'] ?? '')) ?: ($template?->query_template ?: '"{country}" ({keywords}) ("request for proposals" OR RFP OR tender OR "invitation to bid" OR "expression of interest" OR EOI OR RFI) -pricing -demo -"free trial" -"book a demo"'),
         'keywords' => $keywords !== [] ? $keywords : $templateKeywords,
         'predefined_keywords' => $predefinedKeywords->all(),
         'custom_keywords' => $customKeywords->all(),
