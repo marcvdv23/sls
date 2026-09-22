@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class SerpApiSearchTemplate extends Model
 {
+    protected $table = 'serpapi_search_templates';
+
     protected $fillable = [
         'name',
         'focus',
