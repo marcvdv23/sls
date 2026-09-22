@@ -10,6 +10,7 @@ use App\Services\IntelligenceSourceCheckerService;
 use App\Services\IloSocialProtectionProjectDiscoveryService;
 use App\Services\SourceContactExtractionService;
 use App\Services\SerpApiSourceDiscoveryService;
+use App\Services\SerpApiSearchService;
 use App\Services\SocialProtectionProfileMonitor;
 use App\Services\TenderAwardLookupService;
 use App\Services\TenderDocumentProcessor;
@@ -248,10 +249,10 @@ Artisan::command('sls:guess-bank-domains {--limit=50 : Maximum bank records to p
     return 0;
 })->purpose('Guess and verify official bank domains using bank-specific domain rules');
 
-Artisan::command('sls:run-operation {operation_run_id}', function (BankDomainGuessService $bankDomainGuesser) {
+Artisan::command('sls:run-operation {operation_run_id}', function (BankDomainGuessService $bankDomainGuesser, SerpApiSearchService $serpApiSearch) {
     $run = SlsOperationRun::query()->findOrFail((int) $this->argument('operation_run_id'));
 
-    if ($run->operation_key !== 'bank_domain_guesser') {
+    if (! in_array($run->operation_key, ['bank_domain_guesser', 'serpapi_search'], true)) {
         $run->update([
             'status' => 'failed',
             'error_message' => 'Unknown operation key: ' . $run->operation_key,
@@ -265,6 +266,61 @@ Artisan::command('sls:run-operation {operation_run_id}', function (BankDomainGue
 
     $parameters = $run->parameters ?? [];
     $items = [];
+
+    if ($run->operation_key === 'serpapi_search') {
+        $run->update([
+            'status' => 'running',
+            'started_at' => now(),
+            'error_message' => null,
+            'items' => [],
+            'summary' => [
+                'countries' => 0,
+                'queries' => 0,
+                'results' => 0,
+                'captured' => 0,
+                'duplicates' => 0,
+                'errors' => 0,
+            ],
+        ]);
+
+        try {
+            $result = $serpApiSearch->run($parameters, function (array $item, array $summary, array $currentItems) use ($run, $parameters) {
+                $run->forceFill([
+                    'summary' => $summary,
+                    'items' => $currentItems,
+                    'processed_count' => (int) ($summary['queries'] ?? 0),
+                    'total_count' => count($parameters['countries'] ?? []),
+                    'success_count' => (int) ($summary['captured'] ?? 0),
+                    'failure_count' => (int) ($summary['errors'] ?? 0),
+                ])->save();
+            });
+
+            $run->update([
+                'status' => 'completed',
+                'summary' => collect($result)->except('items')->all(),
+                'items' => $result['items'] ?? [],
+                'processed_count' => (int) ($result['queries'] ?? 0),
+                'total_count' => (int) ($result['countries'] ?? 0),
+                'success_count' => (int) ($result['captured'] ?? 0),
+                'failure_count' => (int) ($result['errors'] ?? 0),
+                'finished_at' => now(),
+            ]);
+
+            $this->info('SerpAPI operation run #' . $run->id . ' completed.');
+
+            return 0;
+        } catch (Throwable $exception) {
+            $run->update([
+                'status' => 'failed',
+                'error_message' => $exception->getMessage(),
+                'finished_at' => now(),
+            ]);
+
+            $this->error($exception->getMessage());
+
+            return 1;
+        }
+    }
 
     $run->update([
         'status' => 'running',

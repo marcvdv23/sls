@@ -34,6 +34,7 @@ use App\Models\Product;
 use App\Models\SourceDocument;
 use App\Models\SocialSecurityAdminCandidate;
 use App\Models\SlsOperationRun;
+use App\Models\SerpApiSearchTemplate;
 use App\Models\SlsTask;
 use App\Models\TenderAwardedCompany;
 use App\Models\AccessAuditLog;
@@ -2000,6 +2001,185 @@ $startOperationRun = function (SlsOperationRun $run): void {
         . ' &';
     pclose(popen($command, 'r'));
 };
+
+$serpApiSearchState = function () {
+    if (! Schema::hasTable('serpapi_search_templates')) {
+        return view('sls.serpapi-searches.index', [
+            'templates' => collect(),
+            'countries' => collect(),
+            'regions' => collect(),
+            'languageOptions' => [],
+            'monthlyStats' => collect(),
+            'recentRuns' => collect(),
+            'migrationMissing' => true,
+        ]);
+    }
+
+    if (SerpApiSearchTemplate::query()->count() === 0) {
+        SerpApiSearchTemplate::query()->create([
+            'name' => 'Social insurance software tenders and RFPs',
+            'focus' => 'social_security',
+            'query_template' => '"{country}" ({keywords})',
+            'keywords' => [
+                'social insurance software tender',
+                'social security management information system RFP',
+                'pension administration system procurement',
+                'beneficiary registry tender',
+                'contribution collection system procurement',
+            ],
+            'results_per_country' => 10,
+            'is_enabled' => true,
+        ]);
+    }
+
+    $countries = Country::query()
+        ->whereNotNull('iso_code')
+        ->orderBy('region')
+        ->orderBy('name')
+        ->get()
+        ->map(fn (Country $country) => [
+            'id' => $country->id,
+            'name' => $country->name,
+            'iso_code' => strtoupper((string) $country->iso_code),
+            'region' => $country->region ?: 'Unassigned',
+            'language' => strtolower((string) ($country->default_language_code ?: '')),
+        ]);
+
+    $monthlyStats = SlsOperationRun::query()
+        ->where('operation_key', 'serpapi_search')
+        ->selectRaw("DATE_FORMAT(COALESCE(started_at, created_at), '%Y-%m') as run_month")
+        ->selectRaw('COUNT(*) as runs_count')
+        ->selectRaw('SUM(COALESCE(CAST(JSON_UNQUOTE(JSON_EXTRACT(summary, "$.queries")) AS UNSIGNED), 0)) as query_count')
+        ->selectRaw('SUM(COALESCE(CAST(JSON_UNQUOTE(JSON_EXTRACT(summary, "$.results")) AS UNSIGNED), 0)) as result_count')
+        ->selectRaw('SUM(COALESCE(CAST(JSON_UNQUOTE(JSON_EXTRACT(summary, "$.captured")) AS UNSIGNED), 0)) as captured_count')
+        ->groupBy('run_month')
+        ->orderByDesc('run_month')
+        ->limit(12)
+        ->get();
+
+    return view('sls.serpapi-searches.index', [
+        'templates' => SerpApiSearchTemplate::query()->orderByDesc('is_enabled')->orderBy('name')->get(),
+        'countries' => $countries,
+        'regions' => $countries->pluck('region')->filter()->unique()->sort()->values(),
+        'languageOptions' => [
+            '' => 'All languages',
+            'en' => 'English',
+            'fr' => 'French',
+            'pt' => 'Portuguese',
+            'ar' => 'Arabic',
+        ],
+        'monthlyStats' => $monthlyStats,
+        'recentRuns' => SlsOperationRun::query()
+            ->where('operation_key', 'serpapi_search')
+            ->latest('created_at')
+            ->limit(10)
+            ->get(),
+        'migrationMissing' => false,
+    ]);
+};
+
+Route::get('/sls/serpapi-searches', function () use ($serpApiSearchState) {
+    return $serpApiSearchState();
+})->name('sls.serpapiSearches.index');
+
+Route::post('/sls/serpapi-searches/templates', function (Request $request) {
+    $data = $request->validate([
+        'name' => ['required', 'string', 'max:180'],
+        'focus' => ['required', 'string', 'max:80'],
+        'query_template' => ['required', 'string', 'max:2000'],
+        'keywords_text' => ['nullable', 'string', 'max:5000'],
+        'results_per_country' => ['required', 'integer', 'min:1', 'max:20'],
+        'is_enabled' => ['nullable', 'boolean'],
+    ]);
+
+    SerpApiSearchTemplate::query()->create([
+        'name' => $data['name'],
+        'focus' => $data['focus'],
+        'query_template' => $data['query_template'],
+        'keywords' => collect(preg_split('/\r\n|\r|\n/', (string) ($data['keywords_text'] ?? '')))
+            ->map(fn ($line) => trim((string) $line))
+            ->filter()
+            ->values()
+            ->all(),
+        'results_per_country' => (int) $data['results_per_country'],
+        'is_enabled' => (bool) ($data['is_enabled'] ?? true),
+    ]);
+
+    return redirect()->route('sls.serpapiSearches.index')->with('status', 'SerpAPI search template saved.');
+})->name('sls.serpapiSearches.templates.store');
+
+Route::post('/sls/serpapi-searches/run', function (Request $request) use ($startOperationRun) {
+    $data = $request->validate([
+        'template_id' => ['nullable', 'integer', 'exists:serpapi_search_templates,id'],
+        'custom_query_template' => ['nullable', 'string', 'max:2000'],
+        'custom_keywords_text' => ['nullable', 'string', 'max:5000'],
+        'countries' => ['array'],
+        'countries.*' => ['string', 'max:10'],
+        'region' => ['nullable', 'string', 'max:120'],
+        'language' => ['nullable', 'string', 'max:10'],
+        'results_per_country' => ['required', 'integer', 'min:1', 'max:20'],
+        'dry_run' => ['nullable', 'boolean'],
+        'capture' => ['nullable', 'boolean'],
+    ]);
+
+    $template = filled($data['template_id'] ?? null)
+        ? SerpApiSearchTemplate::query()->find((int) $data['template_id'])
+        : null;
+
+    $countryQuery = Country::query()->whereNotNull('iso_code');
+    if (! empty($data['countries'])) {
+        $countryQuery->whereIn('iso_code', array_map('strtoupper', $data['countries']));
+    } else {
+        if (filled($data['region'] ?? null)) {
+            $countryQuery->whereRaw('LOWER(region) = ?', [Str::lower((string) $data['region'])]);
+        }
+
+        if (filled($data['language'] ?? null)) {
+            $countryQuery->whereRaw('LOWER(default_language_code) = ?', [Str::lower((string) $data['language'])]);
+        }
+    }
+
+    $countries = $countryQuery->orderBy('name')->pluck('iso_code')->filter()->map(fn ($iso) => strtoupper((string) $iso))->values()->all();
+
+    if ($countries === []) {
+        return back()->withInput()->withErrors(['countries' => 'Choose at least one country, region, or language group.']);
+    }
+
+    $keywords = collect(preg_split('/\r\n|\r|\n/', (string) ($data['custom_keywords_text'] ?? '')))
+        ->map(fn ($line) => trim((string) $line))
+        ->filter()
+        ->values()
+        ->all();
+
+    $parameters = [
+        'template_id' => $template?->id,
+        'template_name' => $template?->name ?: 'Custom SerpAPI search',
+        'focus' => $template?->focus ?: 'social_security',
+        'query_template' => trim((string) ($data['custom_query_template'] ?? '')) ?: ($template?->query_template ?: '"{country}" ({keywords})'),
+        'keywords' => $keywords !== [] ? $keywords : (array) ($template?->keywords ?? []),
+        'countries' => $countries,
+        'region' => $data['region'] ?? null,
+        'language' => $data['language'] ?? null,
+        'results_per_country' => (int) $data['results_per_country'],
+        'dry_run' => (bool) ($data['dry_run'] ?? true),
+        'capture' => (bool) ($data['capture'] ?? true),
+    ];
+
+    $run = SlsOperationRun::query()->create([
+        'operation_key' => 'serpapi_search',
+        'operation_name' => 'SerpAPI: ' . $parameters['template_name'],
+        'status' => 'queued',
+        'parameters' => $parameters,
+        'items' => [],
+        'summary' => [],
+        'dry_run' => (bool) $parameters['dry_run'],
+        'total_count' => count($countries),
+    ]);
+
+    $startOperationRun($run);
+
+    return redirect()->route('sls.serpapiSearches.index')->with('status', 'SerpAPI search run queued. Refresh this page to see results.');
+})->name('sls.serpapiSearches.run');
 
 Route::post('/sls/operations/bank-domain-guesser', function (Request $request) use ($startOperationRun) {
     $data = $request->validate([
