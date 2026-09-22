@@ -34,6 +34,7 @@ use Illuminate\Support\Facades\Schedule;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use App\Support\CountryUpdateClassifier;
+use App\Support\CountryUpdateDedupeRules;
 use App\Support\CountryUpdateNoiseRules;
 use App\Support\TitleLanguage;
 use Carbon\Carbon;
@@ -1564,43 +1565,6 @@ Artisan::command('sls:cleanup-aggregator-country-mismatches {--apply : Mark acti
 })->purpose('Reject Google/Bing news rows whose real source text does not mention the assigned country');
 
 Artisan::command('sls:cleanup-title-duplicates {--apply : Mark older active duplicate rows as rejected}', function () {
-    $sourceIdentity = function (CountryUpdate $update): string {
-        $sourceName = Str::lower((string) $update->source_name);
-
-        if (preg_match('/([a-z0-9][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)+\.[a-z]{2,})/i', $sourceName, $match) === 1) {
-            return preg_replace('/^www\./', '', Str::lower($match[1])) ?: Str::lower($match[1]);
-        }
-
-        $host = Str::lower((string) parse_url((string) $update->source_url, PHP_URL_HOST));
-        $host = preg_replace('/^www\./', '', $host) ?: $host;
-
-        return $host ?: $sourceName;
-    };
-
-    $titleKey = function (CountryUpdate $update): string {
-        $title = trim((string) ($update->title_english ?: $update->title ?: $update->title_original));
-        $title = Str::lower(Str::ascii($title));
-        $title = preg_replace('/\s+-\s+[a-z0-9][a-z0-9.-]+\.[a-z]{2,}\s*$/i', '', $title) ?? $title;
-        $title = preg_replace('/[^a-z0-9]+/', ' ', $title) ?? $title;
-
-        return trim($title);
-    };
-
-    $duplicateKey = function (CountryUpdate $update) use ($sourceIdentity, $titleKey): ?string {
-        $title = $titleKey($update);
-
-        if (Str::length($title) < 18) {
-            return null;
-        }
-
-        return implode('|', [
-            (string) $update->country_id,
-            $update->publication_date?->toDateString() ?: 'no-date',
-            $sourceIdentity($update),
-            $title,
-        ]);
-    };
-
     $updates = CountryUpdate::query()
         ->with('country:id,name,iso_code')
         ->where('review_status', '!=', 'rejected')
@@ -1614,16 +1578,27 @@ Artisan::command('sls:cleanup-title-duplicates {--apply : Mark older active dupl
         ->get();
 
     $groups = $updates
-        ->mapToGroups(function (CountryUpdate $update) use ($duplicateKey) {
-            $key = $duplicateKey($update);
+        ->mapToGroups(function (CountryUpdate $update) {
+            $sourceFingerprint = $update->source_fingerprint
+                ?: CountryUpdateDedupeRules::sourceFingerprint((string) $update->source_url);
+            $keys = collect();
 
-            return $key ? [$key => $update] : [];
+            if ($sourceFingerprint) {
+                $keys->push('source-fingerprint|' . $update->country_id . '|' . $sourceFingerprint);
+            }
+
+            return $keys
+                ->merge(CountryUpdateDedupeRules::semanticDuplicateKeys($update))
+                ->unique()
+                ->mapWithKeys(fn (string $key) => [$key => $update])
+                ->all();
         })
         ->filter(fn ($rows) => $rows->count() > 1);
 
     $duplicates = collect();
+    $duplicateIds = collect();
 
-    $groups->each(function ($rows) use (&$duplicates): void {
+    $groups->each(function ($rows) use (&$duplicates, &$duplicateIds): void {
         $keeper = $rows
             ->sortByDesc(fn (CountryUpdate $update) => sprintf(
                 '%010d-%010d',
@@ -1634,7 +1609,12 @@ Artisan::command('sls:cleanup-title-duplicates {--apply : Mark older active dupl
 
         $rows
             ->where('id', '!=', $keeper->id)
-            ->each(function (CountryUpdate $duplicate) use (&$duplicates, $keeper): void {
+            ->each(function (CountryUpdate $duplicate) use (&$duplicates, &$duplicateIds, $keeper): void {
+                if ($duplicateIds->contains($duplicate->id)) {
+                    return;
+                }
+
+                $duplicateIds->push($duplicate->id);
                 $duplicates->push([
                     'id' => $duplicate->id,
                     'keep_id' => $keeper->id,
@@ -1686,7 +1666,7 @@ Artisan::command('sls:cleanup-title-duplicates {--apply : Mark older active dupl
             ->update([
                 'review_status' => 'rejected',
                 'rejection_reason_code' => 'duplicate_title_source',
-                'rejection_reason' => 'Rejected by cleanup: duplicate title, country, publication date, and source identity. Newest matching row was kept.',
+                'rejection_reason' => 'Rejected by cleanup: duplicate source URL/fingerprint or duplicate normalized story title for the same country/date. Newest matching row was kept.',
                 'rejected_at' => $now,
                 'updated_at' => $now,
             ]);
@@ -1695,7 +1675,7 @@ Artisan::command('sls:cleanup-title-duplicates {--apply : Mark older active dupl
     $this->info('Rejected older duplicate rows: ' . $updated);
 
     return 0;
-})->purpose('Reject older active duplicates with the same country, normalized title, publication date, and source identity');
+})->purpose('Reject older active duplicates by canonical source URL or normalized story title/date/country');
 
 Artisan::command('sls:repair-news-aggregator-urls {--id= : Repair one country update id} {--limit=100 : Maximum rows to inspect} {--apply : Save repaired URLs and titles}', function () {
     $isGoogleNewsRssArticleUrl = function (string $url): bool {

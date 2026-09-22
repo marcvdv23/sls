@@ -8,6 +8,7 @@ use App\Models\CountryTopic;
 use App\Models\CountryUpdate;
 use App\Models\IntelligenceKeyword;
 use App\Models\IntelligenceSource;
+use App\Support\CountryUpdateDedupeRules;
 use App\Support\CountryUpdateNoiseRules;
 use App\Support\TitleLanguage;
 use Carbon\Carbon;
@@ -2336,7 +2337,7 @@ class CountryIntelligenceMonitor
     private function storeUpdate(Country $country, ?CountryTopic $topic, array $item): CountryUpdate
     {
         $sourceUrl = (string) $item['source_url'];
-        $fingerprint = $this->sourceFingerprint($sourceUrl);
+        $fingerprint = CountryUpdateDedupeRules::sourceFingerprint($sourceUrl);
 
         $existing = CountryUpdate::query()
             ->where('country_id', $country->id)
@@ -2398,13 +2399,11 @@ class CountryIntelligenceMonitor
 
     private function findSemanticDuplicate(Country $country, array $payload): ?CountryUpdate
     {
-        $titleKey = $this->semanticTitleKey((string) ($payload['title_english'] ?? $payload['title'] ?? ''));
+        $candidateKeys = CountryUpdateDedupeRules::semanticDuplicateKeys($payload + ['country_id' => $country->id]);
 
-        if (Str::length($titleKey) < 18) {
+        if ($candidateKeys === []) {
             return null;
         }
-
-        $sourceIdentity = $this->semanticSourceIdentity((string) ($payload['source_name'] ?? ''), (string) ($payload['source_url'] ?? ''));
 
         $query = CountryUpdate::query()
             ->where('country_id', $country->id)
@@ -2420,74 +2419,9 @@ class CountryIntelligenceMonitor
             ->orderByDesc('retrieved_at')
             ->orderByDesc('id')
             ->get()
-            ->first(fn (CountryUpdate $update) =>
-                $this->semanticTitleKey((string) ($update->title_english ?: $update->title ?: $update->title_original)) === $titleKey
-                && $this->semanticSourceIdentity((string) $update->source_name, (string) $update->source_url) === $sourceIdentity
-            );
-    }
-
-    private function semanticTitleKey(string $title): string
-    {
-        $title = Str::lower(Str::ascii(trim($title)));
-        $title = preg_replace('/\s+-\s+[a-z0-9][a-z0-9.-]+\.[a-z]{2,}\s*$/i', '', $title) ?? $title;
-        $title = preg_replace('/[^a-z0-9]+/', ' ', $title) ?? $title;
-
-        return trim($title);
-    }
-
-    private function semanticSourceIdentity(string $sourceName, string $sourceUrl): string
-    {
-        $sourceName = Str::lower($sourceName);
-
-        if (preg_match('/([a-z0-9][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)+\.[a-z]{2,})/i', $sourceName, $match) === 1) {
-            return preg_replace('/^www\./', '', Str::lower($match[1])) ?: Str::lower($match[1]);
-        }
-
-        $host = Str::lower((string) parse_url($sourceUrl, PHP_URL_HOST));
-        $host = preg_replace('/^www\./', '', $host) ?: $host;
-
-        return $host ?: $sourceName;
-    }
-
-    private function sourceFingerprint(string $url): ?string
-    {
-        $normalized = $this->normalizeSourceUrlForFingerprint($url);
-
-        return $normalized === '' ? null : hash('sha256', $normalized);
-    }
-
-    private function normalizeSourceUrlForFingerprint(string $url): string
-    {
-        $url = trim(html_entity_decode($url, ENT_QUOTES | ENT_HTML5, 'UTF-8'));
-
-        if ($url === '') {
-            return '';
-        }
-
-        $parts = parse_url($url);
-
-        if (! is_array($parts) || blank($parts['host'] ?? null)) {
-            return Str::lower(rtrim($url, "/ \t\n\r\0\x0B"));
-        }
-
-        $scheme = Str::lower((string) ($parts['scheme'] ?? 'https'));
-        $host = Str::lower((string) $parts['host']);
-        $host = preg_replace('/^www\./', '', $host) ?: $host;
-        $path = '/' . ltrim((string) ($parts['path'] ?? ''), '/');
-        $path = rtrim($path, '/') ?: '/';
-
-        $queryString = '';
-        if (filled($parts['query'] ?? null)) {
-            parse_str((string) $parts['query'], $query);
-            $dropKeys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'fbclid', 'gclid', 'mc_cid', 'mc_eid', 'oc', 'cid'];
-            foreach ($dropKeys as $key) {
-                unset($query[$key]);
-            }
-            ksort($query);
-            $queryString = http_build_query($query);
-        }
-
-        return $scheme . '://' . $host . $path . ($queryString !== '' ? '?' . $queryString : '');
+            ->first(function (CountryUpdate $update) use ($candidateKeys) {
+                return array_intersect($candidateKeys, CountryUpdateDedupeRules::semanticDuplicateKeys($update)) !== [];
+            });
     }
 
     private function storeMonitorRun(Country $country, string $focus, array $sourcesChecked, int $itemsFound, Carbon $startedAt): CountryMonitorRun

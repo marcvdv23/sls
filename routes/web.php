@@ -61,6 +61,7 @@ use App\Services\TenderAwardLookupService;
 use App\Services\UniversityMarketCrawlerService;
 use App\Services\UniversitySurveyCrawlerService;
 use App\Support\CountryUpdateClassifier;
+use App\Support\CountryUpdateDedupeRules;
 use App\Support\CountryUpdateNoiseRules;
 use App\Support\SocialSecurityAdminNameCleaner;
 use App\Support\TitleLanguage;
@@ -2840,42 +2841,6 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
         ->keyBy(fn (Country $country) => strtoupper((string) $country->iso_code));
     $countryIds = $dbCountries->pluck('id')->all();
     $hasTenderSignal = fn (CountryUpdate $update): bool => CountryUpdateClassifier::isTender($update);
-    $dedupeSourceIdentity = function (CountryUpdate $update): string {
-        $sourceName = Str::lower((string) $update->source_name);
-
-        if (preg_match('/([a-z0-9][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)+\.[a-z]{2,})/i', $sourceName, $match) === 1) {
-            return preg_replace('/^www\./', '', Str::lower($match[1])) ?: Str::lower($match[1]);
-        }
-
-        $host = Str::lower((string) parse_url((string) $update->source_url, PHP_URL_HOST));
-        $host = preg_replace('/^www\./', '', $host) ?: $host;
-
-        return $host ?: $sourceName;
-    };
-    $dedupeTitleKey = function (CountryUpdate $update): string {
-        $title = trim((string) ($update->title_english ?: $update->title ?: $update->title_original));
-        $title = Str::lower(Str::ascii($title));
-        $title = preg_replace('/\s+-\s+[a-z0-9][a-z0-9.-]+\.[a-z]{2,}\s*$/i', '', $title) ?? $title;
-        $title = preg_replace('/[^a-z0-9]+/', ' ', $title) ?? $title;
-
-        return trim($title);
-    };
-    $reviewDuplicateKey = function (CountryUpdate $update) use ($dedupeSourceIdentity, $dedupeTitleKey): string {
-        $titleKey = $dedupeTitleKey($update);
-
-        if (Str::length($titleKey) < 18) {
-            return filled($update->source_url) ? 'url:' . Str::lower($update->source_url) : 'update:' . $update->id;
-        }
-
-        return implode('|', [
-            'story',
-            (string) $update->country_id,
-            $update->publication_date?->toDateString() ?: 'no-date',
-            $dedupeSourceIdentity($update),
-            $titleKey,
-        ]);
-    };
-
     $filteredUpdates = CountryUpdate::query()
         ->with(['country', 'journalistArticles.journalist'])
         ->when($activeStatusFilter === 'rejected', fn ($query) => $query->where('review_status', 'rejected'))
@@ -2911,7 +2876,7 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
         ->when($focus !== 'all', fn ($updates) => $updates->filter(fn (CountryUpdate $update) => $update->inferred_focus === $focus))
         ->when(in_array($activeTypeFilter, ['tenders', 'news'], true), fn ($updates) => $updates->filter(fn (CountryUpdate $update) => $activeTypeFilter === 'tenders' ? $hasTenderSignal($update) : ! $hasTenderSignal($update)))
         ->when($activeStatusFilter !== 'rejected', fn ($updates) => $updates->filter(fn (CountryUpdate $update) => ! CountryUpdateNoiseRules::isStaticReferenceUrl((string) $update->source_url)))
-        ->unique($reviewDuplicateKey)
+        ->unique(fn (CountryUpdate $update) => CountryUpdateDedupeRules::reviewDuplicateKey($update))
         ->sortBy([
             fn (CountryUpdate $update) => -1 * ($update->retrieved_at?->timestamp ?? 0),
             fn (CountryUpdate $update) => -1 * ($update->publication_date?->timestamp ?? 0),
