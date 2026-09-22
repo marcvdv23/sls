@@ -4931,20 +4931,41 @@ Route::get('/sls/organizations/crawler-results', function (Request $request) use
 })->name('sls.organizations.crawlerResults');
 
 Route::get('/sls/organizations/crawlers', function () use ($seedMarketCrawlers) {
-    $seedMarketCrawlers();
+    try {
+        abort_unless(Schema::hasTable('market_crawlers'), 503, 'Crawler tables have not been migrated yet.');
 
-    $crawler = MarketCrawler::query()
-        ->where('is_enabled', true)
-        ->orderBy('id')
-        ->first()
-        ?: MarketCrawler::query()->orderBy('id')->first();
+        $seedMarketCrawlers();
 
-    abort_unless($crawler, 404, 'No crawlers are configured yet.');
+        $crawler = MarketCrawler::query()
+            ->where('is_enabled', true)
+            ->orderBy('id')
+            ->first()
+            ?: MarketCrawler::query()->orderBy('id')->first();
 
-    return redirect()->route('sls.organizations.crawlers.show', $crawler);
+        if (! $crawler) {
+            return response()->view('sls.organizations.crawler-error', [
+                'title' => 'No crawlers are configured yet',
+                'message' => 'The crawler table exists, but no crawler records were found.',
+                'crawlerId' => null,
+                'exception' => null,
+            ], 404);
+        }
+
+        return redirect()->route('sls.organizations.crawlers.show', $crawler);
+    } catch (\Throwable $exception) {
+        report($exception);
+
+        return response()->view('sls.organizations.crawler-error', [
+            'title' => 'Crawler page could not load',
+            'message' => 'SLS could not prepare the crawler landing page.',
+            'crawlerId' => null,
+            'exception' => $exception,
+        ], 500);
+    }
 })->name('sls.organizations.crawlers.index');
 
 Route::get('/sls/organizations/crawlers/{crawler}', function (Request $request, string $crawler, UniversityMarketCrawlerService $universityCrawlerService) use ($marketCrawlerTypes, $seedMarketCrawlers, $sanctionedCountryIsos, $blockedOrganizationStatuses) {
+    try {
     $seedMarketCrawlers();
 
     abort_unless(Schema::hasTable('market_crawlers'), 503, 'Crawler tables have not been migrated yet.');
@@ -5116,6 +5137,16 @@ Route::get('/sls/organizations/crawlers/{crawler}', function (Request $request, 
         'crawlPreview' => $crawlPreview,
         'crawlPreviewFilters' => $crawlPreviewFilters,
     ]);
+    } catch (\Throwable $exception) {
+        report($exception);
+
+        return response()->view('sls.organizations.crawler-error', [
+            'title' => 'Crawler page could not load',
+            'message' => 'SLS found the crawler route, but failed while building the crawler dashboard data.',
+            'crawlerId' => is_scalar($crawler) ? (string) $crawler : null,
+            'exception' => $exception,
+        ], 500);
+    }
 })->name('sls.organizations.crawlers.show');
 
 Route::post('/sls/organizations/crawlers/{crawler}/discovery', function (Request $request, MarketCrawler $crawler, UniversityMarketCrawlerService $service) {
