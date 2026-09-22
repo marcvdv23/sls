@@ -231,15 +231,17 @@ class SerpApiSearchService
     private function settingString(string $key, mixed $default = ''): string
     {
         $value = CrawlerSetting::query()->where('setting_key', $key)->value('setting_value');
+        $value = trim((string) ($value ?? ''));
 
-        return (string) ($value ?? $default);
+        return $value !== '' ? $value : (string) $default;
     }
 
     private function settingBoolean(string $key, mixed $default = false): bool
     {
         $value = CrawlerSetting::query()->where('setting_key', $key)->value('setting_value');
+        $value = trim((string) ($value ?? ''));
 
-        if ($value === null) {
+        if ($value === '') {
             return (bool) $default;
         }
 
