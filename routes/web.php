@@ -4944,8 +4944,19 @@ Route::get('/sls/organizations/crawlers', function () use ($seedMarketCrawlers) 
     return redirect()->route('sls.organizations.crawlers.show', $crawler);
 })->name('sls.organizations.crawlers.index');
 
-Route::get('/sls/organizations/crawlers/{crawler}', function (Request $request, MarketCrawler $crawler, UniversityMarketCrawlerService $universityCrawlerService) use ($marketCrawlerTypes, $seedMarketCrawlers, $sanctionedCountryIsos, $blockedOrganizationStatuses) {
+Route::get('/sls/organizations/crawlers/{crawler}', function (Request $request, string $crawler, UniversityMarketCrawlerService $universityCrawlerService) use ($marketCrawlerTypes, $seedMarketCrawlers, $sanctionedCountryIsos, $blockedOrganizationStatuses) {
     $seedMarketCrawlers();
+
+    abort_unless(Schema::hasTable('market_crawlers'), 503, 'Crawler tables have not been migrated yet.');
+
+    $crawler = MarketCrawler::query()->whereKey($crawler)->first();
+
+    if (! $crawler) {
+        return redirect()
+            ->route('sls.organizations.crawlers.index')
+            ->with('status', 'That crawler no longer exists. Showing the first configured crawler instead.');
+    }
+
     $crawler->refresh();
     $since = now()->subDays(5);
 
