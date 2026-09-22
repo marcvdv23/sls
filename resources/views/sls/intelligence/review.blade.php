@@ -203,38 +203,6 @@
                 @endif
                 <p class="muted">This country search is filtering the Review Desk table below, so the same review, source, journalist, favorite, and mapping actions remain available on each row.</p>
 
-                <div>
-                    <p class="eyebrow">Monitor Runs</p>
-                    <h2>Recent checks for matched countries</h2>
-                </div>
-                <div class="table-wrap">
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Country</th>
-                                <th>Focus</th>
-                                <th>Status</th>
-                                <th>Items found</th>
-                                <th>Finished (Austin time)</th>
-                                <th>Sources checked</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @forelse ($countrySearchRuns as $run)
-                                <tr>
-                                    <td>{{ $run->country?->name }}</td>
-                                    <td>{{ $focuses[$run->focus]['label'] ?? $run->focus }}</td>
-                                    <td><span class="pill {{ $run->status === 'completed' ? 'good' : 'warn' }}">{{ $run->status }}</span></td>
-                                    <td>{{ $run->items_found }}</td>
-                                    <td>{{ $run->finished_at?->copy()->timezone($austinTz)->format('Y-m-d H:i') ?: 'Not finished' }}</td>
-                                    <td class="muted">{{ collect($run->sources_checked)->take(8)->implode(', ') ?: 'Not recorded' }}</td>
-                                </tr>
-                            @empty
-                                <tr><td colspan="6" class="muted">No monitor runs recorded yet for this country search.</td></tr>
-                            @endforelse
-                        </tbody>
-                    </table>
-                </div>
             @endif
         </section>
         <section class="panel stack">
@@ -486,6 +454,43 @@
                 </nav>
             </div>
         </section>
+        @if ($countrySearchQuery !== '')
+            <section class="panel stack">
+                <div>
+                    <p class="eyebrow">Monitor Runs</p>
+                    <h2>Recent checks for matched countries</h2>
+                    <p class="muted">Use this diagnostic section only when you want to see where the country-search results came from.</p>
+                </div>
+                <div class="table-wrap">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Country</th>
+                                <th>Focus</th>
+                                <th>Status</th>
+                                <th>Items found</th>
+                                <th>Finished (Austin time)</th>
+                                <th>Sources checked</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @forelse ($countrySearchRuns as $run)
+                                <tr>
+                                    <td>{{ $run->country?->name }}</td>
+                                    <td>{{ $focuses[$run->focus]['label'] ?? $run->focus }}</td>
+                                    <td><span class="pill {{ $run->status === 'completed' ? 'good' : 'warn' }}">{{ $run->status }}</span></td>
+                                    <td>{{ $run->items_found }}</td>
+                                    <td>{{ $run->finished_at?->copy()->timezone($austinTz)->format('Y-m-d H:i') ?: 'Not finished' }}</td>
+                                    <td class="muted">{{ collect($run->sources_checked)->take(8)->implode(', ') ?: 'Not recorded' }}</td>
+                                </tr>
+                            @empty
+                                <tr><td colspan="6" class="muted">No monitor runs recorded yet for this country search.</td></tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        @endif
     </div>
 @endsection
 
