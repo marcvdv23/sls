@@ -16,7 +16,7 @@
         .serp-form .span-12 { grid-column: span 12; }
         .serp-form textarea { min-height: 96px; }
         .serp-form textarea.keyword-additions { min-height: 84px; }
-        .serp-keyword-select { width: 100%; min-width: 0; }
+        .serp-keyword-select { min-height: 240px; width: 100%; min-width: 0; }
         .serp-country-select { width: 100%; min-width: 0; }
         .serp-country-count { display: block; margin-top: 3px; }
         .check-row { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
@@ -161,15 +161,15 @@
                                 <input name="custom_query_template" value="{{ old('custom_query_template') }}" placeholder='"{country}" ({keywords}) (tender OR RFP OR procurement OR "expression of interest")'>
                                 <span class="muted small">Placeholders: <code>{country}</code>, <code>{iso}</code>, <code>{keywords}</code>. Leave blank to use the saved template.</span>
                             </label>
-                            <label class="span-6">Search mode
+                            <label class="span-12">Search mode
                                 <select name="keyword_search_mode">
                                     <option value="per_keyword" @selected(old('keyword_search_mode', 'per_keyword') === 'per_keyword')>Separate search for each selected keyword</option>
                                     <option value="grouped" @selected(old('keyword_search_mode') === 'grouped')>One grouped OR search per country</option>
                                 </select>
                                 <span class="muted small">Separate searches are cleaner; grouped searches use fewer API calls.</span>
                             </label>
-                            <label class="span-6">Predefined keywords
-                                <select class="serp-keyword-select" name="predefined_keywords[]" multiple size="10">
+                            <label class="span-12">Predefined keywords
+                                <select class="serp-keyword-select" name="predefined_keywords[]" multiple size="12">
                                     @foreach (($defaultKeywords ?? []) as $keyword)
                                         <option value="{{ $keyword }}" @selected(in_array($keyword, $selectedPredefinedKeywords, true))>{{ $keyword }}</option>
                                     @endforeach
