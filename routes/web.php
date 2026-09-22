@@ -61,6 +61,7 @@ use App\Services\TenderAwardLookupService;
 use App\Services\UniversityMarketCrawlerService;
 use App\Services\UniversitySurveyCrawlerService;
 use App\Support\CountryUpdateClassifier;
+use App\Support\CountryUpdateNoiseRules;
 use App\Support\SocialSecurityAdminNameCleaner;
 use App\Support\TitleLanguage;
 use Carbon\Carbon;
@@ -2909,6 +2910,7 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
         })
         ->when($focus !== 'all', fn ($updates) => $updates->filter(fn (CountryUpdate $update) => $update->inferred_focus === $focus))
         ->when(in_array($activeTypeFilter, ['tenders', 'news'], true), fn ($updates) => $updates->filter(fn (CountryUpdate $update) => $activeTypeFilter === 'tenders' ? $hasTenderSignal($update) : ! $hasTenderSignal($update)))
+        ->when($activeStatusFilter !== 'rejected', fn ($updates) => $updates->filter(fn (CountryUpdate $update) => ! CountryUpdateNoiseRules::isStaticReferenceUrl((string) $update->source_url)))
         ->unique($reviewDuplicateKey)
         ->sortBy([
             fn (CountryUpdate $update) => -1 * ($update->retrieved_at?->timestamp ?? 0),

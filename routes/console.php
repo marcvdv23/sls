@@ -1377,16 +1377,12 @@ Artisan::command('sls:cleanup-static-profile-updates {--apply : Mark active stat
         ->with('country:id,name,iso_code')
         ->where('review_status', '!=', 'rejected')
         ->whereNotNull('source_url')
-        ->where(function ($query) {
-            $query->where('source_name', 'like', '%Google News%')
-                ->orWhere('source_name', 'like', '%Bing News%');
-        })
         ->orderBy('id')
         ->chunkById(500, function ($updates) use (&$candidates, &$scanned): void {
             foreach ($updates as $update) {
                 $scanned++;
 
-                if (! CountryUpdateNoiseRules::isStaticReferenceAggregatorItem($update)) {
+                if (! CountryUpdateNoiseRules::isStaticReferenceUrl((string) $update->source_url)) {
                     continue;
                 }
 
@@ -1402,7 +1398,7 @@ Artisan::command('sls:cleanup-static-profile-updates {--apply : Mark active stat
             }
         });
 
-    $this->info('Active aggregator rows scanned: ' . $scanned);
+    $this->info('Active rows with source URLs scanned: ' . $scanned);
     $this->info('Static profile/listing rows found: ' . $candidates->count());
 
     $candidates
@@ -1440,7 +1436,7 @@ Artisan::command('sls:cleanup-static-profile-updates {--apply : Mark active stat
             ->update([
                 'review_status' => 'rejected',
                 'rejection_reason_code' => 'static_reference_page',
-                'rejection_reason' => 'Rejected by cleanup: news aggregator returned a static country profile/listing page instead of a current story or tender.',
+                'rejection_reason' => 'Rejected by cleanup: source URL points to a static country profile/listing page instead of a current story or tender.',
                 'rejected_at' => $now,
                 'updated_at' => $now,
             ]);
@@ -1449,7 +1445,7 @@ Artisan::command('sls:cleanup-static-profile-updates {--apply : Mark active stat
     $this->info('Rejected static profile/listing rows: ' . $updated);
 
     return 0;
-})->purpose('Reject active aggregator captures that point to static country profile/listing pages');
+})->purpose('Reject active captures that point to static country profile/listing pages');
 
 Artisan::command('sls:cleanup-aggregator-country-mismatches {--apply : Mark active news aggregator rows as rejected when their real title/source text does not mention the assigned country}', function () {
     $countryConfigs = collect(config('country_intelligence.monitored_countries', []))
