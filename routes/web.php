@@ -2006,7 +2006,7 @@ $startOperationRun = function (SlsOperationRun $run): void {
 
 $serpApiSearchState = function () {
     $defaultSerpApiKeywords = [
-        'payroll',
+        'payroll software',
         'social security administration software',
         'pension administration software',
         'contributions management software',
