@@ -15,6 +15,8 @@
         .serp-form .span-6 { grid-column: span 6; }
         .serp-form .span-12 { grid-column: span 12; }
         .serp-form textarea { min-height: 96px; }
+        .serp-form textarea.keyword-list { min-height: 180px; }
+        .serp-form textarea.keyword-additions { min-height: 84px; }
         .serp-country-select { width: 100%; min-width: 0; }
         .serp-country-count { display: block; margin-top: 3px; }
         .check-row { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
@@ -155,11 +157,15 @@
                                 <span class="muted small serp-country-count" data-serp-country-count></span>
                             </label>
                             <label class="span-12">Custom query template
-                                <input name="custom_query_template" value="{{ old('custom_query_template') }}" placeholder='"{country}" ({keywords}) tender OR RFP'>
+                                <input name="custom_query_template" value="{{ old('custom_query_template') }}" placeholder='"{country}" ({keywords}) (tender OR RFP OR procurement OR "expression of interest")'>
                                 <span class="muted small">Placeholders: <code>{country}</code>, <code>{iso}</code>, <code>{keywords}</code>. Leave blank to use the saved template.</span>
                             </label>
-                            <label class="span-12">Custom keywords, one per line
-                                <textarea name="custom_keywords_text" placeholder="social insurance software tender&#10;pension administration system RFP&#10;beneficiary registry procurement">{{ old('custom_keywords_text') }}</textarea>
+                            <label class="span-12">Predefined keywords, editable
+                                <textarea class="keyword-list" name="predefined_keywords_text">{{ old('predefined_keywords_text', $defaultKeywordText ?? '') }}</textarea>
+                                <span class="muted small">Edit this list before running. SLS searches these as alternatives, not as one exact phrase.</span>
+                            </label>
+                            <label class="span-12">Add your own keywords, one per line
+                                <textarea class="keyword-additions" name="custom_keywords_text" placeholder="country-specific term&#10;product synonym&#10;donor phrase">{{ old('custom_keywords_text') }}</textarea>
                             </label>
                             <div class="span-12 check-row">
                                 <input type="hidden" name="dry_run" value="0">

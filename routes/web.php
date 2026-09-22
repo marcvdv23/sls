@@ -2003,6 +2003,38 @@ $startOperationRun = function (SlsOperationRun $run): void {
 };
 
 $serpApiSearchState = function () {
+    $defaultSerpApiKeywords = [
+        'payroll',
+        'position budgeting software',
+        'recruitment software',
+        'applicant tracking software',
+        'time attendance software',
+        'scheduling software',
+        'rostering software',
+        'leave management software',
+        'HRMS',
+        'HRIS',
+        'human resources management software',
+        'HCM',
+        'human capital management software',
+        'benefits administration software',
+        'talent management software',
+        'career planning software',
+        'competency management software',
+        'succession planning software',
+        'grants management software',
+        'disciplinary actions management software',
+        'health & safety management software',
+        'parking space management software',
+        'office space management software',
+        'employee ID card management software',
+        'global payroll software',
+        'pensioner payroll software',
+        'onboarding management software',
+        'offboarding management software',
+        'employee self-service portal software',
+    ];
+
     try {
         $templatesTableReady = Schema::hasTable('serpapi_search_templates');
     } catch (Throwable $exception) {
@@ -2025,16 +2057,10 @@ $serpApiSearchState = function () {
     try {
         if (SerpApiSearchTemplate::query()->count() === 0) {
             SerpApiSearchTemplate::query()->create([
-                'name' => 'Social insurance software tenders and RFPs',
-                'focus' => 'social_security',
-                'query_template' => '"{country}" ({keywords})',
-                'keywords' => [
-                    'social insurance software tender',
-                    'social security management information system RFP',
-                    'pension administration system procurement',
-                    'beneficiary registry tender',
-                    'contribution collection system procurement',
-                ],
+                'name' => 'HR, payroll, and HCM software tenders',
+                'focus' => 'hrms_tenders',
+                'query_template' => '"{country}" ({keywords}) (tender OR RFP OR procurement OR "expression of interest")',
+                'keywords' => $defaultSerpApiKeywords,
                 'results_per_country' => 10,
                 'is_enabled' => true,
             ]);
@@ -2084,6 +2110,7 @@ $serpApiSearchState = function () {
                 'pt' => 'Portuguese',
                 'ar' => 'Arabic',
             ],
+            'defaultKeywordText' => implode("\n", $defaultSerpApiKeywords),
             'monthlyStats' => $monthlyStats,
             'recentRuns' => $recentRuns->take(10)->values(),
             'migrationMissing' => false,
@@ -2138,6 +2165,7 @@ Route::post('/sls/serpapi-searches/run', function (Request $request) use ($start
     $data = $request->validate([
         'template_id' => ['nullable', 'integer', 'exists:serpapi_search_templates,id'],
         'custom_query_template' => ['nullable', 'string', 'max:2000'],
+        'predefined_keywords_text' => ['nullable', 'string', 'max:10000'],
         'custom_keywords_text' => ['nullable', 'string', 'max:5000'],
         'countries' => ['array'],
         'countries.*' => ['string', 'max:10'],
@@ -2171,9 +2199,26 @@ Route::post('/sls/serpapi-searches/run', function (Request $request) use ($start
         return back()->withInput()->withErrors(['countries' => 'Choose at least one country, region, or language group.']);
     }
 
-    $keywords = collect(preg_split('/\r\n|\r|\n/', (string) ($data['custom_keywords_text'] ?? '')))
+    $keywordLines = function (?string $text) {
+        return collect(preg_split('/\r\n|\r|\n/', (string) $text))
+            ->map(fn ($line) => trim((string) $line))
+            ->filter()
+            ->values();
+    };
+
+    $predefinedKeywords = $keywordLines($data['predefined_keywords_text'] ?? '');
+    $customKeywords = $keywordLines($data['custom_keywords_text'] ?? '');
+    $keywords = $predefinedKeywords
+        ->merge($customKeywords)
         ->map(fn ($line) => trim((string) $line))
         ->filter()
+        ->unique(fn ($line) => Str::lower($line))
+        ->values()
+        ->all();
+    $templateKeywords = collect((array) ($template?->keywords ?? []))
+        ->map(fn ($line) => trim((string) $line))
+        ->filter()
+        ->unique(fn ($line) => Str::lower($line))
         ->values()
         ->all();
 
@@ -2181,8 +2226,10 @@ Route::post('/sls/serpapi-searches/run', function (Request $request) use ($start
         'template_id' => $template?->id,
         'template_name' => $template?->name ?: 'Custom SerpAPI search',
         'focus' => $template?->focus ?: 'social_security',
-        'query_template' => trim((string) ($data['custom_query_template'] ?? '')) ?: ($template?->query_template ?: '"{country}" ({keywords})'),
-        'keywords' => $keywords !== [] ? $keywords : (array) ($template?->keywords ?? []),
+        'query_template' => trim((string) ($data['custom_query_template'] ?? '')) ?: ($template?->query_template ?: '"{country}" ({keywords}) (tender OR RFP OR procurement OR "expression of interest")'),
+        'keywords' => $keywords !== [] ? $keywords : $templateKeywords,
+        'predefined_keywords' => $predefinedKeywords->all(),
+        'custom_keywords' => $customKeywords->all(),
         'countries' => $countries,
         'region' => $data['region'] ?? null,
         'language' => $data['language'] ?? null,
