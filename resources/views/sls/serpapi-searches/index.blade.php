@@ -15,6 +15,7 @@
         .serp-form .span-6 { grid-column: span 6; }
         .serp-form .span-12 { grid-column: span 12; }
         .serp-form textarea { min-height: 96px; }
+        .serp-country-select { width: 100%; min-width: 0; }
         .check-row { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
         .check-row label { display: inline-flex; flex-direction: row; align-items: center; gap: 7px; }
         .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
@@ -97,8 +98,8 @@
                                     @endforeach
                                 </select>
                             </label>
-                            <label class="span-9">Specific countries
-                                <select name="countries[]" multiple size="8">
+                            <label class="span-12">Specific countries
+                                <select class="serp-country-select" name="countries[]" multiple size="8">
                                     @foreach ($countries as $country)
                                         <option value="{{ $country['iso_code'] }}" @selected(in_array($country['iso_code'], old('countries', []), true))>
                                             {{ $country['name'] }} ({{ $country['iso_code'] }}) - {{ $country['region'] }}{{ $country['language'] ? ' / ' . strtoupper($country['language']) : '' }}
