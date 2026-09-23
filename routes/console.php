@@ -391,6 +391,29 @@ Artisan::command('sls:run-operation {operation_run_id}', function (BankDomainGue
     }
 })->purpose('Run a saved SLS operation and record progress for the web runner');
 
+Artisan::command('sls:cleanup-serpapi-search-runs {--days=31 : Delete SerpAPI run history older than this many days} {--apply : Delete matching run history}', function () {
+    $days = max(1, (int) $this->option('days'));
+    $cutoff = now()->subDays($days);
+    $query = SlsOperationRun::query()
+        ->where('operation_key', 'serpapi_search')
+        ->where('created_at', '<', $cutoff);
+
+    $count = (clone $query)->count();
+
+    $this->line('SerpAPI search runs older than ' . $days . ' day(s): ' . $count);
+
+    if (! $this->option('apply')) {
+        $this->warn('Dry run only. Re-run with --apply to delete old SerpAPI run history.');
+
+        return 0;
+    }
+
+    $deleted = $query->delete();
+    $this->info('Deleted old SerpAPI search runs: ' . $deleted);
+
+    return 0;
+})->purpose('Discard old SerpAPI search triage history after the retention period');
+
 Artisan::command('sls:crawler-discovery-pilot {crawler_id} {--country= : Optional country name or ISO code} {--organizations=10 : Number of organizations} {--calls=10 : Maximum SerpAPI calls} {--results=5 : Results per query} {--batch-id= : Existing market_crawler_runs batch row to update} {--organization-ids= : Comma-separated staged organization IDs}', function (UniversityMarketCrawlerService $service) {
     $crawler = MarketCrawler::query()->findOrFail((int) $this->argument('crawler_id'));
     $crawlerProfile = $service->profile($crawler);
@@ -2153,6 +2176,16 @@ $crawlerSetting = function (string $key, mixed $default = null): mixed {
 Schedule::command('sls:backup-local')
     ->name('sls-local-backup-daily')
     ->dailyAt((string) $crawlerSetting('daily_backup_time', env('SLS_DAILY_BACKUP_TIME', '03:00')))
+    ->timezone((string) $crawlerSetting('daily_backup_timezone', env('SLS_DAILY_BACKUP_TIMEZONE', 'America/Chicago')))
+    ->withoutOverlapping()
+    ->onOneServer();
+
+Schedule::command('sls:cleanup-serpapi-search-runs', [
+    '--days' => (int) $crawlerSetting('serpapi_search_retention_days', env('SLS_SERPAPI_SEARCH_RETENTION_DAYS', 31)),
+    '--apply' => true,
+])
+    ->name('sls-serpapi-search-cleanup-daily')
+    ->dailyAt((string) $crawlerSetting('serpapi_search_cleanup_time', env('SLS_SERPAPI_SEARCH_CLEANUP_TIME', '03:45')))
     ->timezone((string) $crawlerSetting('daily_backup_timezone', env('SLS_DAILY_BACKUP_TIMEZONE', 'America/Chicago')))
     ->withoutOverlapping()
     ->onOneServer();

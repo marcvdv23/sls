@@ -151,6 +151,47 @@ class SerpApiSearchService
         return $summary + ['items' => $items];
     }
 
+    /**
+     * @return array{status: string, country_update_id: int|null}
+     */
+    public function promoteResultToReviewDesk(array $item, array $parameters = []): array
+    {
+        if (! empty($item['country_update_id'])) {
+            return ['status' => 'duplicate', 'country_update_id' => (int) $item['country_update_id']];
+        }
+
+        $country = null;
+        if (! empty($item['country_id'])) {
+            $country = Country::query()->find((int) $item['country_id']);
+        }
+
+        if (! $country && ! empty($item['iso_code'])) {
+            $country = Country::query()
+                ->whereRaw('UPPER(iso_code) = ?', [Str::upper((string) $item['iso_code'])])
+                ->first();
+        }
+
+        if (! $country) {
+            throw new \RuntimeException('Cannot promote this result because its country could not be resolved.');
+        }
+
+        $title = trim((string) ($item['title'] ?? ''));
+        $sourceUrl = trim((string) ($item['source_url'] ?? ''));
+
+        if ($title === '' || $sourceUrl === '') {
+            throw new \RuntimeException('Cannot promote this result because it is missing a title or source URL.');
+        }
+
+        $sourceName = trim((string) ($item['source_name'] ?? parse_url($sourceUrl, PHP_URL_HOST) ?: 'SerpAPI result'));
+        $snippet = trim((string) ($item['snippet'] ?? ''));
+        $focus = (string) ($parameters['focus'] ?? 'social_security');
+        $publicationDate = ! empty($item['publication_date'])
+            ? (string) $item['publication_date']
+            : null;
+
+        return $this->captureCountryUpdate($country, $focus, $title, $sourceName, $sourceUrl, $snippet, $publicationDate);
+    }
+
     private function buildQuery(string $template, array $keywords, Country $country): string
     {
         $keywordsText = collect($keywords)->map(fn (string $keyword) => '"' . $keyword . '"')->implode(' OR ');

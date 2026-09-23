@@ -58,6 +58,7 @@ use App\Services\IntelligenceSourceCheckerService;
 use App\Services\JournalistDiscoveryService;
 use App\Services\SourceContactExtractionService;
 use App\Services\SocialSecurityAdminDocumentService;
+use App\Services\SerpApiSearchService;
 use App\Services\TenderAwardLookupService;
 use App\Services\UniversityMarketCrawlerService;
 use App\Services\UniversitySurveyCrawlerService;
@@ -2317,6 +2318,45 @@ Route::post('/sls/serpapi-searches/runs/{run}/rerun', function (SlsOperationRun 
         ->route('sls.serpapiSearches.index')
         ->with('status', 'SerpAPI search rerun queued from run #' . $run->id . '. Refresh this page to see results.');
 })->name('sls.serpapiSearches.rerun');
+
+Route::post('/sls/serpapi-searches/runs/{run}/items/{itemIndex}/promote', function (SlsOperationRun $run, int $itemIndex, SerpApiSearchService $serpApiSearch) {
+    abort_unless($run->operation_key === 'serpapi_search', 404);
+
+    $items = array_values((array) ($run->items ?? []));
+    if (! array_key_exists($itemIndex, $items)) {
+        return redirect()
+            ->route('sls.serpapiSearches.index', ['run_id' => $run->id])
+            ->withErrors(['promote' => 'That SerpAPI result could not be found in this run.']);
+    }
+
+    try {
+        $result = $serpApiSearch->promoteResultToReviewDesk($items[$itemIndex], $run->parameters ?? []);
+    } catch (Throwable $exception) {
+        return redirect()
+            ->route('sls.serpapiSearches.index', ['run_id' => $run->id])
+            ->withErrors(['promote' => $exception->getMessage()]);
+    }
+
+    $items[$itemIndex]['status'] = $result['status'] === 'captured' ? 'promoted' : $result['status'];
+    $items[$itemIndex]['country_update_id'] = $result['country_update_id'];
+    $items[$itemIndex]['promoted_at'] = now()->toDateTimeString();
+
+    $summary = $run->summary ?? [];
+    if ($result['status'] === 'captured') {
+        $summary['promoted'] = (int) ($summary['promoted'] ?? 0) + 1;
+    }
+
+    $run->forceFill([
+        'items' => $items,
+        'summary' => $summary,
+    ])->save();
+
+    return redirect()
+        ->route('sls.serpapiSearches.index', ['run_id' => $run->id])
+        ->with('status', $result['status'] === 'captured'
+            ? 'SerpAPI finding promoted to the Review Desk as #' . str_pad((string) $result['country_update_id'], 5, '0', STR_PAD_LEFT) . '.'
+            : 'This SerpAPI finding is already in the Review Desk as #' . str_pad((string) $result['country_update_id'], 5, '0', STR_PAD_LEFT) . '.');
+})->name('sls.serpapiSearches.promote');
 
 Route::post('/sls/operations/bank-domain-guesser', function (Request $request) use ($startOperationRun) {
     $data = $request->validate([

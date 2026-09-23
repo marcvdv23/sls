@@ -25,6 +25,7 @@
         .run-card { display: grid; gap: 8px; }
         .run-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
         .inline-form { display: inline; }
+        .cell-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
         .result-table { min-width: 1100px; }
         .result-table td { vertical-align: top; }
         .muted.small { font-size: 12px; }
@@ -334,7 +335,8 @@
                         <p class="muted">
                             {{ number_format((int) ($latestSummary['results'] ?? 0)) }} kept,
                             {{ number_format((int) ($latestSummary['filtered_out'] ?? 0)) }} filtered,
-                            {{ number_format((int) ($latestSummary['captured'] ?? 0)) }} captured.
+                            {{ number_format((int) ($latestSummary['captured'] ?? 0)) }} captured,
+                            {{ number_format((int) ($latestSummary['promoted'] ?? 0)) }} promoted.
                             Filtered rows are shown here for transparency and are not added to the Review Desk.
                         </p>
                     </div>
@@ -376,7 +378,15 @@
                                             @if (! empty($item['country_update_id']))
                                                 <a href="{{ route('sls.intelligence.updates.sourcePage', $item['country_update_id']) }}">Open #{{ str_pad((string) $item['country_update_id'], 5, '0', STR_PAD_LEFT) }}</a>
                                             @else
-                                                <span class="muted">Not captured</span>
+                                                <div class="cell-actions">
+                                                    <span class="muted">Not captured</span>
+                                                    @if (! empty($item['source_url']) && ! empty($item['title']))
+                                                        <form class="inline-form" method="post" action="{{ route('sls.serpapiSearches.promote', ['run' => $latestRun, 'itemIndex' => $loop->index]) }}">
+                                                            @csrf
+                                                            <button class="button secondary" type="submit">Promote</button>
+                                                        </form>
+                                                    @endif
+                                                </div>
                                             @endif
                                         </td>
                                     </tr>
