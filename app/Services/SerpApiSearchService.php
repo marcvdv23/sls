@@ -88,6 +88,24 @@ class SerpApiSearchService
 
                     if (! $resultFilter['keep']) {
                         $summary['filtered_out']++;
+                        $item = [
+                            'country_id' => $country->id,
+                            'country' => $country->name,
+                            'iso_code' => $country->iso_code,
+                            'query' => $query,
+                            'keyword' => $keywordLabel,
+                            'status' => 'filtered',
+                            'filter_reason' => $resultFilter['reason'],
+                            'title' => $title,
+                            'source_name' => $sourceName,
+                            'source_url' => $sourceUrl,
+                            'snippet' => $snippet,
+                            'publication_date' => $this->parseResultDate((string) ($result['date'] ?? '')),
+                            'country_update_id' => null,
+                            'searched_at' => now()->toDateTimeString(),
+                        ];
+                        $items[] = $item;
+                        $onItem ? $onItem($item, $summary, $items) : null;
 
                         continue;
                     }

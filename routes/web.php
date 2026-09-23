@@ -2056,6 +2056,7 @@ $serpApiSearchState = function () {
             'defaultKeywords' => [],
             'monthlyStats' => collect(),
             'recentRuns' => collect(),
+            'selectedRun' => null,
             'migrationMissing' => true,
             'setupError' => 'SerpAPI search templates are not ready yet. Run migrations and clear cache.',
         ]);
@@ -2091,6 +2092,11 @@ $serpApiSearchState = function () {
             ->latest('created_at')
             ->limit(100)
             ->get();
+        $selectedRunId = (int) request('run_id');
+        $selectedRun = $selectedRunId > 0
+            ? ($recentRuns->firstWhere('id', $selectedRunId)
+                ?: SlsOperationRun::query()->where('operation_key', 'serpapi_search')->find($selectedRunId))
+            : null;
         $monthlyStats = $recentRuns
             ->groupBy(fn (SlsOperationRun $run) => ($run->started_at ?: $run->created_at)?->format('Y-m') ?: 'Unknown')
             ->map(function ($runs, string $month) {
@@ -2122,6 +2128,7 @@ $serpApiSearchState = function () {
             'defaultKeywordText' => implode("\n", $defaultSerpApiKeywords),
             'monthlyStats' => $monthlyStats,
             'recentRuns' => $recentRuns->take(10)->values(),
+            'selectedRun' => $selectedRun,
             'migrationMissing' => false,
         ]);
     } catch (Throwable $exception) {
@@ -2135,6 +2142,7 @@ $serpApiSearchState = function () {
             'defaultKeywords' => [],
             'monthlyStats' => collect(),
             'recentRuns' => collect(),
+            'selectedRun' => null,
             'migrationMissing' => true,
             'setupError' => 'SerpAPI search page failed while loading: ' . $exception->getMessage(),
         ]);

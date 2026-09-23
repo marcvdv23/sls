@@ -279,6 +279,7 @@ Artisan::command('sls:run-operation {operation_run_id}', function (BankDomainGue
                 'results' => 0,
                 'captured' => 0,
                 'duplicates' => 0,
+                'filtered_out' => 0,
                 'errors' => 0,
             ],
         ]);

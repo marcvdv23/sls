@@ -87,7 +87,7 @@
 @endpush
 
 @php
-    $latestRun = $recentRuns->first();
+    $latestRun = $selectedRun ?? $recentRuns->first();
     $latestItems = collect($latestRun?->items ?? []);
     $selectedPredefinedKeywords = old('predefined_keywords', $defaultKeywords ?? []);
 @endphp
@@ -309,6 +309,7 @@
                                     <td>{{ $run->started_at?->format('Y-m-d H:i') ?: $run->created_at?->format('Y-m-d H:i') }}</td>
                                     <td>
                                         <div class="run-actions">
+                                            <a class="button secondary" href="{{ route('sls.serpapiSearches.index', ['run_id' => $run->id]) }}">View results</a>
                                             <form class="inline-form" method="post" action="{{ route('sls.serpapiSearches.rerun', $run) }}">
                                                 @csrf
                                                 <button class="button secondary" type="submit">Run again</button>
@@ -325,10 +326,17 @@
             </section>
 
             @if ($latestRun)
+                @php($latestSummary = $latestRun->summary ?? [])
                 <section class="panel stack">
                     <div>
                         <p class="eyebrow">Latest Results</p>
                         <h2>{{ $latestRun->operation_name }}</h2>
+                        <p class="muted">
+                            {{ number_format((int) ($latestSummary['results'] ?? 0)) }} kept,
+                            {{ number_format((int) ($latestSummary['filtered_out'] ?? 0)) }} filtered,
+                            {{ number_format((int) ($latestSummary['captured'] ?? 0)) }} captured.
+                            Filtered rows are shown here for transparency and are not added to the Review Desk.
+                        </p>
                     </div>
                     <div class="table-wrap">
                         <table class="data-table result-table">
@@ -346,7 +354,12 @@
                                 @forelse ($latestItems as $item)
                                     <tr>
                                         <td>{{ $item['country'] ?? '' }} {{ isset($item['iso_code']) ? '(' . $item['iso_code'] . ')' : '' }}</td>
-                                        <td><span class="pill {{ ($item['status'] ?? '') === 'captured' ? 'good' : (($item['status'] ?? '') === 'error' ? 'bad' : 'warn') }}">{{ $item['status'] ?? 'found' }}</span></td>
+                                        <td>
+                                            <span class="pill {{ ($item['status'] ?? '') === 'captured' ? 'good' : (($item['status'] ?? '') === 'error' ? 'bad' : 'warn') }}">{{ $item['status'] ?? 'found' }}</span>
+                                            @if (! empty($item['filter_reason']))
+                                                <p class="muted small">{{ $item['filter_reason'] }}</p>
+                                            @endif
+                                        </td>
                                         <td>
                                             @if (! empty($item['source_url']))
                                                 <a href="{{ $item['source_url'] }}" target="_blank" rel="noreferrer">{{ $item['title'] ?? $item['source_url'] }}</a>
@@ -368,7 +381,11 @@
                                         </td>
                                     </tr>
                                 @empty
-                                    <tr><td colspan="6" class="muted">No results recorded for the latest run yet.</td></tr>
+                                    <tr>
+                                        <td colspan="6" class="muted">
+                                            No kept or filtered result details were recorded for this run. Older runs from before filtered-result logging may only show summary counts.
+                                        </td>
+                                    </tr>
                                 @endforelse
                             </tbody>
                         </table>
