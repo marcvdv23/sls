@@ -30,6 +30,7 @@ use App\Models\MarketOrganizationTask;
 use App\Models\UniversitySurveyTarget;
 use App\Models\UniversitySurveyContact;
 use App\Models\KnowledgeChunk;
+use App\Models\PriorityOpportunity;
 use App\Models\Product;
 use App\Models\SourceDocument;
 use App\Models\SocialSecurityAdminCandidate;
@@ -5546,6 +5547,264 @@ Route::post('/sls/tasks/{task}/status', function (Request $request, SlsTask $tas
 
     return back()->with('status', 'Task updated.');
 })->name('sls.tasks.status');
+
+$priorityOpportunityStatuses = [
+    'new' => 'New',
+    'researching' => 'Researching',
+    'qualified' => 'Qualified',
+    'outreach_planned' => 'Outreach planned',
+    'contacted' => 'Contacted',
+    'active_pursuit' => 'Active pursuit',
+    'parked' => 'Parked',
+    'closed' => 'Closed',
+];
+
+$priorityOpportunityPriorities = [
+    'low' => 'Low',
+    'normal' => 'Normal',
+    'high' => 'High',
+    'urgent' => 'Urgent',
+];
+
+$priorityOpportunityCountry = function (string $countryMarket): ?Country {
+    $countryMarket = trim($countryMarket);
+
+    if ($countryMarket === '') {
+        return null;
+    }
+
+    return Country::query()
+        ->whereRaw('LOWER(name) = ?', [Str::lower($countryMarket)])
+        ->orWhereRaw('LOWER(iso_code) = ?', [Str::lower($countryMarket)])
+        ->first();
+};
+
+$priorityOpportunityFingerprint = fn (array $row): string => hash('sha256', 'priority-opportunity|' . Str::lower(trim((string) ($row['Country/Market'] ?? ''))) . '|' . Str::lower(trim((string) ($row['Institution'] ?? ''))) . '|' . Str::lower(trim((string) ($row['Reform / Development'] ?? ''))));
+
+Route::get('/sls/priority-opportunities', function (Request $request) use ($priorityOpportunityStatuses) {
+    $status = $request->string('status')->toString() ?: 'active';
+    $tier = $request->string('tier')->toString() ?: 'all';
+    $query = trim($request->string('q')->toString());
+
+    $opportunities = PriorityOpportunity::query()
+        ->with(['country', 'primaryOrganization', 'primaryTask', 'organizations'])
+        ->when($status === 'active', fn ($builder) => $builder->whereNotIn('status', ['closed', 'parked']))
+        ->when($status !== 'all' && $status !== 'active', fn ($builder) => $builder->where('status', $status))
+        ->when($tier !== 'all', fn ($builder) => $builder->where('focus_tier', $tier))
+        ->when($query !== '', function ($builder) use ($query) {
+            $builder->where(function ($inner) use ($query) {
+                $inner->where('institution', 'like', '%' . $query . '%')
+                    ->orWhere('country_market', 'like', '%' . $query . '%')
+                    ->orWhere('reform_development', 'like', '%' . $query . '%')
+                    ->orWhere('recommended_next_action', 'like', '%' . $query . '%');
+            });
+        })
+        ->orderByRaw("FIELD(priority, 'urgent', 'high', 'normal', 'low')")
+        ->orderByRaw("FIELD(status, 'active_pursuit', 'contacted', 'outreach_planned', 'qualified', 'researching', 'new', 'parked', 'closed')")
+        ->latest()
+        ->paginate(100)
+        ->withQueryString();
+
+    return view('sls.priority-opportunities.index', [
+        'opportunities' => $opportunities,
+        'status' => $status,
+        'tier' => $tier,
+        'query' => $query,
+        'statuses' => ['active' => 'Active'] + ['all' => 'All'] + $priorityOpportunityStatuses,
+        'tiers' => PriorityOpportunity::query()->whereNotNull('focus_tier')->distinct()->orderBy('focus_tier')->pluck('focus_tier')->values(),
+    ]);
+})->name('sls.priorityOpportunities.index');
+
+Route::post('/sls/priority-opportunities/import', function (Request $request) use ($priorityOpportunityCountry, $priorityOpportunityFingerprint) {
+    $data = $request->validate([
+        'import_file' => ['required', 'file', 'mimes:csv,txt', 'max:10240'],
+        'create_tasks' => ['nullable', 'boolean'],
+        'create_organizations' => ['nullable', 'boolean'],
+    ]);
+
+    $path = $data['import_file']->getRealPath();
+    $handle = fopen($path, 'r');
+    abort_if(! $handle, 422, 'Could not open uploaded CSV.');
+
+    $headers = fgetcsv($handle);
+    abort_if(! is_array($headers), 422, 'CSV header row missing.');
+    $headers = array_map(fn ($header) => trim((string) $header), $headers);
+
+    $created = 0;
+    $updated = 0;
+    $tasks = 0;
+    $organizations = 0;
+    $createTasks = (bool) ($data['create_tasks'] ?? true);
+    $createOrganizations = (bool) ($data['create_organizations'] ?? true);
+
+    while (($values = fgetcsv($handle)) !== false) {
+        $row = array_combine($headers, array_slice(array_pad($values, count($headers), ''), 0, count($headers)));
+        if (! is_array($row)) {
+            continue;
+        }
+
+        $countryMarket = trim((string) ($row['Country/Market'] ?? ''));
+        $institution = trim((string) ($row['Institution'] ?? ''));
+        if ($countryMarket === '' || $institution === '') {
+            continue;
+        }
+
+        $country = $priorityOpportunityCountry($countryMarket);
+        $fingerprint = $priorityOpportunityFingerprint($row);
+        $status = Str::contains(Str::lower((string) ($row['Focus Tier'] ?? '')), 'immediate') ? 'researching' : 'new';
+        $priority = Str::contains(Str::lower((string) ($row['Focus Tier'] ?? '')), 'immediate') ? 'urgent' : 'high';
+
+        $opportunity = PriorityOpportunity::query()->firstOrNew(['source_fingerprint' => $fingerprint]);
+        $wasRecentlyCreated = ! $opportunity->exists;
+        $opportunity->fill([
+            'country_id' => $country?->id,
+            'country_market' => $countryMarket,
+            'country_iso' => $country?->iso_code,
+            'region' => trim((string) ($row['Region'] ?? '')) ?: $country?->region,
+            'focus_tier' => trim((string) ($row['Focus Tier'] ?? '')) ?: null,
+            'institution' => $institution,
+            'reform_development' => trim((string) ($row['Reform / Development'] ?? '')) ?: null,
+            'stage_2026' => trim((string) ($row['2026 Stage'] ?? '')) ?: null,
+            'why_relevant' => trim((string) ($row['Why Relevant to SSAS'] ?? '')) ?: null,
+            'evidence_scale' => trim((string) ($row['Evidence / Scale'] ?? '')) ?: null,
+            'donor_support' => trim((string) ($row['Donor / External Support'] ?? '')) ?: null,
+            'evidence_confidence' => trim((string) ($row['Evidence Confidence'] ?? '')) ?: null,
+            'recommended_next_action' => trim((string) ($row['Recommended Next Action'] ?? '')) ?: null,
+            'source_1' => trim((string) ($row['Source 1'] ?? '')) ?: null,
+            'source_2' => trim((string) ($row['Source 2'] ?? '')) ?: null,
+            'origin' => trim((string) ($row['Origin'] ?? '')) ?: null,
+            'review_notes' => trim((string) ($row['Review Notes'] ?? '')) ?: null,
+            'status' => $opportunity->status ?: $status,
+            'priority' => $opportunity->priority ?: $priority,
+            'product_focus' => $opportunity->product_focus ?: 'SSAS',
+        ]);
+        $opportunity->save();
+        $wasRecentlyCreated ? $created++ : $updated++;
+
+        $organization = null;
+        if ($createOrganizations) {
+            $nameNormalized = Str::lower(preg_replace('/\s+/', ' ', $institution));
+            $organization = MarketOrganization::query()
+                ->where('name_normalized', $nameNormalized)
+                ->when($country?->iso_code, fn ($builder) => $builder->where('country_iso', $country->iso_code))
+                ->first();
+
+            if (! $organization) {
+                $organization = MarketOrganization::query()->create([
+                    'name' => $institution,
+                    'name_normalized' => $nameNormalized,
+                    'organization_type' => 'government_agency',
+                    'industry' => 'Social security',
+                    'organization_subcategory' => 'social_security_administration',
+                    'country' => $country?->name ?: $countryMarket,
+                    'country_raw' => $countryMarket,
+                    'country_iso' => $country?->iso_code,
+                    'country_resolution_status' => $country ? 'resolved' : 'unresolved',
+                    'region' => trim((string) ($row['Region'] ?? '')) ?: $country?->region,
+                    'status' => 'active',
+                    'lead_status' => 'researching',
+                    'lead_source' => 'priority opportunity import',
+                    'notes' => trim(implode("\n\n", array_filter([
+                        'Priority opportunity import.',
+                        'Reform/development: ' . trim((string) ($row['Reform / Development'] ?? '')),
+                        'Why relevant: ' . trim((string) ($row['Why Relevant to SSAS'] ?? '')),
+                        'Recommended next action: ' . trim((string) ($row['Recommended Next Action'] ?? '')),
+                    ]))),
+                    'source_fingerprint' => hash('sha256', 'priority-org|' . Str::lower($countryMarket) . '|' . $nameNormalized),
+                ]);
+                $organizations++;
+            }
+
+            $opportunity->organizations()->syncWithoutDetaching([
+                $organization->id => ['relationship_type' => 'target_account'],
+            ]);
+
+            if (! $opportunity->primary_organization_id) {
+                $opportunity->update(['primary_organization_id' => $organization->id]);
+            }
+
+            MarketOrganizationActivity::query()->firstOrCreate(
+                [
+                    'market_organization_id' => $organization->id,
+                    'activity_type' => 'priority_opportunity_import',
+                    'subject' => 'Priority opportunity imported: ' . $opportunity->institution,
+                ],
+                [
+                    'body' => trim(implode("\n\n", array_filter([
+                        $opportunity->reform_development,
+                        $opportunity->why_relevant,
+                        $opportunity->recommended_next_action ? 'Next action: ' . $opportunity->recommended_next_action : null,
+                    ]))),
+                    'activity_at' => now(),
+                    'logged_by' => auth()->user()?->name ?: 'SLS',
+                ]
+            );
+        }
+
+        if ($createTasks && $opportunity->recommended_next_action && ! $opportunity->primary_task_id) {
+            $task = SlsTask::query()->create([
+                'title' => Str::limit('Priority opportunity: ' . $opportunity->institution, 255, ''),
+                'notes' => $opportunity->recommended_next_action . "\n\n" . ($opportunity->why_relevant ?: ''),
+                'task_type' => 'research',
+                'status' => 'open',
+                'priority' => $priority,
+                'product_focus' => 'SSAS',
+                'country_iso' => $country?->iso_code,
+                'market_organization_id' => $organization?->id,
+                'related_url' => $opportunity->source_1,
+                'due_at' => now()->addDays($priority === 'urgent' ? 3 : 7),
+            ]);
+            $opportunity->update([
+                'primary_task_id' => $task->id,
+                'next_follow_up_at' => $task->due_at,
+            ]);
+            $tasks++;
+        }
+    }
+
+    fclose($handle);
+
+    return redirect()
+        ->route('sls.priorityOpportunities.index')
+        ->with('status', "Priority opportunities imported. Created {$created}, updated {$updated}, created {$organizations} account(s), created {$tasks} task(s).");
+})->name('sls.priorityOpportunities.import');
+
+Route::get('/sls/priority-opportunities/{priorityOpportunity}', function (PriorityOpportunity $priorityOpportunity) use ($priorityOpportunityStatuses, $priorityOpportunityPriorities) {
+    $priorityOpportunity->load(['country', 'primaryOrganization.tasks', 'primaryOrganization.activities', 'primaryTask', 'organizations', 'countryUpdate']);
+
+    return view('sls.priority-opportunities.show', [
+        'opportunity' => $priorityOpportunity,
+        'statuses' => $priorityOpportunityStatuses,
+        'priorities' => $priorityOpportunityPriorities,
+    ]);
+})->name('sls.priorityOpportunities.show');
+
+Route::post('/sls/priority-opportunities/{priorityOpportunity}', function (Request $request, PriorityOpportunity $priorityOpportunity) use ($priorityOpportunityStatuses, $priorityOpportunityPriorities) {
+    $data = $request->validate([
+        'status' => ['required', 'in:' . implode(',', array_keys($priorityOpportunityStatuses))],
+        'priority' => ['required', 'in:' . implode(',', array_keys($priorityOpportunityPriorities))],
+        'recommended_next_action' => ['nullable', 'string'],
+        'review_notes' => ['nullable', 'string'],
+        'next_follow_up_at' => ['nullable', 'date'],
+    ]);
+
+    $priorityOpportunity->update($data + [
+        'last_activity_at' => now(),
+    ]);
+
+    if ($priorityOpportunity->primaryOrganization) {
+        MarketOrganizationActivity::query()->create([
+            'market_organization_id' => $priorityOpportunity->primaryOrganization->id,
+            'activity_type' => 'priority_opportunity_update',
+            'subject' => 'Priority opportunity updated: ' . $priorityOpportunity->status,
+            'body' => trim((string) ($data['review_notes'] ?? '')),
+            'activity_at' => now(),
+            'logged_by' => auth()->user()?->name ?: 'SLS',
+        ]);
+    }
+
+    return back()->with('status', 'Priority opportunity updated.');
+})->name('sls.priorityOpportunities.update');
 
 Route::get('/sls/crm/search', function (Request $request) {
     $query = trim((string) $request->query('q', ''));

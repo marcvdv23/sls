@@ -30,6 +30,7 @@
                             ['Dashboard', url('/sls'), 'sls.dashboard', 'DB'],
                             ['Global CRM Search', route('sls.crm.search'), 'sls.crm.search', 'CRM'],
                             ['Organizations', route('sls.organizations.index'), 'sls.organizations.*', 'ORG'],
+                            ['Priority Opportunities', route('sls.priorityOpportunities.index'), 'sls.priorityOpportunities.*', 'PRI'],
                             ['Opportunities', route('sls.opportunities.index'), 'sls.opportunities.*', 'OPP'],
                             ['To Do', route('sls.tasks.index'), 'sls.tasks.*', 'TODO'],
                             ['Favorites', route('sls.intelligence.favorites'), 'sls.intelligence.favorites', 'FAV'],
