@@ -5,6 +5,7 @@
 @section('page_title', 'Priority Opportunities')
 
 @section('topbar_actions')
+    <a class="button secondary" href="{{ route('sls.priorityOpportunities.accountMapping') }}">Account mapping</a>
     <a class="button secondary" href="{{ route('sls.tasks.index') }}">To Do</a>
     <a class="button secondary" href="{{ route('sls.organizations.index') }}">Organizations</a>
 @endsection

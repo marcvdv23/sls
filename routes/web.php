@@ -5597,7 +5597,7 @@ $priorityOrganizationAcronym = function (string $name): string {
         ->implode('');
 };
 
-$findPriorityOrganizationAccount = function (string $institution, ?Country $country) use ($normalizePriorityOrganizationName, $priorityOrganizationAcronym): ?MarketOrganization {
+$findPriorityOrganizationAccountCandidates = function (string $institution, ?Country $country, ?int $excludeOrganizationId = null) use ($normalizePriorityOrganizationName, $priorityOrganizationAcronym) {
     $normalized = $normalizePriorityOrganizationName($institution);
     $acronym = $priorityOrganizationAcronym($institution);
     $tokens = collect(explode(' ', $normalized))
@@ -5605,22 +5605,14 @@ $findPriorityOrganizationAccount = function (string $institution, ?Country $coun
         ->values();
 
     if ($normalized === '') {
-        return null;
+        return collect();
     }
 
     $countryScoped = fn ($builder) => $builder->when($country?->iso_code, fn ($query) => $query->where('country_iso', $country->iso_code));
 
-    $exact = MarketOrganization::query()
-        ->tap($countryScoped)
-        ->where('name_normalized', $normalized)
-        ->first();
-
-    if ($exact) {
-        return $exact;
-    }
-
     return MarketOrganization::query()
         ->tap($countryScoped)
+        ->when($excludeOrganizationId, fn ($query) => $query->whereKeyNot($excludeOrganizationId))
         ->get(['id', 'name', 'name_normalized', 'country_iso', 'lead_source'])
         ->map(function (MarketOrganization $organization) use ($normalized, $acronym, $tokens, $normalizePriorityOrganizationName, $priorityOrganizationAcronym) {
             $candidate = $normalizePriorityOrganizationName($organization->name_normalized ?: $organization->name);
@@ -5651,7 +5643,11 @@ $findPriorityOrganizationAccount = function (string $institution, ?Country $coun
         })
         ->filter(fn (MarketOrganization $organization) => $organization->match_score >= 40)
         ->sortByDesc('match_score')
-        ->first();
+        ->values();
+};
+
+$findPriorityOrganizationAccount = function (string $institution, ?Country $country) use ($findPriorityOrganizationAccountCandidates): ?MarketOrganization {
+    return $findPriorityOrganizationAccountCandidates($institution, $country)->first();
 };
 
 Route::get('/sls/priority-opportunities', function (Request $request) use ($priorityOpportunityStatuses) {
@@ -5687,6 +5683,112 @@ Route::get('/sls/priority-opportunities', function (Request $request) use ($prio
         'tiers' => PriorityOpportunity::query()->whereNotNull('focus_tier')->distinct()->orderBy('focus_tier')->pluck('focus_tier')->values(),
     ]);
 })->name('sls.priorityOpportunities.index');
+
+Route::get('/sls/priority-opportunities/account-mapping', function (Request $request) use ($findPriorityOrganizationAccountCandidates) {
+    $status = $request->string('status')->toString() ?: 'needs_review';
+    $query = trim($request->string('q')->toString());
+
+    $opportunities = PriorityOpportunity::query()
+        ->with(['country', 'primaryOrganization', 'primaryTask'])
+        ->when($query !== '', function ($builder) use ($query) {
+            $builder->where(function ($inner) use ($query) {
+                $inner->where('institution', 'like', '%' . $query . '%')
+                    ->orWhere('country_market', 'like', '%' . $query . '%')
+                    ->orWhere('country_iso', 'like', '%' . $query . '%')
+                    ->orWhereHas('primaryOrganization', fn ($organization) => $organization->where('name', 'like', '%' . $query . '%'));
+            });
+        })
+        ->when($status === 'needs_review', fn ($builder) => $builder->where(function ($inner) {
+            $inner->whereNull('primary_organization_id')
+                ->orWhereHas('primaryOrganization', fn ($organization) => $organization->where('lead_source', 'priority opportunity import'));
+        }))
+        ->when($status === 'new_imported', fn ($builder) => $builder->whereHas('primaryOrganization', fn ($organization) => $organization->where('lead_source', 'priority opportunity import')))
+        ->when($status === 'linked_existing', fn ($builder) => $builder->whereHas('primaryOrganization', fn ($organization) => $organization->where(function ($inner) {
+            $inner->whereNull('lead_source')->orWhere('lead_source', '<>', 'priority opportunity import');
+        })))
+        ->when($status === 'unlinked', fn ($builder) => $builder->whereNull('primary_organization_id'))
+        ->orderBy('country_iso')
+        ->orderBy('institution')
+        ->paginate(100)
+        ->withQueryString();
+
+    $opportunities->getCollection()->transform(function (PriorityOpportunity $opportunity) use ($findPriorityOrganizationAccountCandidates) {
+        $opportunity->candidate_accounts = $findPriorityOrganizationAccountCandidates(
+            $opportunity->institution,
+            $opportunity->country,
+            $opportunity->primary_organization_id
+        )->take(5);
+
+        return $opportunity;
+    });
+
+    return view('sls.priority-opportunities.account-mapping', [
+        'opportunities' => $opportunities,
+        'status' => $status,
+        'query' => $query,
+        'statuses' => [
+            'needs_review' => 'Needs review',
+            'new_imported' => 'New imported accounts',
+            'unlinked' => 'Unlinked',
+            'linked_existing' => 'Linked to existing',
+            'all' => 'All',
+        ],
+    ]);
+})->name('sls.priorityOpportunities.accountMapping');
+
+Route::post('/sls/priority-opportunities/account-mapping/auto-match', function () use ($findPriorityOrganizationAccountCandidates) {
+    $checked = 0;
+    $matched = 0;
+
+    PriorityOpportunity::query()
+        ->with(['country', 'primaryOrganization'])
+        ->where(function ($builder) {
+            $builder->whereNull('primary_organization_id')
+                ->orWhereHas('primaryOrganization', fn ($organization) => $organization->where('lead_source', 'priority opportunity import'));
+        })
+        ->orderBy('id')
+        ->chunkById(100, function ($opportunities) use (&$checked, &$matched, $findPriorityOrganizationAccountCandidates) {
+            foreach ($opportunities as $opportunity) {
+                $checked++;
+                $candidate = $findPriorityOrganizationAccountCandidates(
+                    $opportunity->institution,
+                    $opportunity->country,
+                    $opportunity->primary_organization_id
+                )->first(fn (MarketOrganization $organization) => ($organization->lead_source ?? '') !== 'priority opportunity import' && $organization->match_score >= 60);
+
+                if (! $candidate) {
+                    continue;
+                }
+
+                $opportunity->organizations()->syncWithoutDetaching([
+                    $candidate->id => ['relationship_type' => 'target_account'],
+                ]);
+                $opportunity->update([
+                    'primary_organization_id' => $candidate->id,
+                    'last_activity_at' => now(),
+                ]);
+
+                if ($opportunity->primary_task_id) {
+                    SlsTask::query()
+                        ->whereKey($opportunity->primary_task_id)
+                        ->update(['market_organization_id' => $candidate->id]);
+                }
+
+                MarketOrganizationActivity::query()->create([
+                    'market_organization_id' => $candidate->id,
+                    'activity_type' => 'priority_opportunity_auto_linked',
+                    'subject' => 'Priority opportunity auto-linked: ' . $opportunity->institution,
+                    'body' => 'Country-scoped rematch from priority opportunity account mapping review.',
+                    'activity_at' => now(),
+                    'logged_by' => auth()->user()?->name ?: 'SLS',
+                ]);
+
+                $matched++;
+            }
+        });
+
+    return back()->with('status', "Country-scoped auto-match checked {$checked} priority opportunity row(s) and relinked {$matched} to existing CRM accounts.");
+})->name('sls.priorityOpportunities.accountMapping.autoMatch');
 
 Route::post('/sls/priority-opportunities/import', function (Request $request) use ($priorityOpportunityCountry, $normalizePriorityOrganizationName, $findPriorityOrganizationAccount) {
     $data = $request->validate([
