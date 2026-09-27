@@ -5579,8 +5579,6 @@ $priorityOpportunityCountry = function (string $countryMarket): ?Country {
         ->first();
 };
 
-$priorityOpportunityFingerprint = fn (array $row): string => hash('sha256', 'priority-opportunity|' . Str::lower(trim((string) ($row['Country/Market'] ?? ''))) . '|' . Str::lower(trim((string) ($row['Institution'] ?? ''))) . '|' . Str::lower(trim((string) ($row['Reform / Development'] ?? ''))));
-
 Route::get('/sls/priority-opportunities', function (Request $request) use ($priorityOpportunityStatuses) {
     $status = $request->string('status')->toString() ?: 'active';
     $tier = $request->string('tier')->toString() ?: 'all';
@@ -5615,7 +5613,7 @@ Route::get('/sls/priority-opportunities', function (Request $request) use ($prio
     ]);
 })->name('sls.priorityOpportunities.index');
 
-Route::post('/sls/priority-opportunities/import', function (Request $request) use ($priorityOpportunityCountry, $priorityOpportunityFingerprint) {
+Route::post('/sls/priority-opportunities/import', function (Request $request) use ($priorityOpportunityCountry) {
     $data = $request->validate([
         'import_file' => ['required', 'file', 'mimes:csv,txt', 'max:10240'],
         'create_tasks' => ['nullable', 'boolean'],
@@ -5628,31 +5626,58 @@ Route::post('/sls/priority-opportunities/import', function (Request $request) us
 
     $headers = fgetcsv($handle);
     abort_if(! is_array($headers), 422, 'CSV header row missing.');
-    $headers = array_map(fn ($header) => trim((string) $header), $headers);
+    $normalizeHeader = function (string $header): string {
+        $header = preg_replace('/^\xEF\xBB\xBF/', '', $header) ?? $header;
+        $header = str_replace(["\u{FEFF}", "\u{00A0}"], ['', ' '], $header);
+        $header = Str::lower(trim($header));
+        $header = preg_replace('/[^a-z0-9]+/', '_', $header) ?? $header;
+
+        return trim($header, '_');
+    };
+    $headers = array_map(fn ($header) => $normalizeHeader((string) $header), $headers);
+    $value = function (array $row, array|string $keys): string {
+        foreach ((array) $keys as $key) {
+            if (array_key_exists($key, $row) && trim((string) $row[$key]) !== '') {
+                return trim((string) $row[$key]);
+            }
+        }
+
+        return '';
+    };
 
     $created = 0;
     $updated = 0;
     $tasks = 0;
     $organizations = 0;
+    $readRows = 0;
+    $skippedRows = 0;
     $createTasks = (bool) ($data['create_tasks'] ?? true);
     $createOrganizations = (bool) ($data['create_organizations'] ?? true);
 
     while (($values = fgetcsv($handle)) !== false) {
+        $readRows++;
         $row = array_combine($headers, array_slice(array_pad($values, count($headers), ''), 0, count($headers)));
         if (! is_array($row)) {
+            $skippedRows++;
             continue;
         }
 
-        $countryMarket = trim((string) ($row['Country/Market'] ?? ''));
-        $institution = trim((string) ($row['Institution'] ?? ''));
+        $countryMarket = $value($row, ['country_market', 'country', 'market']);
+        $institution = $value($row, ['institution', 'organization', 'organisation', 'account', 'agency']);
         if ($countryMarket === '' || $institution === '') {
+            $skippedRows++;
             continue;
         }
 
         $country = $priorityOpportunityCountry($countryMarket);
-        $fingerprint = $priorityOpportunityFingerprint($row);
-        $status = Str::contains(Str::lower((string) ($row['Focus Tier'] ?? '')), 'immediate') ? 'researching' : 'new';
-        $priority = Str::contains(Str::lower((string) ($row['Focus Tier'] ?? '')), 'immediate') ? 'urgent' : 'high';
+        $focusTier = $value($row, ['focus_tier', 'tier']);
+        $reformDevelopment = $value($row, ['reform_development', 'reform', 'development', 'opportunity']);
+        $whyRelevant = $value($row, ['why_relevant_to_ssas', 'why_relevant', 'rationale']);
+        $recommendedNextAction = $value($row, ['recommended_next_action', 'next_action']);
+        $region = $value($row, 'region');
+        $fingerprint = hash('sha256', 'priority-opportunity|' . Str::lower($countryMarket) . '|' . Str::lower($institution) . '|' . Str::lower($reformDevelopment));
+        $status = Str::contains(Str::lower($focusTier), 'immediate') ? 'researching' : 'new';
+        $priority = Str::contains(Str::lower($focusTier), 'immediate') ? 'urgent' : 'high';
 
         $opportunity = PriorityOpportunity::query()->firstOrNew(['source_fingerprint' => $fingerprint]);
         $wasRecentlyCreated = ! $opportunity->exists;
@@ -5660,20 +5685,20 @@ Route::post('/sls/priority-opportunities/import', function (Request $request) us
             'country_id' => $country?->id,
             'country_market' => $countryMarket,
             'country_iso' => $country?->iso_code,
-            'region' => trim((string) ($row['Region'] ?? '')) ?: $country?->region,
-            'focus_tier' => trim((string) ($row['Focus Tier'] ?? '')) ?: null,
+            'region' => $region ?: $country?->region,
+            'focus_tier' => $focusTier ?: null,
             'institution' => $institution,
-            'reform_development' => trim((string) ($row['Reform / Development'] ?? '')) ?: null,
-            'stage_2026' => trim((string) ($row['2026 Stage'] ?? '')) ?: null,
-            'why_relevant' => trim((string) ($row['Why Relevant to SSAS'] ?? '')) ?: null,
-            'evidence_scale' => trim((string) ($row['Evidence / Scale'] ?? '')) ?: null,
-            'donor_support' => trim((string) ($row['Donor / External Support'] ?? '')) ?: null,
-            'evidence_confidence' => trim((string) ($row['Evidence Confidence'] ?? '')) ?: null,
-            'recommended_next_action' => trim((string) ($row['Recommended Next Action'] ?? '')) ?: null,
-            'source_1' => trim((string) ($row['Source 1'] ?? '')) ?: null,
-            'source_2' => trim((string) ($row['Source 2'] ?? '')) ?: null,
-            'origin' => trim((string) ($row['Origin'] ?? '')) ?: null,
-            'review_notes' => trim((string) ($row['Review Notes'] ?? '')) ?: null,
+            'reform_development' => $reformDevelopment ?: null,
+            'stage_2026' => $value($row, ['2026_stage', 'stage_2026', 'stage']) ?: null,
+            'why_relevant' => $whyRelevant ?: null,
+            'evidence_scale' => $value($row, ['evidence_scale', 'evidence']) ?: null,
+            'donor_support' => $value($row, ['donor_external_support', 'donor_support', 'external_support']) ?: null,
+            'evidence_confidence' => $value($row, ['evidence_confidence', 'confidence']) ?: null,
+            'recommended_next_action' => $recommendedNextAction ?: null,
+            'source_1' => $value($row, ['source_1', 'source1', 'url_1']) ?: null,
+            'source_2' => $value($row, ['source_2', 'source2', 'url_2']) ?: null,
+            'origin' => $value($row, 'origin') ?: null,
+            'review_notes' => $value($row, ['review_notes', 'notes']) ?: null,
             'status' => $opportunity->status ?: $status,
             'priority' => $opportunity->priority ?: $priority,
             'product_focus' => $opportunity->product_focus ?: 'SSAS',
@@ -5700,15 +5725,15 @@ Route::post('/sls/priority-opportunities/import', function (Request $request) us
                     'country_raw' => $countryMarket,
                     'country_iso' => $country?->iso_code,
                     'country_resolution_status' => $country ? 'resolved' : 'unresolved',
-                    'region' => trim((string) ($row['Region'] ?? '')) ?: $country?->region,
+                    'region' => $region ?: $country?->region,
                     'status' => 'active',
                     'lead_status' => 'researching',
                     'lead_source' => 'priority opportunity import',
                     'notes' => trim(implode("\n\n", array_filter([
                         'Priority opportunity import.',
-                        'Reform/development: ' . trim((string) ($row['Reform / Development'] ?? '')),
-                        'Why relevant: ' . trim((string) ($row['Why Relevant to SSAS'] ?? '')),
-                        'Recommended next action: ' . trim((string) ($row['Recommended Next Action'] ?? '')),
+                        $reformDevelopment ? 'Reform/development: ' . $reformDevelopment : null,
+                        $whyRelevant ? 'Why relevant: ' . $whyRelevant : null,
+                        $recommendedNextAction ? 'Recommended next action: ' . $recommendedNextAction : null,
                     ]))),
                     'source_fingerprint' => hash('sha256', 'priority-org|' . Str::lower($countryMarket) . '|' . $nameNormalized),
                 ]);
@@ -5766,7 +5791,7 @@ Route::post('/sls/priority-opportunities/import', function (Request $request) us
 
     return redirect()
         ->route('sls.priorityOpportunities.index')
-        ->with('status', "Priority opportunities imported. Created {$created}, updated {$updated}, created {$organizations} account(s), created {$tasks} task(s).");
+        ->with('status', "Priority opportunities imported. Read {$readRows} row(s), created {$created}, updated {$updated}, skipped {$skippedRows}, created {$organizations} account(s), created {$tasks} task(s).");
 })->name('sls.priorityOpportunities.import');
 
 Route::get('/sls/priority-opportunities/{priorityOpportunity}', function (PriorityOpportunity $priorityOpportunity) use ($priorityOpportunityStatuses, $priorityOpportunityPriorities) {
