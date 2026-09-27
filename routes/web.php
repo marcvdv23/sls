@@ -5579,6 +5579,81 @@ $priorityOpportunityCountry = function (string $countryMarket): ?Country {
         ->first();
 };
 
+$normalizePriorityOrganizationName = fn (string $name): string => Str::of(Str::ascii($name))
+    ->lower()
+    ->replaceMatches('/\([^)]*\)/', ' ')
+    ->replaceMatches('/\b(proposed|new|the|a|an|of|and|for|to|in)\b/', ' ')
+    ->replaceMatches('/[^a-z0-9]+/', ' ')
+    ->replaceMatches('/\s+/', ' ')
+    ->trim()
+    ->toString();
+
+$priorityOrganizationAcronym = function (string $name): string {
+    $stopWords = ['and', 'for', 'the', 'of', 'to', 'in', 'a', 'an'];
+
+    return collect(explode(' ', Str::of(Str::ascii($name))->lower()->replaceMatches('/[^a-z0-9]+/', ' ')->trim()->toString()))
+        ->filter(fn (string $word) => strlen($word) > 1 && ! in_array($word, $stopWords, true))
+        ->map(fn (string $word) => substr($word, 0, 1))
+        ->implode('');
+};
+
+$findPriorityOrganizationAccount = function (string $institution, ?Country $country) use ($normalizePriorityOrganizationName, $priorityOrganizationAcronym): ?MarketOrganization {
+    $normalized = $normalizePriorityOrganizationName($institution);
+    $acronym = $priorityOrganizationAcronym($institution);
+    $tokens = collect(explode(' ', $normalized))
+        ->filter(fn (string $token) => strlen($token) >= 4)
+        ->values();
+
+    if ($normalized === '') {
+        return null;
+    }
+
+    $countryScoped = fn ($builder) => $builder->when($country?->iso_code, fn ($query) => $query->where('country_iso', $country->iso_code));
+
+    $exact = MarketOrganization::query()
+        ->tap($countryScoped)
+        ->where('name_normalized', $normalized)
+        ->first();
+
+    if ($exact) {
+        return $exact;
+    }
+
+    return MarketOrganization::query()
+        ->tap($countryScoped)
+        ->get(['id', 'name', 'name_normalized', 'country_iso', 'lead_source'])
+        ->map(function (MarketOrganization $organization) use ($normalized, $acronym, $tokens, $normalizePriorityOrganizationName, $priorityOrganizationAcronym) {
+            $candidate = $normalizePriorityOrganizationName($organization->name_normalized ?: $organization->name);
+            $candidateAcronym = $priorityOrganizationAcronym($organization->name);
+            $candidateTokens = collect(explode(' ', $candidate))->filter(fn (string $token) => strlen($token) >= 4)->values();
+            $sharedTokens = $tokens->intersect($candidateTokens)->count();
+            $score = $sharedTokens * 10;
+
+            if ($candidate === $normalized) {
+                $score += 100;
+            }
+
+            if ($candidate !== '' && ($normalized !== '' && (str_contains($candidate, $normalized) || str_contains($normalized, $candidate)))) {
+                $score += 45;
+            }
+
+            if ($acronym !== '' && strlen($acronym) >= 3 && $acronym === $candidateAcronym) {
+                $score += 40;
+            }
+
+            if ($acronym !== '' && strlen($acronym) >= 3 && preg_match('/\b' . preg_quote($acronym, '/') . '\b/i', $organization->name) === 1) {
+                $score += 35;
+            }
+
+            $organization->match_score = $score;
+
+            return $organization;
+        })
+        ->filter(fn (MarketOrganization $organization) => $organization->match_score >= 40)
+        ->sortByDesc('match_score')
+        ->first();
+};
+
 Route::get('/sls/priority-opportunities', function (Request $request) use ($priorityOpportunityStatuses) {
     $status = $request->string('status')->toString() ?: 'active';
     $tier = $request->string('tier')->toString() ?: 'all';
@@ -5613,7 +5688,7 @@ Route::get('/sls/priority-opportunities', function (Request $request) use ($prio
     ]);
 })->name('sls.priorityOpportunities.index');
 
-Route::post('/sls/priority-opportunities/import', function (Request $request) use ($priorityOpportunityCountry) {
+Route::post('/sls/priority-opportunities/import', function (Request $request) use ($priorityOpportunityCountry, $normalizePriorityOrganizationName, $findPriorityOrganizationAccount) {
     $data = $request->validate([
         'import_file' => ['required', 'file', 'mimes:csv,txt', 'max:10240'],
         'create_tasks' => ['nullable', 'boolean'],
@@ -5708,11 +5783,8 @@ Route::post('/sls/priority-opportunities/import', function (Request $request) us
 
         $organization = null;
         if ($createOrganizations) {
-            $nameNormalized = Str::lower(preg_replace('/\s+/', ' ', $institution));
-            $organization = MarketOrganization::query()
-                ->where('name_normalized', $nameNormalized)
-                ->when($country?->iso_code, fn ($builder) => $builder->where('country_iso', $country->iso_code))
-                ->first();
+            $nameNormalized = $normalizePriorityOrganizationName($institution);
+            $organization = $findPriorityOrganizationAccount($institution, $country);
 
             if (! $organization) {
                 $organization = MarketOrganization::query()->create([
@@ -5794,13 +5866,22 @@ Route::post('/sls/priority-opportunities/import', function (Request $request) us
         ->with('status', "Priority opportunities imported. Read {$readRows} row(s), created {$created}, updated {$updated}, skipped {$skippedRows}, created {$organizations} account(s), created {$tasks} task(s).");
 })->name('sls.priorityOpportunities.import');
 
-Route::get('/sls/priority-opportunities/{priorityOpportunity}', function (PriorityOpportunity $priorityOpportunity) use ($priorityOpportunityStatuses, $priorityOpportunityPriorities) {
+Route::get('/sls/priority-opportunities/{priorityOpportunity}', function (PriorityOpportunity $priorityOpportunity) use ($priorityOpportunityStatuses, $priorityOpportunityPriorities, $findPriorityOrganizationAccount) {
     $priorityOpportunity->load(['country', 'primaryOrganization.tasks', 'primaryOrganization.activities', 'primaryTask', 'organizations', 'countryUpdate']);
+    $suggestedOrganization = $findPriorityOrganizationAccount($priorityOpportunity->institution, $priorityOpportunity->country);
+    $organizationChoices = MarketOrganization::query()
+        ->when($priorityOpportunity->country_iso, fn ($builder) => $builder->where('country_iso', $priorityOpportunity->country_iso))
+        ->when(! $priorityOpportunity->country_iso && $priorityOpportunity->country_market, fn ($builder) => $builder->where('country', 'like', '%' . $priorityOpportunity->country_market . '%'))
+        ->orderBy('name')
+        ->limit(250)
+        ->get();
 
     return view('sls.priority-opportunities.show', [
         'opportunity' => $priorityOpportunity,
         'statuses' => $priorityOpportunityStatuses,
         'priorities' => $priorityOpportunityPriorities,
+        'organizationChoices' => $organizationChoices,
+        'suggestedOrganization' => $suggestedOrganization,
     ]);
 })->name('sls.priorityOpportunities.show');
 
@@ -5830,6 +5911,43 @@ Route::post('/sls/priority-opportunities/{priorityOpportunity}', function (Reque
 
     return back()->with('status', 'Priority opportunity updated.');
 })->name('sls.priorityOpportunities.update');
+
+Route::post('/sls/priority-opportunities/{priorityOpportunity}/account', function (Request $request, PriorityOpportunity $priorityOpportunity) {
+    $data = $request->validate([
+        'market_organization_id' => ['required', 'integer', 'exists:market_organizations,id'],
+        'move_primary_task' => ['nullable', 'boolean'],
+    ]);
+
+    $organization = MarketOrganization::query()->findOrFail((int) $data['market_organization_id']);
+    $previousOrganizationId = $priorityOpportunity->primary_organization_id;
+
+    $priorityOpportunity->organizations()->syncWithoutDetaching([
+        $organization->id => ['relationship_type' => 'target_account'],
+    ]);
+    $priorityOpportunity->update([
+        'primary_organization_id' => $organization->id,
+        'last_activity_at' => now(),
+    ]);
+
+    if (! empty($data['move_primary_task']) && $priorityOpportunity->primary_task_id) {
+        SlsTask::query()
+            ->whereKey($priorityOpportunity->primary_task_id)
+            ->update(['market_organization_id' => $organization->id]);
+    }
+
+    MarketOrganizationActivity::query()->create([
+        'market_organization_id' => $organization->id,
+        'activity_type' => 'priority_opportunity_linked',
+        'subject' => 'Priority opportunity linked: ' . $priorityOpportunity->institution,
+        'body' => $previousOrganizationId && $previousOrganizationId !== $organization->id
+            ? 'Relinked from account #' . $previousOrganizationId . '.'
+            : 'Linked to this account.',
+        'activity_at' => now(),
+        'logged_by' => auth()->user()?->name ?: 'SLS',
+    ]);
+
+    return back()->with('status', 'Priority opportunity linked to ' . $organization->name . '.');
+})->name('sls.priorityOpportunities.linkAccount');
 
 Route::get('/sls/crm/search', function (Request $request) {
     $query = trim((string) $request->query('q', ''));

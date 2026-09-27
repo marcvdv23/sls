@@ -149,6 +149,7 @@
                 <div class="source-list">
                     @if ($opportunity->primaryOrganization)
                         <a href="{{ route('sls.organizations.show', $opportunity->primaryOrganization) }}">{{ $opportunity->primaryOrganization->name }}</a>
+                        <span class="muted">{{ $opportunity->primaryOrganization->country ?: $opportunity->primaryOrganization->country_iso }} · {{ $opportunity->primaryOrganization->lead_source ?: 'CRM account' }}</span>
                     @else
                         <span class="muted">No primary account linked.</span>
                     @endif
@@ -163,6 +164,33 @@
                         @endif
                     @endforeach
                 </div>
+            </section>
+
+            <section class="panel stack">
+                <div>
+                    <p class="eyebrow">Account mapping</p>
+                    <h2>Link to CRM account</h2>
+                    <p class="muted">Use this when the import created or picked the wrong account. It keeps the opportunity and points it back to the correct existing organization.</p>
+                </div>
+                @if ($suggestedOrganization && (! $opportunity->primaryOrganization || $suggestedOrganization->id !== $opportunity->primaryOrganization->id))
+                    <p class="muted">Suggested match: <strong>{{ $suggestedOrganization->name }}</strong></p>
+                @endif
+                <form class="update-form" method="post" action="{{ route('sls.priorityOpportunities.linkAccount', $opportunity) }}">
+                    @csrf
+                    <label>CRM account
+                        <select name="market_organization_id" required>
+                            <option value="">Choose account</option>
+                            @foreach ($organizationChoices as $organization)
+                                <option value="{{ $organization->id }}" @selected($opportunity->primary_organization_id === $organization->id)>
+                                    {{ $organization->name }}{{ $organization->country_iso ? ' (' . $organization->country_iso . ')' : '' }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </label>
+                    <label><input type="checkbox" name="move_primary_task" value="1" checked> Move linked To Do task to this account</label>
+                    <button class="button" type="submit">Link account</button>
+                    <a class="button secondary" href="{{ route('sls.crm.search', ['q' => $opportunity->institution, 'type' => 'accounts', 'country' => $opportunity->country_iso ?: $opportunity->country_market]) }}">Search CRM accounts</a>
+                </form>
             </section>
         </aside>
     </div>
