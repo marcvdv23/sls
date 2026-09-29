@@ -1,3 +1,28 @@
+## SLS
+
+SLS is the generic Sales platform used for CRM, sales intelligence, crawler-driven opportunity discovery, review workflows, and follow-up tracking.
+
+The codebase is intended to stay shared across operating entities. Deployments should differ by database and configuration, not by forking the repository.
+
+Current default configuration:
+
+- Platform: `SLS`
+- Entity: `2interact`
+- Workspace: `Social Security Sales`
+- Default products: `SSAS`, `HRMS`, `ERMS`, `EBPC`
+
+Future deployments can use the same repo with different `.env` values, for example:
+
+- `SLS_ENTITY_KEY=rckgrp`
+- `SLS_ENTITY_NAME=RCKGRP`
+- `SLS_WORKSPACE_KEY=sustainability`
+- `SLS_WORKSPACE_NAME="Sustainability Consulting Sales"`
+- `SLS_WORKSPACE_DOMAIN_LABEL="Sustainability, ESG, Climate, and Environmental Policy"`
+- `SLS_DEFAULT_PRODUCT_CODE=ESG`
+- `SLS_PRODUCT_ORDER=ESG,CLIMATE,ENV_POLICY,GREEN_FINANCE`
+
+Keep tenant/entity/workspace behavior configurable through `config/sls.php`, `.env`, database settings, and UI-managed crawler/search configuration. Avoid creating separate code forks for entity-specific behavior.
+
 <p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
 
 <p align="center">

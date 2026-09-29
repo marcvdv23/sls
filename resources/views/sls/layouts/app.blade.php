@@ -1,13 +1,19 @@
 <!doctype html>
 <html lang="en" data-theme="{{ auth()->user()->theme_preference ?? 'white' }}">
     <head>
+        @php
+            $slsPlatformName = config('sls.platform.name', 'SLS');
+            $slsEntityName = config('sls.entity.display_name', config('sls.entity.name', '2interact'));
+            $slsWorkspaceName = config('sls.workspace.name', 'Social Security Sales');
+            $slsReviewLabel = config('sls.workspace.review_label', 'Review Desk');
+        @endphp
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="csrf-token" content="{{ csrf_token() }}">
         @hasSection('refresh')
             <meta http-equiv="refresh" content="@yield('refresh')">
         @endif
-        <title>@yield('title', '1G-SLS')</title>
+        <title>@yield('title', $slsPlatformName . ' - ' . $slsEntityName)</title>
         <link rel="icon" type="image/png" href="{{ asset('sls-favicon.png') }}?v={{ filemtime(public_path('sls-favicon.png')) }}">
         <link rel="stylesheet" href="{{ asset('sls-ui.css') }}?v={{ filemtime(public_path('sls-ui.css')) }}">
         @stack('head')
@@ -23,6 +29,10 @@
                     </a>
                     <label class="collapse-button" for="sidebar-toggle" title="Collapse menu">Menu</label>
                 </div>
+                <div style="margin:10px 12px 18px;color:#536173;font-size:12px;line-height:1.35;">
+                    <strong style="display:block;color:#111827;font-size:13px;">{{ $slsEntityName }}</strong>
+                    <span>{{ $slsWorkspaceName }}</span>
+                </div>
 
                 @php
                     $navSections = [
@@ -36,7 +46,7 @@
                             ['Favorites', route('sls.intelligence.favorites'), 'sls.intelligence.favorites', 'FAV'],
                         ],
                         'Intelligence' => [
-                            ['Review Desk', route('sls.intelligence.review'), 'sls.intelligence.review', 'REV'],
+                            [$slsReviewLabel, route('sls.intelligence.review'), 'sls.intelligence.review', 'REV'],
                             ['Add Story', route('sls.intelligence.stories.create'), 'sls.intelligence.stories.*', '+'],
                             ['Opportunity Intake', route('sls.intelligence.opportunityIntake.create'), 'sls.intelligence.opportunityIntake.*', 'IN'],
                             ['Awarded Companies', route('sls.intelligence.awardedCompanies.index'), 'sls.intelligence.awardedCompanies.*', 'AWD'],
@@ -53,7 +63,7 @@
                         ],
                         'Knowledge' => [
                             ['Chat', route('sls.chat'), 'sls.chat*', 'AI'],
-                            ['Social Security Docs', route('sls.socialSecuritySystems.import'), 'sls.socialSecuritySystems.*', 'SSD'],
+                            ['Domain Docs', route('sls.socialSecuritySystems.import'), 'sls.socialSecuritySystems.*', 'DOC'],
                             ['Document Intake', route('sls.documents.intake'), 'sls.documents.*', 'DOC'],
                             ['Knowledge Base', route('sls.knowledge.index'), 'sls.knowledge.*', 'KB'],
                             ['Demo Media', route('sls.demo-media.index'), 'sls.demo-media.*', 'VID'],
@@ -87,7 +97,7 @@
             <div class="sls-page">
                 <header class="sls-topbar">
                     <div>
-                        <p class="eyebrow">@yield('eyebrow', '1G-SLS')</p>
+                        <p class="eyebrow">@yield('eyebrow', $slsPlatformName . ' · ' . $slsEntityName)</p>
                         <h1>@yield('page_title', 'Dashboard')</h1>
                     </div>
                     <div class="actions">

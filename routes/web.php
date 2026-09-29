@@ -81,10 +81,31 @@ use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Process\ExecutableFinder;
 
-$orderedProducts = fn () => Product::query()
-    ->orderByRaw("FIELD(name, 'Interact SSAS', 'Interact HRMS', 'Interact ERMS', 'Interact EBPC')")
-    ->orderBy('name')
-    ->get();
+$slsProductOrder = fn () => collect(config('sls.products.order', []))
+    ->map(fn ($code) => Str::upper(trim((string) $code)))
+    ->filter()
+    ->values();
+
+$orderedProducts = function () use ($slsProductOrder) {
+    $query = Product::query();
+    $quotedOrder = $slsProductOrder()
+        ->map(fn (string $code) => DB::getPdo()->quote($code))
+        ->implode(', ');
+
+    if ($quotedOrder !== '') {
+        $query
+            ->orderByRaw("FIELD(UPPER(code), {$quotedOrder}) DESC")
+            ->orderByRaw("FIELD(UPPER(code), {$quotedOrder})");
+    }
+
+    return $query->orderBy('name')->get();
+};
+
+$defaultSlsProduct = fn () => Product::query()
+    ->where('code', config('sls.products.default_code', 'SSAS'))
+    ->orWhere('name', config('sls.products.default_name', 'Interact SSAS'))
+    ->first()
+    ?: Product::query()->orderBy('name')->first();
 
 $africaCountries = fn () => collect([
     ['iso' => 'DZ', 'name' => 'Algeria', 'lat' => 28.0, 'lon' => 2.6],
@@ -571,7 +592,7 @@ Route::post('/sls/intelligence/map-items/{update}/action', function (Request $re
     ]);
 })->name('sls.intelligence.mapItems.action');
 
-Route::post('/sls/tracked-countries/admin-urls', function (Request $request) {
+Route::post('/sls/tracked-countries/admin-urls', function (Request $request) use ($defaultSlsProduct) {
     $data = $request->validate([
         'country_iso' => ['required', 'string', 'max:8'],
         'country_name' => ['required', 'string', 'max:255'],
@@ -621,10 +642,7 @@ Route::post('/sls/tracked-countries/admin-urls', function (Request $request) {
     $name = trim((string) $data['organization_name']);
     $nameNormalized = $normalizeName($name);
     $country = Country::query()->where('iso_code', $iso)->first();
-    $defaultProduct = Product::query()
-        ->where('name', 'Interact SSAS')
-        ->orWhere('code', 'SSAS')
-        ->first();
+    $defaultProduct = $defaultSlsProduct();
     $product = filled($data['product_id'] ?? null)
         ? Product::query()->find((int) $data['product_id'])
         : $defaultProduct;
@@ -1206,7 +1224,7 @@ Route::get('/sls', function () use ($orderedProducts, $allMapCountries, $relevan
 
     $dashboardProducts = $orderedProducts();
     $defaultDashboardProduct = $dashboardProducts
-        ->first(fn (Product $product) => $product->name === 'Interact SSAS' || $product->code === 'SSAS')
+        ->first(fn (Product $product) => $product->name === config('sls.products.default_name', 'Interact SSAS') || $product->code === config('sls.products.default_code', 'SSAS'))
         ?: $dashboardProducts->first();
     $normaliseAdminName = fn (string $name): string => Str::lower(Str::ascii(trim($name)));
     $reviewedAdminNameReplacements = [
@@ -5878,7 +5896,7 @@ Route::post('/sls/priority-opportunities/import', function (Request $request) us
             'review_notes' => $value($row, ['review_notes', 'notes']) ?: null,
             'status' => $opportunity->status ?: $status,
             'priority' => $opportunity->priority ?: $priority,
-            'product_focus' => $opportunity->product_focus ?: 'SSAS',
+            'product_focus' => $opportunity->product_focus ?: config('sls.products.default_code', 'SSAS'),
         ]);
         $opportunity->save();
         $wasRecentlyCreated ? $created++ : $updated++;
@@ -5947,7 +5965,7 @@ Route::post('/sls/priority-opportunities/import', function (Request $request) us
                 'task_type' => 'research',
                 'status' => 'open',
                 'priority' => $priority,
-                'product_focus' => 'SSAS',
+                'product_focus' => config('sls.products.default_code', 'SSAS'),
                 'country_iso' => $country?->iso_code,
                 'market_organization_id' => $organization?->id,
                 'related_url' => $opportunity->source_1,

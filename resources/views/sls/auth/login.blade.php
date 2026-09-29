@@ -4,7 +4,7 @@
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="csrf-token" content="{{ csrf_token() }}">
-        <title>SLS Login</title>
+        <title>{{ config('sls.platform.name', 'SLS') }} Login</title>
         <link rel="icon" type="image/png" href="{{ asset('sls-favicon.png') }}?v={{ filemtime(public_path('sls-favicon.png')) }}">
         <link rel="stylesheet" href="{{ asset('sls-ui.css') }}?v={{ filemtime(public_path('sls-ui.css')) }}">
         <style>
@@ -93,8 +93,8 @@
     <body>
         <main class="login-panel">
             <img class="login-logo" src="{{ asset('sls-logo.png') }}?v={{ filemtime(public_path('sls-logo.png')) }}" alt="SLS">
-            <h1 class="login-title">Sign in to SLS</h1>
-            <p class="login-copy">Use your SLS user account to access the dashboard, intelligence monitor, CRM, and setup tools.</p>
+            <h1 class="login-title">Sign in to {{ config('sls.platform.name', 'SLS') }}</h1>
+            <p class="login-copy">Use your {{ config('sls.entity.display_name', config('sls.entity.name', 'SLS')) }} account to access {{ config('sls.workspace.name', 'Sales') }}, CRM, intelligence, and setup tools.</p>
 
             @if ($errors->any())
                 <div class="login-error">{{ $errors->first() }}</div>
