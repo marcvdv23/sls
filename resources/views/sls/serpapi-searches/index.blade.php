@@ -354,6 +354,7 @@
                             </thead>
                             <tbody>
                                 @forelse ($latestItems as $item)
+                                    @php($safeError = preg_replace('/([?&]api_key=)[^&\s)]+/i', '$1[hidden]', (string) ($item['error'] ?? '')) ?? (string) ($item['error'] ?? ''))
                                     <tr>
                                         <td>{{ $item['country'] ?? '' }} {{ isset($item['iso_code']) ? '(' . $item['iso_code'] . ')' : '' }}</td>
                                         <td>
@@ -366,7 +367,7 @@
                                             @if (! empty($item['source_url']))
                                                 <a href="{{ $item['source_url'] }}" target="_blank" rel="noreferrer">{{ $item['title'] ?? $item['source_url'] }}</a>
                                             @else
-                                                {{ $item['title'] ?? ($item['error'] ?? '') }}
+                                                {{ $item['title'] ?? $safeError }}
                                             @endif
                                             @if (! empty($item['snippet']))
                                                 <p class="muted small">{{ Str::limit($item['snippet'], 220) }}</p>

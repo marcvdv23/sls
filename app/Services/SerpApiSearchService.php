@@ -62,6 +62,7 @@ class SerpApiSearchService
                 try {
                     $results = $this->search($apiKey, $query, $resultsPerCountry);
                 } catch (Throwable $exception) {
+                    $safeError = $this->sanitizeSerpApiError($exception->getMessage());
                     $summary['errors']++;
                     $item = [
                         'country_id' => $country->id,
@@ -70,7 +71,7 @@ class SerpApiSearchService
                         'query' => $query,
                         'keyword' => $keywordLabel,
                         'status' => 'error',
-                        'error' => $exception->getMessage(),
+                        'error' => $safeError,
                         'searched_at' => now()->toDateTimeString(),
                     ];
                     $items[] = $item;
@@ -230,6 +231,17 @@ class SerpApiSearchService
             ->take($limit)
             ->values()
             ->all();
+    }
+
+    private function sanitizeSerpApiError(string $message): string
+    {
+        $message = preg_replace('/([?&]api_key=)[^&\s)]+/i', '$1[hidden]', $message) ?? $message;
+
+        if (Str::contains($message, 'cURL error 28')) {
+            return 'SerpAPI request timed out after 30 seconds without a response. This query was not counted as a kept, filtered, captured, or promoted result.';
+        }
+
+        return Str::limit($message, 500, '');
     }
 
     /**
