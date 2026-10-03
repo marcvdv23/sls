@@ -80,6 +80,7 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Process\ExecutableFinder;
 
@@ -93,6 +94,18 @@ $orderedProducts = function () use ($slsProductOrder) {
     $quotedOrder = $slsProductOrder()
         ->map(fn (string $code) => DB::getPdo()->quote($code))
         ->implode(', ');
+
+    if (Schema::hasColumn('products', 'is_active')) {
+        $query->where('is_active', true);
+    } elseif (Schema::hasColumn('products', 'status')) {
+        $query->where(function ($inner) {
+            $inner->whereNull('status')->orWhere('status', '!=', 'inactive');
+        });
+    }
+
+    if (Schema::hasColumn('products', 'sort_order')) {
+        $query->orderBy('sort_order');
+    }
 
     if ($quotedOrder !== '') {
         $query
@@ -2616,6 +2629,137 @@ Route::post('/sls/settings/workspace', function (Request $request) {
 
     return back()->with('status', 'Workspace settings saved.');
 })->name('sls.settings.workspace.update');
+
+$productStatusOptions = [
+    'active' => 'Active',
+    'inactive' => 'Inactive',
+    'roadmap' => 'Roadmap',
+    'legacy' => 'Legacy',
+];
+
+$productConfigurationReady = fn (): bool => Schema::hasTable('products')
+    && Schema::hasColumn('products', 'category')
+    && Schema::hasColumn('products', 'sort_order')
+    && Schema::hasColumn('products', 'is_active')
+    && Schema::hasColumn('products', 'is_default');
+
+$productSettingsQuery = function () {
+    $query = Product::query();
+
+    if (Schema::hasColumn('products', 'sort_order')) {
+        $query->orderBy('sort_order');
+    }
+
+    return $query
+        ->orderBy('name')
+        ->get();
+};
+
+$syncDefaultProductSetting = function (Product $product): void {
+    if (! Schema::hasTable('sls_settings')) {
+        return;
+    }
+
+    SlsSettings::seedDefaults();
+
+    SlsSetting::query()->updateOrCreate(
+        ['setting_key' => 'products.default_code'],
+        [
+            'setting_value' => $product->code,
+            'value_type' => 'string',
+            'setting_group' => 'Products',
+            'label' => 'Default product code',
+            'description' => 'Product code used as the default for mapping and intake.',
+        ]
+    );
+
+    SlsSetting::query()->updateOrCreate(
+        ['setting_key' => 'products.default_name'],
+        [
+            'setting_value' => $product->name,
+            'value_type' => 'string',
+            'setting_group' => 'Products',
+            'label' => 'Default product name',
+            'description' => 'Product name used when finding the default product.',
+        ]
+    );
+
+    SlsSettings::flush();
+};
+
+$saveProductConfiguration = function (Request $request, ?Product $product = null) use ($productStatusOptions, $syncDefaultProductSetting) {
+    abort_if(! Schema::hasTable('products'), 503, 'Products table is not available.');
+
+    $product ??= new Product();
+
+    $data = $request->validate([
+        'name' => ['required', 'string', 'max:255'],
+        'code' => [
+            'required',
+            'string',
+            'max:80',
+            Rule::unique('products', 'code')->ignore($product->exists ? $product->id : null),
+        ],
+        'description' => ['nullable', 'string', 'max:5000'],
+        'category' => ['nullable', 'string', 'max:120'],
+        'sort_order' => ['nullable', 'integer', 'min:-1000', 'max:1000'],
+        'status' => ['required', Rule::in(array_keys($productStatusOptions))],
+        'is_default' => ['nullable', 'boolean'],
+    ]);
+
+    $product->name = trim($data['name']);
+    $product->code = Str::upper(trim($data['code']));
+    $product->description = filled($data['description'] ?? null) ? trim($data['description']) : null;
+    $product->status = $data['status'];
+
+    if (Schema::hasColumn('products', 'category')) {
+        $product->category = filled($data['category'] ?? null) ? trim($data['category']) : null;
+    }
+
+    if (Schema::hasColumn('products', 'sort_order')) {
+        $product->sort_order = (int) ($data['sort_order'] ?? 0);
+    }
+
+    if (Schema::hasColumn('products', 'is_active')) {
+        $product->is_active = $data['status'] !== 'inactive';
+    }
+
+    if (Schema::hasColumn('products', 'is_default')) {
+        $product->is_default = $request->boolean('is_default');
+    }
+
+    $product->save();
+
+    if (Schema::hasColumn('products', 'is_default') && $product->is_default) {
+        Product::query()
+            ->whereKeyNot($product->id)
+            ->update(['is_default' => false]);
+    }
+
+    if ($request->boolean('is_default')) {
+        $syncDefaultProductSetting($product);
+    }
+
+    return back()->with('status', 'Product/service saved.');
+};
+
+Route::get('/sls/settings/products', function () use ($productConfigurationReady, $productSettingsQuery, $productStatusOptions) {
+    $migrationMissing = ! $productConfigurationReady();
+
+    return view('sls.settings.products', [
+        'migrationMissing' => $migrationMissing,
+        'products' => $migrationMissing ? collect() : $productSettingsQuery(),
+        'statusOptions' => $productStatusOptions,
+    ]);
+})->name('sls.settings.products');
+
+Route::post('/sls/settings/products', function (Request $request) use ($saveProductConfiguration) {
+    return $saveProductConfiguration($request);
+})->name('sls.settings.products.store');
+
+Route::post('/sls/settings/products/{product}', function (Request $request, Product $product) use ($saveProductConfiguration) {
+    return $saveProductConfiguration($request, $product);
+})->name('sls.settings.products.update');
 
 Route::post('/sls/security/users', function (Request $request) use ($ensureSecurityAccess) {
     $ensureSecurityAccess('insert');
@@ -5526,7 +5670,7 @@ Route::post('/sls/organizations/crawlers/{crawler}/crawl', function (Request $re
         ->with('status', ucfirst($crawlerProfile['singular']) . ' direct crawl started in the background. Refresh this page manually to see the started/completed batch row and individual crawl results.');
 })->name('sls.organizations.crawlers.crawl');
 
-Route::get('/sls/tasks', function (Request $request) {
+Route::get('/sls/tasks', function (Request $request) use ($orderedProducts) {
     $status = $request->string('status')->toString() ?: 'open';
     $type = $request->string('type')->toString() ?: 'all';
     $query = trim($request->string('q')->toString());
@@ -5575,6 +5719,7 @@ Route::get('/sls/tasks', function (Request $request) {
             'high' => 'High',
             'urgent' => 'Urgent',
         ],
+        'products' => $orderedProducts(),
     ]);
 })->name('sls.tasks.index');
 

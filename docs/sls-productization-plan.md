@@ -56,7 +56,7 @@ The current live setup remains the 2interact social security software sales work
 Objective: make the current deployment generic and configurable while still running as one primary workspace.
 
 - [x] Add a Workspace Settings UI for entity name, workspace name, domain focus, review label, and default product labels.
-- [ ] Add Product/Service configuration UI for product names, short codes, categories, and active/inactive state.
+- [x] Add Product/Service configuration UI for product names, short codes, categories, sort order, default marker, and active/inactive state.
 - [ ] Replace hardcoded dashboard product cards with configured products/services.
 - [ ] Make priority opportunity fields and status categories configurable.
 - [ ] Make Review Desk item/category labels configurable.

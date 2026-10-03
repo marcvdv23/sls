@@ -65,10 +65,9 @@
                 <label>Product
                     <select name="product_focus">
                         <option value="">Any</option>
-                        <option value="SSAS">SSAS</option>
-                        <option value="HRMS">HRMS</option>
-                        <option value="ERMS">ERMS</option>
-                        <option value="EBPC">EBPC</option>
+                        @foreach ($products as $product)
+                            <option value="{{ $product->code ?: $product->name }}">{{ $product->code ?: $product->name }}</option>
+                        @endforeach
                     </select>
                 </label>
                 <label>Country ISO

@@ -70,7 +70,8 @@
                             ['Image Import', route('sls.directoryImages.index'), 'sls.directoryImages.*', 'IMG'],
                         ],
                         'Setup' => [
-                            ['Workspace Settings', route('sls.settings.workspace'), 'sls.settings.*', 'SET'],
+                            ['Workspace Settings', route('sls.settings.workspace'), 'sls.settings.workspace*', 'SET'],
+                            ['Products & Services', route('sls.settings.products'), 'sls.settings.products*', 'PRD'],
                             ['Operations', route('sls.operations.index'), 'sls.operations.*', 'OPS'],
                             ['Security', route('sls.security.index'), 'sls.security.*', 'SEC'],
                             ['Backup', url('/sls#backup'), 'sls.system.backup', 'BAK'],
