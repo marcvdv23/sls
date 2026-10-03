@@ -378,7 +378,7 @@
                                 </td>
                                 <td>{{ Str::of($source->source_class ?: 'source')->replace('_', ' ')->title() }}</td>
                                 <td>{{ Str::of($source->focus ?: 'all')->replace('_', ' ')->title() }}</td>
-                                <td>{{ $source->enabled ? 'Enabled' : 'Disabled' }}</td>
+                                <td>{{ $source->is_enabled ? 'Enabled' : 'Disabled' }}</td>
                             </tr>
                         @empty
                             <tr>
@@ -390,7 +390,7 @@
             </div>
             <div class="toolbar">
                 <a class="button secondary tiny" href="{{ route('sls.intelligence.sources') }}">Manage sources</a>
-                <a class="button secondary tiny" href="{{ route('sls.serpapi.index') }}">SerpAPI searches</a>
+                <a class="button secondary tiny" href="{{ route('sls.serpapiSearches.index') }}">SerpAPI searches</a>
             </div>
         </section>
         @endif
