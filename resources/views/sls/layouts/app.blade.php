@@ -2,10 +2,10 @@
 <html lang="en" data-theme="{{ auth()->user()->theme_preference ?? 'white' }}">
     <head>
         @php
-            $slsPlatformName = config('sls.platform.name', 'SLS');
-            $slsEntityName = config('sls.entity.display_name', config('sls.entity.name', '2interact'));
-            $slsWorkspaceName = config('sls.workspace.name', 'Social Security Sales');
-            $slsReviewLabel = config('sls.workspace.review_label', 'Review Desk');
+            $slsPlatformName = \App\Support\SlsSettings::get('platform.name', config('sls.platform.name', 'SLS'));
+            $slsEntityName = \App\Support\SlsSettings::get('entity.display_name', config('sls.entity.display_name', config('sls.entity.name', '2interact')));
+            $slsWorkspaceName = \App\Support\SlsSettings::get('workspace.name', config('sls.workspace.name', 'Social Security Sales'));
+            $slsReviewLabel = \App\Support\SlsSettings::get('workspace.review_label', config('sls.workspace.review_label', 'Review Desk'));
         @endphp
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -70,6 +70,7 @@
                             ['Image Import', route('sls.directoryImages.index'), 'sls.directoryImages.*', 'IMG'],
                         ],
                         'Setup' => [
+                            ['Workspace Settings', route('sls.settings.workspace'), 'sls.settings.*', 'SET'],
                             ['Operations', route('sls.operations.index'), 'sls.operations.*', 'OPS'],
                             ['Security', route('sls.security.index'), 'sls.security.*', 'SEC'],
                             ['Backup', url('/sls#backup'), 'sls.system.backup', 'BAK'],

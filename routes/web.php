@@ -36,6 +36,7 @@ use App\Models\SourceDocument;
 use App\Models\SocialSecurityAdminCandidate;
 use App\Models\SlsOperationRun;
 use App\Models\SerpApiSearchTemplate;
+use App\Models\SlsSetting;
 use App\Models\SlsTask;
 use App\Models\TenderAwardedCompany;
 use App\Models\AccessAuditLog;
@@ -66,6 +67,7 @@ use App\Services\UniversitySurveyCrawlerService;
 use App\Support\CountryUpdateClassifier;
 use App\Support\CountryUpdateDedupeRules;
 use App\Support\CountryUpdateNoiseRules;
+use App\Support\SlsSettings;
 use App\Support\SocialSecurityAdminNameCleaner;
 use App\Support\TitleLanguage;
 use Carbon\Carbon;
@@ -81,7 +83,7 @@ use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Process\ExecutableFinder;
 
-$slsProductOrder = fn () => collect(config('sls.products.order', []))
+$slsProductOrder = fn () => collect(explode(',', SlsSettings::get('products.order', implode(',', config('sls.products.order', [])))))
     ->map(fn ($code) => Str::upper(trim((string) $code)))
     ->filter()
     ->values();
@@ -102,8 +104,8 @@ $orderedProducts = function () use ($slsProductOrder) {
 };
 
 $defaultSlsProduct = fn () => Product::query()
-    ->where('code', config('sls.products.default_code', 'SSAS'))
-    ->orWhere('name', config('sls.products.default_name', 'Interact SSAS'))
+    ->where('code', SlsSettings::get('products.default_code', config('sls.products.default_code', 'SSAS')))
+    ->orWhere('name', SlsSettings::get('products.default_name', config('sls.products.default_name', 'Interact SSAS')))
     ->first()
     ?: Product::query()->orderBy('name')->first();
 
@@ -1224,7 +1226,7 @@ Route::get('/sls', function () use ($orderedProducts, $allMapCountries, $relevan
 
     $dashboardProducts = $orderedProducts();
     $defaultDashboardProduct = $dashboardProducts
-        ->first(fn (Product $product) => $product->name === config('sls.products.default_name', 'Interact SSAS') || $product->code === config('sls.products.default_code', 'SSAS'))
+        ->first(fn (Product $product) => $product->name === SlsSettings::get('products.default_name', config('sls.products.default_name', 'Interact SSAS')) || $product->code === SlsSettings::get('products.default_code', config('sls.products.default_code', 'SSAS')))
         ?: $dashboardProducts->first();
     $normaliseAdminName = fn (string $name): string => Str::lower(Str::ascii(trim($name)));
     $reviewedAdminNameReplacements = [
@@ -2572,6 +2574,48 @@ Route::get('/sls/security', function () use ($securityActions, $ensureSecurityAc
         'recentAuditLogs' => AccessAuditLog::query()->with('user')->latest('created_at')->limit(25)->get(),
     ]);
 })->name('sls.security.index');
+
+Route::get('/sls/settings/workspace', function () {
+    $migrationMissing = ! Schema::hasTable('sls_settings');
+
+    return view('sls.settings.workspace', [
+        'migrationMissing' => $migrationMissing,
+        'settingsByGroup' => $migrationMissing ? collect() : SlsSettings::grouped(),
+    ]);
+})->name('sls.settings.workspace');
+
+Route::post('/sls/settings/workspace', function (Request $request) {
+    abort_if(! Schema::hasTable('sls_settings'), 503, 'Workspace settings table is not available yet.');
+
+    $definitions = SlsSettings::definitions();
+    $data = $request->validate([
+        'settings' => ['required', 'array'],
+        'settings.*' => ['nullable', 'string', 'max:5000'],
+    ]);
+
+    SlsSettings::seedDefaults();
+
+    foreach (($data['settings'] ?? []) as $key => $value) {
+        if (! array_key_exists($key, $definitions)) {
+            continue;
+        }
+
+        SlsSetting::query()->updateOrCreate(
+            ['setting_key' => $key],
+            [
+                'setting_value' => is_string($value) ? trim($value) : $value,
+                'value_type' => $definitions[$key]['value_type'] ?? 'string',
+                'setting_group' => $definitions[$key]['group'] ?? 'General',
+                'label' => $definitions[$key]['label'] ?? $key,
+                'description' => $definitions[$key]['description'] ?? null,
+            ]
+        );
+    }
+
+    SlsSettings::flush();
+
+    return back()->with('status', 'Workspace settings saved.');
+})->name('sls.settings.workspace.update');
 
 Route::post('/sls/security/users', function (Request $request) use ($ensureSecurityAccess) {
     $ensureSecurityAccess('insert');
@@ -5896,7 +5940,7 @@ Route::post('/sls/priority-opportunities/import', function (Request $request) us
             'review_notes' => $value($row, ['review_notes', 'notes']) ?: null,
             'status' => $opportunity->status ?: $status,
             'priority' => $opportunity->priority ?: $priority,
-            'product_focus' => $opportunity->product_focus ?: config('sls.products.default_code', 'SSAS'),
+            'product_focus' => $opportunity->product_focus ?: SlsSettings::get('products.default_code', config('sls.products.default_code', 'SSAS')),
         ]);
         $opportunity->save();
         $wasRecentlyCreated ? $created++ : $updated++;
@@ -5965,7 +6009,7 @@ Route::post('/sls/priority-opportunities/import', function (Request $request) us
                 'task_type' => 'research',
                 'status' => 'open',
                 'priority' => $priority,
-                'product_focus' => config('sls.products.default_code', 'SSAS'),
+                'product_focus' => SlsSettings::get('products.default_code', config('sls.products.default_code', 'SSAS')),
                 'country_iso' => $country?->iso_code,
                 'market_organization_id' => $organization?->id,
                 'related_url' => $opportunity->source_1,

@@ -49,12 +49,13 @@ The current live setup remains the 2interact social security software sales work
 - [x] Draft the mobile and voice API architecture.
 - [x] Sanitize SerpAPI errors and remove API keys from displayable error details.
 - [x] Add this productization plan as a tracked document.
+- [x] Add database-backed workspace settings foundation and Setup UI.
 
 ## Phase 1: Configurable Single-Entity Workspace
 
 Objective: make the current deployment generic and configurable while still running as one primary workspace.
 
-- [ ] Add a Workspace Settings UI for entity name, workspace name, default timezone, domain focus, and visible app labels.
+- [x] Add a Workspace Settings UI for entity name, workspace name, domain focus, review label, and default product labels.
 - [ ] Add Product/Service configuration UI for product names, short codes, categories, and active/inactive state.
 - [ ] Replace hardcoded dashboard product cards with configured products/services.
 - [ ] Make priority opportunity fields and status categories configurable.

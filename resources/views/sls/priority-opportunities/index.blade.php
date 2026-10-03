@@ -84,7 +84,7 @@
         <section class="panel stack">
             <div>
                 <p class="eyebrow">Pipeline</p>
-                <h2>{{ config('sls.workspace.opportunity_label', 'Curated priority opportunities') }}</h2>
+                <h2>{{ \App\Support\SlsSettings::get('workspace.opportunity_label', config('sls.workspace.opportunity_label', 'Curated priority opportunities')) }}</h2>
             </div>
             <div class="table-wrap">
                 <table class="priority-table">
