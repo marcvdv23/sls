@@ -74,6 +74,7 @@
                             ['Products & Services', route('sls.settings.products'), 'sls.settings.products*', 'PRD'],
                             ['Review Categories', route('sls.settings.reviewFocuses'), 'sls.settings.reviewFocuses*', 'REV'],
                             ['Priority Opportunities', route('sls.settings.priorityOpportunities'), 'sls.settings.priorityOpportunities*', 'PRI'],
+                            ['Crawler Settings', route('sls.intelligence.crawlerSettings'), 'sls.intelligence.crawlerSettings', 'CRW'],
                             ['Operations', route('sls.operations.index'), 'sls.operations.*', 'OPS'],
                             ['Security', route('sls.security.index'), 'sls.security.*', 'SEC'],
                             ['Backup', url('/sls#backup'), 'sls.system.backup', 'BAK'],

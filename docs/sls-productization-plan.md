@@ -62,7 +62,7 @@ Objective: make the current deployment generic and configurable while still runn
 - [x] Make priority opportunity fields and status categories configurable.
 - [x] Move default SerpAPI keywords into editable system configuration.
 - [x] Make SerpAPI query templates, result filters, and reruns configurable from the UI.
-- [ ] Add or improve crawler/search profile admin screens so sources, schedules, keywords, and targets are clear.
+- [x] Add or improve crawler/search profile admin screens so sources, schedules, keywords, and targets are clear.
 - [ ] Preserve the current 2interact social security setup as seeded/default configuration.
 
 ## Phase 2: Workspace-Scoped Data
@@ -140,10 +140,10 @@ Initial review categories:
 
 ## Next Immediate Coding Pass
 
-1. Add or improve crawler/search profile admin screens so sources, schedules, keywords, and targets are clear.
-2. Start workspace scoping only after the single-workspace configuration screens are stable.
-3. Add workspace ownership to SerpAPI templates and operation runs.
-4. Add workspace ownership to crawler settings and source definitions.
+1. Start workspace scoping now that the single-workspace configuration screens are stable.
+2. Add workspace ownership to SerpAPI templates and operation runs.
+3. Add workspace ownership to crawler settings and source definitions.
+4. Add workspace ownership to products/services, review categories, and priority-opportunity settings.
 5. Add a workspace selector after the first workspace-scoped tables are in place.
 
 ## Open Decisions

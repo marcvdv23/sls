@@ -8711,6 +8711,91 @@ $crawlerSettingDefinitions = fn (): array => [
     ],
 ];
 
+$crawlerSettingGroups = fn (): array => [
+    'targets' => [
+        'title' => 'Countries and target scope',
+        'description' => 'Controls which countries or regions the scheduled country-intelligence crawlers rotate through.',
+        'keys' => [
+            'scheduled_region_scope',
+            'daily_batch_size',
+        ],
+    ],
+    'news' => [
+        'title' => 'News and general intelligence',
+        'description' => 'Controls indexed news searches, source-specific RSS/news checks, result limits, and freshness filtering.',
+        'keys' => [
+            'gdelt_endpoint',
+            'gdelt_timespan',
+            'default_max_results',
+            'scheduled_max_results',
+            'max_queries_per_country',
+            'news_recent_publication_days',
+            'news_aggregator_queries_per_country',
+            'news_aggregator_results_per_query',
+            'social_security_daily_slots',
+            'global_social_news_sweep_time',
+            'global_social_news_max_results',
+        ],
+    ],
+    'tenders' => [
+        'title' => 'Tender and opportunity sources',
+        'description' => 'Controls procurement APIs, donor searches, global tender sweeps, and limits for captured tender opportunities.',
+        'keys' => [
+            'development_partner_max_queries_per_country',
+            'world_bank_procurement_endpoint',
+            'world_bank_recent_notice_days',
+            'ted_search_endpoint',
+            'usaid_business_forecast_endpoint',
+            'sam_gov_opportunities_endpoint',
+            'sam_gov_api_key',
+            'hrms_tender_slots',
+            'sector_tender_slots',
+            'global_hrms_tender_sweep_time',
+            'global_erms_tender_sweep_time',
+            'global_ebpc_tender_sweep_time',
+            'global_social_tender_sweep_time',
+            'global_tender_sweep_max_results',
+        ],
+    ],
+    'ilo' => [
+        'title' => 'ILO and social-protection discovery',
+        'description' => 'Controls weekly ILO profile and project-discovery crawls.',
+        'keys' => [
+            'social_protection_profile_weekly_day',
+            'social_protection_profile_weekly_time',
+            'ilo_social_protection_project_weekly_day',
+            'ilo_social_protection_project_weekly_time',
+            'ilo_social_protection_project_weekly_country_limit',
+            'ilo_social_protection_project_queries_per_country',
+            'ilo_social_protection_project_results_per_query',
+        ],
+    ],
+    'operations' => [
+        'title' => 'Worker, SSL, backup, and processing limits',
+        'description' => 'Controls runtime safety knobs, maintenance jobs, backup timing, and background processing limits.',
+        'keys' => [
+            'verify_ssl',
+            'daily_backup_time',
+            'daily_backup_timezone',
+            'tender_document_process_limit',
+            'title_translation_backfill_limit',
+            'crawler_contact_clean_limit',
+            'crawler_contact_resolve_limit',
+            'worker_stale_minutes',
+        ],
+    ],
+    'serpapi' => [
+        'title' => 'SerpAPI discovery connection',
+        'description' => 'Controls the shared SerpAPI connection used by source discovery, project discovery, and indexed-search crawlers.',
+        'keys' => [
+            'serpapi_key',
+            'serpapi_pilot_limit',
+            'serpapi_verify_ssl',
+            'serpapi_ca_bundle',
+        ],
+    ],
+];
+
 $seedCrawlerSettings = function () use ($crawlerSettingDefinitions): void {
     if (! Schema::hasTable('crawler_settings')) {
         return;
@@ -8729,7 +8814,7 @@ $seedCrawlerSettings = function () use ($crawlerSettingDefinitions): void {
     }
 };
 
-Route::get('/sls/intelligence/crawler-settings', function () use ($seedCrawlerSettings, $crawlerSettingDefinitions) {
+Route::get('/sls/intelligence/crawler-settings', function () use ($seedCrawlerSettings, $crawlerSettingDefinitions, $crawlerSettingGroups) {
     $seedCrawlerSettings();
 
     $settings = CrawlerSetting::query()
@@ -8737,9 +8822,27 @@ Route::get('/sls/intelligence/crawler-settings', function () use ($seedCrawlerSe
         ->get()
         ->keyBy('setting_key');
 
+    $relatedCounts = [
+        'sources' => Schema::hasTable('intelligence_sources') ? IntelligenceSource::query()->count() : 0,
+        'keywords' => Schema::hasTable('intelligence_keywords') ? IntelligenceKeyword::query()->count() : 0,
+        'serpapi_templates' => Schema::hasTable('serpapi_search_templates') ? SerpApiSearchTemplate::query()->count() : 0,
+        'recent_monitor_runs' => Schema::hasTable('country_monitor_runs') ? CountryMonitorRun::query()->where('started_at', '>=', now()->subDays(7))->count() : 0,
+    ];
+
+    $recentRuns = Schema::hasTable('country_monitor_runs')
+        ? CountryMonitorRun::query()
+            ->with('country:id,name,iso_code')
+            ->latest('started_at')
+            ->limit(8)
+            ->get(['country_id', 'focus', 'status', 'started_at', 'finished_at', 'items_found', 'sources_checked'])
+        : collect();
+
     return view('sls.intelligence.crawler-settings', [
         'settings' => $settings,
         'definitions' => $crawlerSettingDefinitions(),
+        'groups' => $crawlerSettingGroups(),
+        'relatedCounts' => $relatedCounts,
+        'recentRuns' => $recentRuns,
     ]);
 })->name('sls.intelligence.crawlerSettings');
 
