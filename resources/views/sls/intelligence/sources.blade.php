@@ -143,6 +143,11 @@
                 @csrf
                 <button class="secondary" type="submit">Auto-configure missing access</button>
             </form>
+            @if ($filters['source_counts'] ?? false)
+                <p class="muted">Tender capture counts are loaded for this view.</p>
+            @else
+                <a class="button secondary" href="{{ request()->fullUrlWithQuery(['source_counts' => 1]) }}">Load tender capture counts</a>
+            @endif
 
             <form class="form-grid" method="post" action="{{ route('sls.intelligence.sources.store') }}">
                 @csrf
@@ -262,8 +267,20 @@
                                         <span class="muted">{{ $source->domain ?: 'No URL captured' }}</span>
                                     <?php endif; ?>
                                 </td>
-                                <td><strong>{{ $source->captured_tenders_last_120_count ?? 0 }}</strong></td>
-                                <td><strong>{{ $source->captured_tenders_total_count ?? 0 }}</strong></td>
+                                <td>
+                                    @if (($filters['source_counts'] ?? false) || $source->captured_tenders_last_120_count !== null)
+                                        <strong>{{ $source->captured_tenders_last_120_count ?? 0 }}</strong>
+                                    @else
+                                        <span class="muted">Not loaded</span>
+                                    @endif
+                                </td>
+                                <td>
+                                    @if (($filters['source_counts'] ?? false) || $source->captured_tenders_total_count !== null)
+                                        <strong>{{ $source->captured_tenders_total_count ?? 0 }}</strong>
+                                    @else
+                                        <span class="muted">Not loaded</span>
+                                    @endif
+                                </td>
                                 <td>{{ $source->computed_last_checked_at?->copy()->timezone('America/Chicago')->format('Y-m-d H:i') ?? 'Not checked yet' }}</td>
                                 <td>{{ $source->last_success_at?->copy()->timezone('America/Chicago')->format('Y-m-d H:i') ?? 'No successful hit yet' }}</td>
                                 <td>{{ $source->computed_next_checked_at?->copy()->timezone('America/Chicago')->format('Y-m-d H:i') ?? 'Country cycle / on demand' }}</td>

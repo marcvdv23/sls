@@ -7902,6 +7902,7 @@ Route::get('/sls/intelligence/sources', function (Request $request) use ($allMap
     $portalTypeFilter = (string) $request->query('portal_type', 'all');
     $registrationFilter = (string) $request->query('registration', 'all');
     $queueFilter = Str::of((string) $request->query('queue', 'all'))->lower()->toString();
+    $showSourceTenderCounts = $request->boolean('source_counts', false);
     $mapCountries = $allMapCountries();
     $austinTz = 'America/Chicago';
     $sourceNextRunMap = function ($scheduledCountries, array $slots, int $cycleSize): array {
@@ -8022,7 +8023,9 @@ Route::get('/sls/intelligence/sources', function (Request $request) use ($allMap
 
     $latestRunsByCountryIso = CountryMonitorRun::query()
         ->with('country')
+        ->whereNotNull('country_id')
         ->latest('finished_at')
+        ->limit(1000)
         ->get()
         ->filter(fn (CountryMonitorRun $run) => filled($run->country?->iso_code))
         ->unique(fn (CountryMonitorRun $run) => strtoupper((string) $run->country->iso_code))
@@ -8057,31 +8060,35 @@ Route::get('/sls/intelligence/sources', function (Request $request) use ($allMap
             return 0;
         }
 
-        return CountryUpdate::query()
-            ->where('review_status', '<>', 'rejected')
-            ->when($publishedSince, fn ($query) => $query->where('publication_date', '>=', $publishedSince))
-            ->where(function ($query) use ($tenderSignalTermsForSourceCounts) {
-                foreach ($tenderSignalTermsForSourceCounts as $term) {
-                    $like = '%' . $term . '%';
+        try {
+            return CountryUpdate::query()
+                ->where('review_status', '<>', 'rejected')
+                ->when($publishedSince, fn ($query) => $query->where('publication_date', '>=', $publishedSince))
+                ->where(function ($query) use ($tenderSignalTermsForSourceCounts) {
+                    foreach ($tenderSignalTermsForSourceCounts as $term) {
+                        $like = '%' . $term . '%';
 
-                    $query->orWhere('title', 'like', $like)
-                        ->orWhere('title_english', 'like', $like)
-                        ->orWhere('title_original', 'like', $like)
-                        ->orWhere('summary', 'like', $like)
-                        ->orWhere('source_name', 'like', $like)
-                        ->orWhere('source_url', 'like', $like);
-                }
-            })
-            ->where(function ($query) use ($sourceName, $domains) {
-                if ($sourceName !== '') {
-                    $query->orWhereRaw('LOWER(source_name) = ?', [$sourceName]);
-                }
+                        $query->orWhere('title', 'like', $like)
+                            ->orWhere('title_english', 'like', $like)
+                            ->orWhere('title_original', 'like', $like)
+                            ->orWhere('summary', 'like', $like)
+                            ->orWhere('source_name', 'like', $like)
+                            ->orWhere('source_url', 'like', $like);
+                    }
+                })
+                ->where(function ($query) use ($sourceName, $domains) {
+                    if ($sourceName !== '') {
+                        $query->orWhereRaw('LOWER(source_name) = ?', [$sourceName]);
+                    }
 
-                foreach ($domains as $domain) {
-                    $query->orWhere('source_url', 'like', '%' . $domain . '%');
-                }
-            })
-            ->count();
+                    foreach ($domains as $domain) {
+                        $query->orWhere('source_url', 'like', '%' . $domain . '%');
+                    }
+                })
+                ->count();
+        } catch (Throwable) {
+            return 0;
+        }
     };
 
     $allManagedSources = Schema::hasTable('intelligence_sources')
@@ -8095,7 +8102,7 @@ Route::get('/sls/intelligence/sources', function (Request $request) use ($allMap
             ->orderBy('source_class')
             ->orderBy('name')
             ->get()
-            ->map(function (IntelligenceSource $source) use ($latestRunsByCountryIso, $latestGlobalRun, $nextGlobalHrmsSweep, $nextGlobalErmsSweep, $nextGlobalEbpcSweep, $nextGlobalSocialSweep, $socialSecuritySourceNextRuns, $hrmsSourceNextRuns, $sectorSourceNextRuns, $publishedSinceForSourceCounts, $countCapturedTendersForSource) {
+            ->map(function (IntelligenceSource $source) use ($latestRunsByCountryIso, $latestGlobalRun, $nextGlobalHrmsSweep, $nextGlobalErmsSweep, $nextGlobalEbpcSweep, $nextGlobalSocialSweep, $socialSecuritySourceNextRuns, $hrmsSourceNextRuns, $sectorSourceNextRuns, $publishedSinceForSourceCounts, $countCapturedTendersForSource, $showSourceTenderCounts) {
                 $lastRun = $source->country_iso
                     ? $latestRunsByCountryIso->get(strtoupper((string) $source->country_iso))
                     : $latestGlobalRun;
@@ -8169,9 +8176,8 @@ Route::get('/sls/intelligence/sources', function (Request $request) use ($allMap
                         })
                         ->count()
                     : 0;
-                $sourceDomain = Str::of((string) $source->domain)->lower()->replace('www.', '')->toString();
-                $source->captured_tenders_total_count = $countCapturedTendersForSource($source);
-                $source->captured_tenders_last_120_count = $countCapturedTendersForSource($source, $publishedSinceForSourceCounts);
+                $source->captured_tenders_total_count = $showSourceTenderCounts ? $countCapturedTendersForSource($source) : null;
+                $source->captured_tenders_last_120_count = $showSourceTenderCounts ? $countCapturedTendersForSource($source, $publishedSinceForSourceCounts) : null;
                 if ($source->captured_tenders_total_count === 0 && $source->audit_count > 0) {
                     $source->connection_status_label = 'No parsed tender output';
                     $source->connection_status_class = 'warn';
@@ -8232,6 +8238,7 @@ Route::get('/sls/intelligence/sources', function (Request $request) use ($allMap
             'portal_type' => $portalTypeFilter,
             'registration' => $registrationFilter,
             'queue' => $queueFilter,
+            'source_counts' => $showSourceTenderCounts,
         ],
         'accessOptions' => $allManagedSources
             ->pluck('access_setup_label')
