@@ -9,6 +9,8 @@ class ReviewFocus extends Model
 {
     use BelongsToWorkspace;
 
+    protected $table = 'review_focuses';
+
     protected $fillable = [
         'workspace_id',
         'focus_key',
