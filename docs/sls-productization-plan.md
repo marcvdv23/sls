@@ -69,9 +69,10 @@ Objective: make the current deployment generic and configurable while still runn
 
 Objective: support multiple workspaces for one entity without mixing data.
 
-- [ ] Add a `workspaces` table.
-- [ ] Add `workspace_id` to configurable products/services.
-- [ ] Add `workspace_id` to crawler settings, SerpAPI templates, source definitions, keywords, and operation runs.
+- [x] Add a `workspaces` table.
+- [x] Add `workspace_id` to configurable products/services.
+- [x] Add `workspace_id` to review categories, priority-opportunity settings, crawler settings, SLS settings, and SerpAPI templates.
+- [ ] Add `workspace_id` to source definitions, keywords, and operation runs.
 - [ ] Add `workspace_id` to priority opportunities and any future imported shortlist records.
 - [ ] Decide whether Review Desk items and `country_updates` should be workspace-scoped directly or through source/campaign ownership.
 - [ ] Add an active workspace selector.
@@ -140,11 +141,11 @@ Initial review categories:
 
 ## Next Immediate Coding Pass
 
-1. Start workspace scoping now that the single-workspace configuration screens are stable.
-2. Add workspace ownership to SerpAPI templates and operation runs.
-3. Add workspace ownership to crawler settings and source definitions.
-4. Add workspace ownership to products/services, review categories, and priority-opportunity settings.
-5. Add a workspace selector after the first workspace-scoped tables are in place.
+1. Add workspace ownership to source definitions, keywords, and operation runs.
+2. Add workspace ownership to priority opportunities and imported shortlist records.
+3. Add workspace ownership to Review Desk/intelligence data after config scoping is stable.
+4. Add a workspace selector after the first workspace-scoped tables are in place.
+5. Seed the rckgrp sustainability workspace configuration.
 
 ## Open Decisions
 

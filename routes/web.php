@@ -48,6 +48,7 @@ use App\Models\UserGroup;
 use App\Models\UserGroupCountryAccess;
 use App\Models\UserGroupPermission;
 use App\Models\UserGroupProductAccess;
+use App\Models\Workspace;
 use App\Services\KnowledgeChatService;
 use App\Services\KnowledgeIngestionService;
 use App\Services\BankDomainGuessService;
@@ -75,6 +76,7 @@ use App\Support\SerpApiSearchConfig;
 use App\Support\SlsSettings;
 use App\Support\SocialSecurityAdminNameCleaner;
 use App\Support\TitleLanguage;
+use App\Support\WorkspaceContext;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -2624,9 +2626,12 @@ Route::get('/sls/security', function () use ($securityActions, $ensureSecurityAc
 
 Route::get('/sls/settings/workspace', function () {
     $migrationMissing = ! Schema::hasTable('sls_settings');
+    $currentWorkspace = Schema::hasTable('workspaces') ? WorkspaceContext::seedDefaultWorkspace() : null;
 
     return view('sls.settings.workspace', [
         'migrationMissing' => $migrationMissing,
+        'currentWorkspace' => $currentWorkspace,
+        'workspacesTableReady' => Schema::hasTable('workspaces'),
         'settingsByGroup' => $migrationMissing ? collect() : SlsSettings::grouped(),
     ]);
 })->name('sls.settings.workspace');
@@ -2660,6 +2665,28 @@ Route::post('/sls/settings/workspace', function (Request $request) {
     }
 
     SlsSettings::flush();
+    WorkspaceContext::flush();
+
+    if (Schema::hasTable('workspaces')) {
+        $workspace = WorkspaceContext::seedDefaultWorkspace();
+
+        if ($workspace) {
+            $values = collect($data['settings'] ?? [])->map(fn ($value) => is_string($value) ? trim($value) : $value);
+
+            $workspace->forceFill([
+                'workspace_key' => $values->get('workspace.key') ?: $workspace->workspace_key,
+                'entity_key' => $values->get('entity.key') ?: $workspace->entity_key,
+                'entity_name' => $values->get('entity.display_name') ?: $values->get('entity.name') ?: $workspace->entity_name,
+                'name' => $values->get('workspace.name') ?: $workspace->name,
+                'description' => $values->get('workspace.description') ?: $workspace->description,
+                'domain_label' => $values->get('workspace.domain_label') ?: $workspace->domain_label,
+                'status' => 'active',
+                'is_default' => true,
+            ])->save();
+
+            WorkspaceContext::flush();
+        }
+    }
 
     return back()->with('status', 'Workspace settings saved.');
 })->name('sls.settings.workspace.update');
@@ -7882,7 +7909,7 @@ Route::get('/sls/intelligence/sources', function (Request $request) use ($allMap
                 return $default;
             }
 
-            $value = DB::table('crawler_settings')->where('setting_key', $key)->value('setting_value');
+            $value = WorkspaceContext::settingValue('crawler_settings', $key);
 
             return filled($value) ? $value : $default;
         } catch (Throwable) {

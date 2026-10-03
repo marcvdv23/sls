@@ -6,6 +6,7 @@ use App\Models\Country;
 use App\Models\IntelligenceKeyword;
 use App\Models\IntelligenceSource;
 use App\Models\IntelligenceSourceAudit;
+use App\Support\WorkspaceContext;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -363,7 +364,7 @@ class SerpApiSourceDiscoveryService
                 return $default;
             }
 
-            $value = DB::table('crawler_settings')->where('setting_key', $key)->value('setting_value');
+            $value = WorkspaceContext::settingValue('crawler_settings', $key);
 
             return filled($value) ? $value : $default;
         } catch (Throwable) {

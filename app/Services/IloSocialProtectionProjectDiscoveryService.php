@@ -6,6 +6,7 @@ use App\Models\Country;
 use App\Models\CountryMonitorRun;
 use App\Models\CountryTopic;
 use App\Models\CountryUpdate;
+use App\Support\WorkspaceContext;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -262,7 +263,7 @@ class IloSocialProtectionProjectDiscoveryService
                 return $default;
             }
 
-            $value = DB::table('crawler_settings')->where('setting_key', $key)->value('setting_value');
+            $value = WorkspaceContext::settingValue('crawler_settings', $key);
 
             return filled($value) ? $value : $default;
         } catch (Throwable) {

@@ -37,6 +37,21 @@
             <p class="muted">These values control the visible platform, entity, workspace, and default product labels for this deployment. They keep this instance configurable while the broader tenant and workspace separation is built in later phases.</p>
         </section>
 
+        <section class="panel settings-intro">
+            <p class="eyebrow">Current workspace record</p>
+            @if ($workspacesTableReady && $currentWorkspace)
+                <h2>{{ $currentWorkspace->entity_name }} / {{ $currentWorkspace->name }}</h2>
+                <p class="muted">Key: <code>{{ $currentWorkspace->workspace_key }}</code> · Entity: <code>{{ $currentWorkspace->entity_key }}</code> · Status: {{ $currentWorkspace->status }}</p>
+                <p class="muted">Configuration tables now store rows against this workspace. The selector comes in the next pass after more tables are scoped.</p>
+            @elseif ($workspacesTableReady)
+                <h2>No workspace record found</h2>
+                <p class="muted">The workspace table exists, but the default workspace has not been seeded yet.</p>
+            @else
+                <h2>Workspace table pending</h2>
+                <p class="muted">Run the latest migration to create the workspace record and backfill existing configuration rows.</p>
+            @endif
+        </section>
+
         @if ($errors->any())
             <section class="panel" style="color:#b91c1c;border-color:#fecaca;background:#fff7f7;">{{ $errors->first() }}</section>
         @endif

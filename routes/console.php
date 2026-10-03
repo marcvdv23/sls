@@ -38,6 +38,7 @@ use App\Support\CountryUpdateClassifier;
 use App\Support\CountryUpdateDedupeRules;
 use App\Support\CountryUpdateNoiseRules;
 use App\Support\TitleLanguage;
+use App\Support\WorkspaceContext;
 use Carbon\Carbon;
 
 Artisan::command('inspire', function () {
@@ -1228,9 +1229,7 @@ Artisan::command('sls:cleanup-stale-news-items {--days= : Override the configure
 
     try {
         if (Schema::hasTable('crawler_settings')) {
-            $settingValue = DB::table('crawler_settings')
-                ->where('setting_key', 'news_recent_publication_days')
-                ->value('setting_value');
+            $settingValue = WorkspaceContext::settingValue('crawler_settings', 'news_recent_publication_days');
         }
     } catch (Throwable) {
         $settingValue = null;
@@ -2165,7 +2164,7 @@ $crawlerSetting = function (string $key, mixed $default = null): mixed {
             return $default;
         }
 
-        $value = DB::table('crawler_settings')->where('setting_key', $key)->value('setting_value');
+        $value = WorkspaceContext::settingValue('crawler_settings', $key);
 
         return filled($value) ? $value : $default;
     } catch (\Throwable) {
@@ -2246,7 +2245,7 @@ Schedule::call(function () {
                 return $default;
             }
 
-            $value = DB::table('crawler_settings')->where('setting_key', $key)->value('setting_value');
+            $value = WorkspaceContext::settingValue('crawler_settings', $key);
 
             return filled($value) ? $value : $default;
         } catch (\Throwable) {
@@ -2339,7 +2338,7 @@ Schedule::call(function () {
                 return $default;
             }
 
-            $value = DB::table('crawler_settings')->where('setting_key', $key)->value('setting_value');
+            $value = WorkspaceContext::settingValue('crawler_settings', $key);
 
             return filled($value) ? $value : $default;
         } catch (\Throwable) {

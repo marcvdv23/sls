@@ -2,13 +2,17 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToWorkspace;
 use Illuminate\Database\Eloquent\Model;
 
 class SerpApiSearchTemplate extends Model
 {
+    use BelongsToWorkspace;
+
     protected $table = 'serpapi_search_templates';
 
     protected $fillable = [
+        'workspace_id',
         'name',
         'focus',
         'query_template',

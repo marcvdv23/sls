@@ -12,6 +12,7 @@ use App\Support\CountryUpdateDedupeRules;
 use App\Support\CountryUpdateNoiseRules;
 use App\Support\ReviewFocuses;
 use App\Support\TitleLanguage;
+use App\Support\WorkspaceContext;
 use Carbon\Carbon;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
@@ -418,9 +419,7 @@ class CountryIntelligenceMonitor
                 return $default;
             }
 
-            $value = \Illuminate\Support\Facades\DB::table('crawler_settings')
-                ->where('setting_key', $key)
-                ->value('setting_value');
+            $value = WorkspaceContext::settingValue('crawler_settings', $key);
 
             return filled($value) ? $value : $default;
         } catch (Throwable) {
