@@ -21,6 +21,12 @@ class ReviewFocuses
             return;
         }
 
+        $workspaceKey = (string) (WorkspaceContext::current()?->workspace_key ?? 'social_security');
+
+        if ($workspaceKey !== 'social_security') {
+            return;
+        }
+
         $sortOrder = 10;
 
         foreach (static::configDefaults() as $key => $definition) {
@@ -130,7 +136,11 @@ class ReviewFocuses
             ->where('is_enabled', true)
             ->where('is_default', true)
             ->value('focus_key')
-            ?: 'social_security';
+            ?: (ReviewFocus::query()
+                ->where('is_enabled', true)
+                ->orderBy('sort_order')
+                ->orderBy('label')
+                ->value('focus_key') ?: 'social_security');
     }
 
     public static function tableReady(): bool
