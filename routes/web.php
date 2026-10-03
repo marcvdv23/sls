@@ -31,6 +31,7 @@ use App\Models\UniversitySurveyTarget;
 use App\Models\UniversitySurveyContact;
 use App\Models\KnowledgeChunk;
 use App\Models\PriorityOpportunity;
+use App\Models\PriorityOpportunityOption;
 use App\Models\Product;
 use App\Models\ReviewFocus;
 use App\Models\SourceDocument;
@@ -68,6 +69,7 @@ use App\Services\UniversitySurveyCrawlerService;
 use App\Support\CountryUpdateClassifier;
 use App\Support\CountryUpdateDedupeRules;
 use App\Support\CountryUpdateNoiseRules;
+use App\Support\PriorityOpportunityConfig;
 use App\Support\ReviewFocuses;
 use App\Support\SlsSettings;
 use App\Support\SocialSecurityAdminNameCleaner;
@@ -2900,6 +2902,109 @@ Route::post('/sls/settings/review-categories', function (Request $request) use (
 Route::post('/sls/settings/review-categories/{reviewFocus}', function (Request $request, ReviewFocus $reviewFocus) use ($saveReviewFocusConfiguration) {
     return $saveReviewFocusConfiguration($request, $reviewFocus);
 })->name('sls.settings.reviewFocuses.update');
+
+$priorityOpportunityOptionGroups = ['status', 'priority', 'focus_tier'];
+
+$savePriorityOpportunityOption = function (Request $request, ?PriorityOpportunityOption $option = null) use ($priorityOpportunityOptionGroups) {
+    abort_if(! PriorityOpportunityConfig::tableReady(), 503, 'Priority opportunity options table is not available.');
+
+    $option ??= new PriorityOpportunityOption();
+
+    $rules = [
+        'label' => ['required', 'string', 'max:255'],
+        'description' => ['nullable', 'string', 'max:5000'],
+        'sort_order' => ['nullable', 'integer', 'min:-1000', 'max:1000'],
+        'is_enabled' => ['nullable', 'boolean'],
+        'is_default' => ['nullable', 'boolean'],
+    ];
+
+    if (! $option->exists) {
+        $rules['option_group'] = ['required', Rule::in($priorityOpportunityOptionGroups)];
+        $rules['option_key'] = [
+            'required',
+            'string',
+            'max:120',
+            'regex:/^[a-z0-9_]+$/',
+            Rule::unique('priority_opportunity_options', 'option_key')->where(fn ($query) => $query->where('option_group', $request->input('option_group'))),
+        ];
+    }
+
+    $data = $request->validate($rules);
+
+    if (! $option->exists) {
+        $option->option_group = $data['option_group'];
+        $option->option_key = trim($data['option_key']);
+    }
+
+    $option->label = trim($data['label']);
+    $option->description = filled($data['description'] ?? null) ? trim($data['description']) : null;
+    $option->sort_order = (int) ($data['sort_order'] ?? 0);
+    $option->is_enabled = $request->boolean('is_enabled');
+    $option->is_default = $request->boolean('is_default');
+    $option->save();
+
+    if ($option->is_default) {
+        PriorityOpportunityOption::query()
+            ->where('option_group', $option->option_group)
+            ->whereKeyNot($option->id)
+            ->update(['is_default' => false]);
+    }
+
+    return back()->with('status', 'Priority opportunity option saved.');
+};
+
+Route::get('/sls/settings/priority-opportunities', function () {
+    $migrationMissing = ! PriorityOpportunityConfig::tableReady();
+
+    if (! $migrationMissing) {
+        PriorityOpportunityConfig::seedDefaults();
+    }
+
+    return view('sls.settings.priority-opportunities', [
+        'migrationMissing' => $migrationMissing,
+        'settings' => $migrationMissing ? collect() : PriorityOpportunityConfig::settingsForView(),
+        'optionGroups' => $migrationMissing ? collect() : PriorityOpportunityConfig::groupedOptionsForView(),
+        'statuses' => PriorityOpportunityConfig::statuses(),
+        'priorities' => PriorityOpportunityConfig::priorities(),
+    ]);
+})->name('sls.settings.priorityOpportunities');
+
+Route::post('/sls/settings/priority-opportunities/settings', function (Request $request) {
+    abort_if(! Schema::hasTable('sls_settings'), 503, 'Workspace settings table is not available.');
+
+    $definitions = PriorityOpportunityConfig::settingDefinitions();
+    $data = $request->validate([
+        'settings' => ['required', 'array'],
+        'settings.*' => ['nullable', 'string', 'max:5000'],
+    ]);
+
+    foreach (($data['settings'] ?? []) as $key => $value) {
+        if (! array_key_exists($key, $definitions)) {
+            continue;
+        }
+
+        SlsSetting::query()->updateOrCreate(
+            ['setting_key' => $key],
+            [
+                'setting_value' => is_string($value) ? trim($value) : $value,
+                'value_type' => $definitions[$key]['value_type'] ?? 'string',
+                'setting_group' => 'Priority Opportunities',
+                'label' => $definitions[$key]['label'],
+                'description' => $definitions[$key]['description'] ?? null,
+            ]
+        );
+    }
+
+    return back()->with('status', 'Priority opportunity import defaults saved.');
+})->name('sls.settings.priorityOpportunities.settings');
+
+Route::post('/sls/settings/priority-opportunities/options', function (Request $request) use ($savePriorityOpportunityOption) {
+    return $savePriorityOpportunityOption($request);
+})->name('sls.settings.priorityOpportunities.options.store');
+
+Route::post('/sls/settings/priority-opportunities/options/{option}', function (Request $request, PriorityOpportunityOption $option) use ($savePriorityOpportunityOption) {
+    return $savePriorityOpportunityOption($request, $option);
+})->name('sls.settings.priorityOpportunities.options.update');
 
 Route::post('/sls/security/users', function (Request $request) use ($ensureSecurityAccess) {
     $ensureSecurityAccess('insert');
@@ -5904,23 +6009,8 @@ Route::post('/sls/tasks/{task}/status', function (Request $request, SlsTask $tas
     return back()->with('status', 'Task updated.');
 })->name('sls.tasks.status');
 
-$priorityOpportunityStatuses = [
-    'new' => 'New',
-    'researching' => 'Researching',
-    'qualified' => 'Qualified',
-    'outreach_planned' => 'Outreach planned',
-    'contacted' => 'Contacted',
-    'active_pursuit' => 'Active pursuit',
-    'parked' => 'Parked',
-    'closed' => 'Closed',
-];
-
-$priorityOpportunityPriorities = [
-    'low' => 'Low',
-    'normal' => 'Normal',
-    'high' => 'High',
-    'urgent' => 'Urgent',
-];
+$priorityOpportunityStatuses = fn (): array => PriorityOpportunityConfig::statuses();
+$priorityOpportunityPriorities = fn (): array => PriorityOpportunityConfig::priorities();
 
 $priorityOpportunityCountry = function (string $countryMarket): ?Country {
     $countryMarket = trim($countryMarket);
@@ -6010,6 +6100,9 @@ Route::get('/sls/priority-opportunities', function (Request $request) use ($prio
     $status = $request->string('status')->toString() ?: 'active';
     $tier = $request->string('tier')->toString() ?: 'all';
     $query = trim($request->string('q')->toString());
+    $statuses = $priorityOpportunityStatuses();
+    $priorityOrder = collect(PriorityOpportunityConfig::priorityOrder())->map(fn (string $key) => DB::getPdo()->quote($key))->implode(', ');
+    $statusOrder = collect(PriorityOpportunityConfig::statusOrder())->map(fn (string $key) => DB::getPdo()->quote($key))->implode(', ');
 
     $opportunities = PriorityOpportunity::query()
         ->with(['country', 'primaryOrganization', 'primaryTask', 'organizations'])
@@ -6024,8 +6117,8 @@ Route::get('/sls/priority-opportunities', function (Request $request) use ($prio
                     ->orWhere('recommended_next_action', 'like', '%' . $query . '%');
             });
         })
-        ->orderByRaw("FIELD(priority, 'urgent', 'high', 'normal', 'low')")
-        ->orderByRaw("FIELD(status, 'active_pursuit', 'contacted', 'outreach_planned', 'qualified', 'researching', 'new', 'parked', 'closed')")
+        ->when($priorityOrder !== '', fn ($builder) => $builder->orderByRaw("FIELD(priority, {$priorityOrder})"))
+        ->when($statusOrder !== '', fn ($builder) => $builder->orderByRaw("FIELD(status, {$statusOrder})"))
         ->latest()
         ->paginate(100)
         ->withQueryString();
@@ -6035,8 +6128,11 @@ Route::get('/sls/priority-opportunities', function (Request $request) use ($prio
         'status' => $status,
         'tier' => $tier,
         'query' => $query,
-        'statuses' => ['active' => 'Active'] + ['all' => 'All'] + $priorityOpportunityStatuses,
-        'tiers' => PriorityOpportunity::query()->whereNotNull('focus_tier')->distinct()->orderBy('focus_tier')->pluck('focus_tier')->values(),
+        'statuses' => ['active' => 'Active'] + ['all' => 'All'] + $statuses,
+        'tiers' => PriorityOpportunityConfig::tiers()
+            ->merge(PriorityOpportunity::query()->whereNotNull('focus_tier')->distinct()->orderBy('focus_tier')->pluck('focus_tier'))
+            ->unique()
+            ->values(),
     ]);
 })->name('sls.priorityOpportunities.index');
 
@@ -6209,8 +6305,9 @@ Route::post('/sls/priority-opportunities/import', function (Request $request) us
         $recommendedNextAction = $value($row, ['recommended_next_action', 'next_action']);
         $region = $value($row, 'region');
         $fingerprint = hash('sha256', 'priority-opportunity|' . Str::lower($countryMarket) . '|' . Str::lower($institution) . '|' . Str::lower($reformDevelopment));
-        $status = Str::contains(Str::lower($focusTier), 'immediate') ? 'researching' : 'new';
-        $priority = Str::contains(Str::lower($focusTier), 'immediate') ? 'urgent' : 'high';
+        $importDefaults = PriorityOpportunityConfig::importDefaultsForTier($focusTier);
+        $status = $importDefaults['status'];
+        $priority = $importDefaults['priority'];
 
         $opportunity = PriorityOpportunity::query()->firstOrNew(['source_fingerprint' => $fingerprint]);
         $wasRecentlyCreated = ! $opportunity->exists;
@@ -6248,16 +6345,16 @@ Route::post('/sls/priority-opportunities/import', function (Request $request) us
                 $organization = MarketOrganization::query()->create([
                     'name' => $institution,
                     'name_normalized' => $nameNormalized,
-                    'organization_type' => 'government_agency',
-                    'industry' => 'Social security',
-                    'organization_subcategory' => 'social_security_administration',
+                    'organization_type' => PriorityOpportunityConfig::setting('priority_opportunities.organization_type', 'government_agency'),
+                    'industry' => PriorityOpportunityConfig::setting('priority_opportunities.organization_industry', 'Social security'),
+                    'organization_subcategory' => PriorityOpportunityConfig::setting('priority_opportunities.organization_subcategory', 'social_security_administration'),
                     'country' => $country?->name ?: $countryMarket,
                     'country_raw' => $countryMarket,
                     'country_iso' => $country?->iso_code,
                     'country_resolution_status' => $country ? 'resolved' : 'unresolved',
                     'region' => $region ?: $country?->region,
                     'status' => 'active',
-                    'lead_status' => 'researching',
+                    'lead_status' => PriorityOpportunityConfig::setting('priority_opportunities.import_lead_status', 'researching'),
                     'lead_source' => 'priority opportunity import',
                     'notes' => trim(implode("\n\n", array_filter([
                         'Priority opportunity import.',
@@ -6300,14 +6397,14 @@ Route::post('/sls/priority-opportunities/import', function (Request $request) us
             $task = SlsTask::query()->create([
                 'title' => Str::limit('Priority opportunity: ' . $opportunity->institution, 255, ''),
                 'notes' => $opportunity->recommended_next_action . "\n\n" . ($opportunity->why_relevant ?: ''),
-                'task_type' => 'research',
+                'task_type' => PriorityOpportunityConfig::setting('priority_opportunities.task_type', 'research'),
                 'status' => 'open',
                 'priority' => $priority,
                 'product_focus' => SlsSettings::get('products.default_code', config('sls.products.default_code', 'SSAS')),
                 'country_iso' => $country?->iso_code,
                 'market_organization_id' => $organization?->id,
                 'related_url' => $opportunity->source_1,
-                'due_at' => now()->addDays($priority === 'urgent' ? 3 : 7),
+                'due_at' => now()->addDays(max(0, (int) $importDefaults['due_days'])),
             ]);
             $opportunity->update([
                 'primary_task_id' => $task->id,
@@ -6336,17 +6433,20 @@ Route::get('/sls/priority-opportunities/{priorityOpportunity}', function (Priori
 
     return view('sls.priority-opportunities.show', [
         'opportunity' => $priorityOpportunity,
-        'statuses' => $priorityOpportunityStatuses,
-        'priorities' => $priorityOpportunityPriorities,
+        'statuses' => $priorityOpportunityStatuses(),
+        'priorities' => $priorityOpportunityPriorities(),
         'organizationChoices' => $organizationChoices,
         'suggestedOrganization' => $suggestedOrganization,
     ]);
 })->name('sls.priorityOpportunities.show');
 
 Route::post('/sls/priority-opportunities/{priorityOpportunity}', function (Request $request, PriorityOpportunity $priorityOpportunity) use ($priorityOpportunityStatuses, $priorityOpportunityPriorities) {
+    $statuses = $priorityOpportunityStatuses();
+    $priorities = $priorityOpportunityPriorities();
+
     $data = $request->validate([
-        'status' => ['required', 'in:' . implode(',', array_keys($priorityOpportunityStatuses))],
-        'priority' => ['required', 'in:' . implode(',', array_keys($priorityOpportunityPriorities))],
+        'status' => ['required', 'in:' . implode(',', array_keys($statuses))],
+        'priority' => ['required', 'in:' . implode(',', array_keys($priorities))],
         'recommended_next_action' => ['nullable', 'string'],
         'review_notes' => ['nullable', 'string'],
         'next_follow_up_at' => ['nullable', 'date'],

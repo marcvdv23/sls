@@ -73,6 +73,7 @@
                             ['Workspace Settings', route('sls.settings.workspace'), 'sls.settings.workspace*', 'SET'],
                             ['Products & Services', route('sls.settings.products'), 'sls.settings.products*', 'PRD'],
                             ['Review Categories', route('sls.settings.reviewFocuses'), 'sls.settings.reviewFocuses*', 'REV'],
+                            ['Priority Opportunities', route('sls.settings.priorityOpportunities'), 'sls.settings.priorityOpportunities*', 'PRI'],
                             ['Operations', route('sls.operations.index'), 'sls.operations.*', 'OPS'],
                             ['Security', route('sls.security.index'), 'sls.security.*', 'SEC'],
                             ['Backup', url('/sls#backup'), 'sls.system.backup', 'BAK'],
