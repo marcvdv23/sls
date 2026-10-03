@@ -11,6 +11,7 @@ use App\Models\IntelligenceSource;
 use App\Support\CountryUpdateDedupeRules;
 use App\Support\CountryUpdateNoiseRules;
 use App\Support\ReviewFocuses;
+use App\Support\SlsSettings;
 use App\Support\TitleLanguage;
 use App\Support\WorkspaceContext;
 use Carbon\Carbon;
@@ -445,15 +446,39 @@ class CountryIntelligenceMonitor
     private function sourceMatchesFocus(array $source, string $focus): bool
     {
         $sourceFocus = (string) ($source['focus'] ?? 'both');
-        $genericWorkspaceFocuses = ['sustainability', 'climate', 'environment', 'environmental', 'esg'];
+        $workspaceFocusAliases = $this->slsSettingList('workspace.source_focus_aliases');
+        $legacyFocusKeys = $this->slsSettingList('workspace.legacy_focus_keys', 'social_security,hrms_tenders,erms_tenders,ebpc_tenders,sector_tenders');
+        $isLegacyFocus = in_array($focus, $legacyFocusKeys, true);
 
         return $sourceFocus === 'both'
             || $sourceFocus === $focus
-            || (in_array($sourceFocus, $genericWorkspaceFocuses, true) && ! in_array($focus, ['social_security', 'hrms_tenders', 'erms_tenders', 'ebpc_tenders', 'sector_tenders'], true))
+            || (in_array($sourceFocus, $workspaceFocusAliases, true) && ! $isLegacyFocus)
             || ($sourceFocus === 'news' && $focus === 'social_security')
             || ($sourceFocus === 'news' && ! str_contains($focus, 'tender'))
-            || ($sourceFocus === 'tenders' && in_array($focus, ['social_security', 'hrms_tenders', 'erms_tenders', 'ebpc_tenders', 'sector_tenders'], true))
+            || ($sourceFocus === 'tenders' && $isLegacyFocus)
             || ($sourceFocus === 'tenders' && str_contains($focus, 'tender'));
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function slsSettingList(string $key, string $default = ''): array
+    {
+        try {
+            return collect(preg_split('/[\r\n,]+/', (string) SlsSettings::get($key, $default)))
+                ->map(fn ($value) => Str::of((string) $value)->trim()->lower()->toString())
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+        } catch (Throwable) {
+            return collect(preg_split('/[\r\n,]+/', $default))
+                ->map(fn ($value) => Str::of((string) $value)->trim()->lower()->toString())
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+        }
     }
 
     private function searchLanguageCodes(array $countryConfig): Collection

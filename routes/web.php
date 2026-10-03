@@ -1364,17 +1364,24 @@ Route::get('/sls', function () use ($orderedProducts, $allMapCountries, $relevan
         ])
         ->values();
     $currentWorkspaceKey = (string) (WorkspaceContext::current()?->workspace_key ?: SlsSettings::get('workspace.key', 'social_security'));
+    $workspaceSettingList = fn (string $key, string $default = '') => collect(preg_split('/[\r\n,]+/', (string) SlsSettings::get($key, $default)))
+        ->map(fn ($value) => Str::of((string) $value)->trim()->lower()->toString())
+        ->filter()
+        ->unique()
+        ->values();
     $workspaceDomainLabel = (string) SlsSettings::get('workspace.domain_label', SlsSettings::get('workspace.name', 'Sales intelligence'));
     $workspaceDefaultFocus = ReviewFocuses::defaultKey();
     $workspaceDefaultFocusConfig = ReviewFocuses::get($workspaceDefaultFocus);
     $workspaceNewsItems = $recentPublishedItems
         ->filter(fn (CountryUpdate $update) => $update->inferred_focus === $workspaceDefaultFocus && ! $hasTenderSignal($update));
-    $workspaceSourceClasses = $currentWorkspaceKey === 'sustainability_consulting'
-        ? ['donor_portal', 'donor_tender_portal', 'project_pipeline', 'procurement_portal', 'climate_finance_fund', 'policy_source', 'government', 'central_tender_portal', 'local_media', 'news_aggregator']
-        : [];
+    $workspaceSourceClasses = $workspaceSettingList('workspace.source_classes');
+    $workspaceExcludedSourceClasses = $workspaceSettingList(
+        'workspace.excluded_source_classes',
+        $currentWorkspaceKey === 'social_security' ? '' : 'social_security_admin'
+    );
     $workspaceSourceQuery = IntelligenceSource::query()
-        ->when($workspaceSourceClasses !== [], fn ($query) => $query->whereIn('source_class', $workspaceSourceClasses))
-        ->when($currentWorkspaceKey === 'sustainability_consulting', fn ($query) => $query->where('source_class', '<>', 'social_security_admin'));
+        ->when($workspaceSourceClasses->isNotEmpty(), fn ($query) => $query->whereIn('source_class', $workspaceSourceClasses->all()))
+        ->when($workspaceExcludedSourceClasses->isNotEmpty(), fn ($query) => $query->whereNotIn('source_class', $workspaceExcludedSourceClasses->all()));
     $workspaceSourceClassCounts = (clone $workspaceSourceQuery)
         ->get()
         ->groupBy(fn (IntelligenceSource $source) => $source->source_class ?: 'source')
