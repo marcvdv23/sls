@@ -57,7 +57,7 @@ Objective: make the current deployment generic and configurable while still runn
 
 - [x] Add a Workspace Settings UI for entity name, workspace name, domain focus, review label, and default product labels.
 - [x] Add Product/Service configuration UI for product names, short codes, categories, sort order, default marker, and active/inactive state.
-- [ ] Replace hardcoded dashboard product cards with configured products/services.
+- [x] Replace hardcoded dashboard product cards with configured products/services.
 - [ ] Make priority opportunity fields and status categories configurable.
 - [ ] Make Review Desk item/category labels configurable.
 - [ ] Move default SerpAPI keywords into editable system configuration.

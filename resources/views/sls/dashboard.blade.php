@@ -143,34 +143,15 @@
         </section>
 
         <section class="tracker-grid" aria-label="Published intelligence counters">
-            <article class="panel tracker-card">
-                <p class="eyebrow">SSAS Tenders</p>
-                <a class="stat-link" href="{{ $recentIntelligenceStats['links']['social_security_tenders'] }}">
-                    <strong>{{ $recentIntelligenceStats['social_security_tenders'] }}</strong>
-                    <p class="muted">Published in last {{ $recentIntelligenceStats['published_window_days'] }} days.</p>
-                </a>
-            </article>
-            <article class="panel tracker-card">
-                <p class="eyebrow">HRMS Tenders</p>
-                <a class="stat-link" href="{{ $recentIntelligenceStats['links']['hrms_tenders'] }}">
-                    <strong>{{ $recentIntelligenceStats['hrms_tenders'] }}</strong>
-                    <p class="muted">HRMS, payroll, HCM, benefits, talent, workforce.</p>
-                </a>
-            </article>
-            <article class="panel tracker-card">
-                <p class="eyebrow">ERMS Tenders</p>
-                <a class="stat-link" href="{{ $recentIntelligenceStats['links']['erms_tenders'] }}">
-                    <strong>{{ $recentIntelligenceStats['erms_tenders'] }}</strong>
-                    <p class="muted">Risk, GRC, compliance, audit, controls.</p>
-                </a>
-            </article>
-            <article class="panel tracker-card">
-                <p class="eyebrow">EBPC Tenders</p>
-                <a class="stat-link" href="{{ $recentIntelligenceStats['links']['ebpc_tenders'] }}">
-                    <strong>{{ $recentIntelligenceStats['ebpc_tenders'] }}</strong>
-                    <p class="muted">Budget planning, control, forecasting.</p>
-                </a>
-            </article>
+            @foreach ($recentIntelligenceStats['product_tenders'] as $productTenderStat)
+                <article class="panel tracker-card">
+                    <p class="eyebrow">{{ $productTenderStat['label'] }} Tenders</p>
+                    <a class="stat-link" href="{{ $productTenderStat['url'] }}">
+                        <strong>{{ $productTenderStat['tender_count'] }}</strong>
+                        <p class="muted">{{ $productTenderStat['category'] ?: 'Published in last ' . $recentIntelligenceStats['published_window_days'] . ' days.' }}</p>
+                    </a>
+                </article>
+            @endforeach
             <article class="panel tracker-card">
                 <p class="eyebrow">Social Security News</p>
                 <a class="stat-link" href="{{ $recentIntelligenceStats['links']['social_security_news'] }}">
@@ -241,10 +222,9 @@
                     <thead>
                         <tr>
                             <th>Region</th>
-                            <th>SSAS Tenders</th>
-                            <th>HRMS Tenders</th>
-                            <th>ERMS Tenders</th>
-                            <th>EBPC Tenders</th>
+                            @foreach ($recentIntelligenceStats['product_tenders'] as $productTenderStat)
+                                <th>{{ $productTenderStat['label'] }} Tenders</th>
+                            @endforeach
                             <th>Social Security News</th>
                         </tr>
                     </thead>
@@ -252,10 +232,9 @@
                         @foreach ($recentIntelligenceStats['regions'] as $regionTotal)
                             <tr>
                                 <td><strong>{{ $regionTotal['name'] }}</strong></td>
-                                <td><a class="region-count" href="{{ $regionTotal['links']['social_security_tenders'] }}">{{ $regionTotal['social_security_tenders'] }}</a></td>
-                                <td><a class="region-count" href="{{ $regionTotal['links']['hrms_tenders'] }}">{{ $regionTotal['hrms_tenders'] }}</a></td>
-                                <td><a class="region-count" href="{{ $regionTotal['links']['erms_tenders'] }}">{{ $regionTotal['erms_tenders'] }}</a></td>
-                                <td><a class="region-count" href="{{ $regionTotal['links']['ebpc_tenders'] }}">{{ $regionTotal['ebpc_tenders'] }}</a></td>
+                                @foreach ($regionTotal['product_tenders'] as $productTenderStat)
+                                    <td><a class="region-count" href="{{ $productTenderStat['url'] }}">{{ $productTenderStat['tender_count'] }}</a></td>
+                                @endforeach
                                 <td><a class="region-count" href="{{ $regionTotal['links']['social_security_news'] }}">{{ $regionTotal['social_security_news'] }}</a></td>
                             </tr>
                         @endforeach

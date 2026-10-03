@@ -122,6 +122,28 @@ $defaultSlsProduct = fn () => Product::query()
     ->first()
     ?: Product::query()->orderBy('name')->first();
 
+$productFocusKey = function (Product|string|null $product): string {
+    $code = $product instanceof Product ? $product->code : (string) $product;
+    $name = $product instanceof Product ? $product->name : (string) $product;
+
+    $legacyFocus = [
+        'SSAS' => 'social_security',
+        'HRMS' => 'hrms_tenders',
+        'ERMS' => 'erms_tenders',
+        'EBPC' => 'ebpc_tenders',
+    ];
+
+    $code = Str::upper(trim((string) $code));
+    if ($code !== '' && isset($legacyFocus[$code])) {
+        return $legacyFocus[$code];
+    }
+
+    $source = $code !== '' ? $code : $name;
+    $slug = Str::of($source)->lower()->replaceMatches('/[^a-z0-9]+/', '_')->trim('_')->toString();
+
+    return $slug === '' ? 'sector_tenders' : $slug . '_tenders';
+};
+
 $africaCountries = fn () => collect([
     ['iso' => 'DZ', 'name' => 'Algeria', 'lat' => 28.0, 'lon' => 2.6],
     ['iso' => 'AO', 'name' => 'Angola', 'lat' => -11.2, 'lon' => 17.9],
@@ -1111,14 +1133,40 @@ Route::get('/sls', function () use ($orderedProducts, $allMapCountries, $relevan
             $update->retrieved_at?->timestamp ?? 0
         ))
         ->first();
-    $productActivityTerms = [
-        'Interact SSAS' => ['ssas', 'social security', 'pension', 'benefits administration', 'contribution'],
-        'Interact HRMS' => ['hrms', 'hris', 'hcm', 'payroll', 'human resource', 'talent management', 'performance management'],
-        'Interact ERMS' => ['erms', 'enterprise risk', 'risk management', 'grc', 'compliance', 'audit management'],
-        'Interact EBPC' => ['ebpc', 'budgeting', 'budget planning', 'budget control', 'budget execution', 'ifmis', 'fmis', 'public financial management', 'forecasting', 'financial planning'],
+    $dashboardProducts = $orderedProducts();
+    $defaultDashboardProduct = $dashboardProducts
+        ->first(fn (Product $product) => $product->name === SlsSettings::get('products.default_name', config('sls.products.default_name', 'Interact SSAS')) || $product->code === SlsSettings::get('products.default_code', config('sls.products.default_code', 'SSAS')))
+        ?: $dashboardProducts->first();
+    $legacyProductActivityTerms = [
+        'SSAS' => ['ssas', 'social security', 'pension', 'benefits administration', 'contribution'],
+        'HRMS' => ['hrms', 'hris', 'hcm', 'payroll', 'human resource', 'talent management', 'performance management'],
+        'ERMS' => ['erms', 'enterprise risk', 'risk management', 'grc', 'compliance', 'audit management'],
+        'EBPC' => ['ebpc', 'budgeting', 'budget planning', 'budget control', 'budget execution', 'ifmis', 'fmis', 'public financial management', 'forecasting', 'financial planning'],
     ];
-    $latestTaggedActivity = function (string $productName) use ($productActivityTerms) {
-        $terms = $productActivityTerms[$productName] ?? [Str::lower($productName)];
+    $productTerms = function (Product $product) use ($legacyProductActivityTerms) {
+        $code = Str::upper((string) $product->code);
+        $text = collect([
+            $product->code,
+            $product->name,
+            $product->category ?? null,
+            $product->description ?? null,
+        ])->filter()->implode(' ');
+
+        $terms = collect(preg_split('/[^a-z0-9]+/i', Str::lower(Str::ascii($text))))
+            ->filter(fn (?string $term) => is_string($term) && strlen($term) >= 3)
+            ->reject(fn (string $term) => in_array($term, ['the', 'and', 'for', 'with', 'software', 'interact'], true))
+            ->unique()
+            ->take(12);
+
+        return $terms
+            ->merge($legacyProductActivityTerms[$code] ?? [])
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    };
+    $latestTaggedActivity = function (Product $product) use ($productTerms) {
+        $terms = $productTerms($product);
 
         $activity = MarketOrganizationActivity::query()
             ->with('organization')
@@ -1166,44 +1214,50 @@ Route::get('/sls', function () use ($orderedProducts, $allMapCountries, $relevan
             'url' => $task->organization ? route('sls.organizations.show', $task->organization) : null,
         ];
     };
-    $productCards = collect([
-        [
-            'name' => 'Interact SSAS',
-            'focus' => 'social_security',
-            'latest_tender' => $latestItem($recentSocialSecurityTenders),
-            'secondary_label' => 'Latest relevant news',
-            'secondary_item' => $latestItem($recentSocialSecurityNews),
-            'secondary_type' => 'news',
-            'captured' => $capturedSummary($recentRetrievedSocialSecurityTenders, 'social_security', 'social_security', $recentRetrievedSocialSecurityNews),
-        ],
-        [
-            'name' => 'Interact HRMS',
-            'focus' => 'hrms_tenders',
-            'latest_tender' => $latestItem($recentHrmsTenders),
-            'secondary_label' => 'Most recent tagged activity',
-            'secondary_item' => $latestTaggedActivity('Interact HRMS'),
-            'secondary_type' => 'activity',
-            'captured' => $capturedSummary($recentRetrievedHrmsTenders, 'hrms_tenders'),
-        ],
-        [
-            'name' => 'Interact ERMS',
-            'focus' => 'erms_tenders',
-            'latest_tender' => $latestItem($recentErmsTenders),
-            'secondary_label' => 'Most recent tagged activity',
-            'secondary_item' => $latestTaggedActivity('Interact ERMS'),
-            'secondary_type' => 'activity',
-            'captured' => $capturedSummary($recentRetrievedErmsTenders, 'erms_tenders'),
-        ],
-        [
-            'name' => 'Interact EBPC',
-            'focus' => 'ebpc_tenders',
-            'latest_tender' => $latestItem($recentEbpcTenders),
-            'secondary_label' => 'Most recent tagged activity',
-            'secondary_item' => $latestTaggedActivity('Interact EBPC'),
-            'secondary_type' => 'activity',
-            'captured' => $capturedSummary($recentRetrievedEbpcTenders, 'ebpc_tenders'),
-        ],
-    ]);
+    $productCards = $dashboardProducts
+        ->map(function (Product $product) use ($capturedSummary, $hasTenderSignal, $latestItem, $latestTaggedActivity, $productFocusKey, $publishedWindowKey, $recentPublishedItems, $recentRetrievedItems) {
+            $focus = $productFocusKey($product);
+            $publishedTenderItems = $recentPublishedItems
+                ->filter(fn (CountryUpdate $update) => $update->inferred_focus === $focus && $hasTenderSignal($update));
+            $publishedNewsItems = $recentPublishedItems
+                ->filter(fn (CountryUpdate $update) => $update->inferred_focus === $focus && ! $hasTenderSignal($update));
+            $retrievedTenderItems = $recentRetrievedItems
+                ->filter(fn (CountryUpdate $update) => $update->inferred_focus === $focus && $hasTenderSignal($update));
+            $retrievedNewsItems = $recentRetrievedItems
+                ->filter(fn (CountryUpdate $update) => $update->inferred_focus === $focus && ! $hasTenderSignal($update));
+            $hasNews = $publishedNewsItems->isNotEmpty() || $retrievedNewsItems->isNotEmpty();
+
+            return [
+                'name' => $product->name,
+                'code' => $product->code,
+                'category' => $product->category ?? null,
+                'focus' => $focus,
+                'latest_tender' => $latestItem($publishedTenderItems),
+                'published_tender_count' => $publishedTenderItems->count(),
+                'published_tender_url' => route('sls.intelligence.review', ['focus' => $focus, 'region' => 'all', 'published' => $publishedWindowKey, 'type' => 'tenders', 'limit' => 500]),
+                'secondary_label' => $hasNews ? 'Latest relevant news' : 'Most recent tagged activity',
+                'secondary_item' => $hasNews ? $latestItem($publishedNewsItems) : $latestTaggedActivity($product),
+                'secondary_type' => $hasNews ? 'news' : 'activity',
+                'captured' => $capturedSummary(
+                    $retrievedTenderItems,
+                    $focus,
+                    $hasNews ? $focus : null,
+                    $hasNews ? $retrievedNewsItems : null
+                ),
+            ];
+        })
+        ->values();
+    $productTenderStats = $productCards
+        ->map(fn (array $card) => [
+            'name' => $card['name'],
+            'code' => $card['code'],
+            'label' => trim((string) ($card['code'] ?: Str::after($card['name'], 'Interact '))) ?: $card['name'],
+            'category' => $card['category'],
+            'focus' => $card['focus'],
+            'tender_count' => $card['published_tender_count'],
+            'url' => $card['published_tender_url'],
+        ])
+        ->values();
     $regionSlug = fn (string $region) => match (Str::lower($region)) {
         'latin america' => 'latin_america',
         default => Str::of($region)->lower()->replace(' ', '_')->toString(),
@@ -1214,33 +1268,33 @@ Route::get('/sls', function () use ($orderedProducts, $allMapCountries, $relevan
         ->unique()
         ->values();
     $regionTotals = $regionNames
-        ->map(function (string $region) use ($recentSocialSecurityTenders, $recentHrmsTenders, $recentErmsTenders, $recentEbpcTenders, $recentSocialSecurityNews, $regionSlug, $publishedWindowKey) {
+        ->map(function (string $region) use ($productCards, $recentPublishedItems, $recentSocialSecurityNews, $regionSlug, $publishedWindowKey, $hasTenderSignal) {
             $matchesRegion = fn (CountryUpdate $update) => Str::lower((string) $update->country?->region) === Str::lower($region);
             $slug = $regionSlug($region);
+            $productTenders = $productCards
+                ->map(fn (array $card) => [
+                    'name' => $card['name'],
+                    'code' => $card['code'],
+                    'label' => trim((string) ($card['code'] ?: Str::after($card['name'], 'Interact '))) ?: $card['name'],
+                    'focus' => $card['focus'],
+                    'tender_count' => $recentPublishedItems
+                        ->filter(fn (CountryUpdate $update) => $update->inferred_focus === $card['focus'] && $hasTenderSignal($update) && $matchesRegion($update))
+                        ->count(),
+                    'url' => route('sls.intelligence.review', ['focus' => $card['focus'], 'region' => $slug, 'published' => $publishedWindowKey, 'type' => 'tenders', 'limit' => 500]),
+                ])
+                ->values();
 
             return [
                 'name' => $region,
                 'slug' => $slug,
-                'social_security_tenders' => $recentSocialSecurityTenders->filter($matchesRegion)->count(),
-                'hrms_tenders' => $recentHrmsTenders->filter($matchesRegion)->count(),
-                'erms_tenders' => $recentErmsTenders->filter($matchesRegion)->count(),
-                'ebpc_tenders' => $recentEbpcTenders->filter($matchesRegion)->count(),
+                'product_tenders' => $productTenders,
                 'social_security_news' => $recentSocialSecurityNews->filter($matchesRegion)->count(),
                 'links' => [
-                    'social_security_tenders' => route('sls.intelligence.review', ['focus' => 'social_security', 'region' => $slug, 'published' => $publishedWindowKey, 'type' => 'tenders', 'limit' => 500]),
-                    'hrms_tenders' => route('sls.intelligence.review', ['focus' => 'hrms_tenders', 'region' => $slug, 'published' => $publishedWindowKey, 'type' => 'tenders', 'limit' => 500]),
-                    'erms_tenders' => route('sls.intelligence.review', ['focus' => 'erms_tenders', 'region' => $slug, 'published' => $publishedWindowKey, 'type' => 'tenders', 'limit' => 500]),
-                    'ebpc_tenders' => route('sls.intelligence.review', ['focus' => 'ebpc_tenders', 'region' => $slug, 'published' => $publishedWindowKey, 'type' => 'tenders', 'limit' => 500]),
                     'social_security_news' => route('sls.intelligence.review', ['focus' => 'social_security', 'region' => $slug, 'published' => $publishedWindowKey, 'type' => 'news', 'limit' => 500]),
                 ],
             ];
         })
         ->values();
-
-    $dashboardProducts = $orderedProducts();
-    $defaultDashboardProduct = $dashboardProducts
-        ->first(fn (Product $product) => $product->name === SlsSettings::get('products.default_name', config('sls.products.default_name', 'Interact SSAS')) || $product->code === SlsSettings::get('products.default_code', config('sls.products.default_code', 'SSAS')))
-        ?: $dashboardProducts->first();
     $normaliseAdminName = fn (string $name): string => Str::lower(Str::ascii(trim($name)));
     $reviewedAdminNameReplacements = [
         'BO' => [
@@ -1735,6 +1789,7 @@ Route::get('/sls', function () use ($orderedProducts, $allMapCountries, $relevan
             'hrms_tenders' => $recentHrmsTenders->count(),
             'erms_tenders' => $recentErmsTenders->count(),
             'ebpc_tenders' => $recentEbpcTenders->count(),
+            'product_tenders' => $productTenderStats,
             'social_security_news' => $recentSocialSecurityNews->count(),
             'regions' => $regionTotals,
         ],
@@ -3534,11 +3589,17 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
         ];
     })->sortBy(['region', 'name'])->values();
 
+    $reviewProducts = $orderedProducts();
+    $reviewFocusProductMap = $reviewProducts
+        ->mapWithKeys(fn (Product $product) => [$productFocusKey($product) => $product->id])
+        ->all();
+
     return view('sls.intelligence.review', [
         'updates' => $updates,
         'countryStatus' => $countryStatus,
         'reviewCountries' => Country::query()->orderBy('name')->get(['id', 'name', 'iso_code']),
-        'products' => $orderedProducts(),
+        'products' => $reviewProducts,
+        'focusProductMap' => $reviewFocusProductMap,
         'focus' => $focus,
         'region' => $region,
         'publishedFilter' => $publishedFilter,

@@ -281,14 +281,12 @@
                                     ? 'Aggregator lead'
                                     : (str_contains($summaryText, '[Official tender source]') ? 'Official source' : 'Needs verification');
                                 $evidenceClass = $evidenceLabel === 'Official source' ? 'good' : ($evidenceLabel === 'Aggregator lead' ? 'warn' : 'bad');
-                                $productNameForFocus = match ($update->inferred_focus) {
-                                    'hrms_tenders' => 'Interact HRMS',
-                                    'erms_tenders' => 'Interact ERMS',
-                                    'ebpc_tenders' => 'Interact EBPC',
-                                    default => 'Interact SSAS',
-                                };
-                                $defaultOpportunityProduct = ($products ?? collect())->first(fn ($product) => $product->name === $productNameForFocus)
-                                    ?: ($products ?? collect())->first(fn ($product) => $product->name === 'Interact SSAS')
+                                $defaultOpportunityProductId = ($focusProductMap ?? [])[$update->inferred_focus] ?? null;
+                                $defaultOpportunityProduct = $defaultOpportunityProductId
+                                    ? ($products ?? collect())->first(fn ($product) => (int) $product->id === (int) $defaultOpportunityProductId)
+                                    : null;
+                                $defaultOpportunityProduct = $defaultOpportunityProduct
+                                    ?: ($products ?? collect())->first(fn ($product) => (bool) ($product->is_default ?? false))
                                     ?: ($products ?? collect())->first();
                             ?>
                             <tr>
