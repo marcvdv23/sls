@@ -59,6 +59,19 @@
                         <button class="button secondary" type="submit">Switch</button>
                     </form>
                 @endif
+                @if (($workspaceMemberships ?? collect())->isNotEmpty())
+                    <div style="margin-top:14px;">
+                        <p class="muted" style="font-weight:800;margin-bottom:6px;">Workspace members</p>
+                        <div style="display:grid;gap:6px;max-width:720px;">
+                            @foreach ($workspaceMemberships as $membership)
+                                <div style="display:flex;gap:10px;align-items:center;justify-content:space-between;border-top:1px solid var(--border-subtle);padding-top:6px;">
+                                    <span>{{ $membership->user?->name ?: $membership->user?->email ?: 'User #' . $membership->user_id }}</span>
+                                    <span class="muted">{{ $membership->role }} · {{ $membership->status }}</span>
+                                </div>
+                            @endforeach
+                        </div>
+                    </div>
+                @endif
             @elseif ($workspacesTableReady)
                 <h2>No workspace record found</h2>
                 <p class="muted">The workspace table exists, but the default workspace has not been seeded yet.</p>

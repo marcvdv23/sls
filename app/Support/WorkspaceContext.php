@@ -28,7 +28,7 @@ class WorkspaceContext
         $selectedWorkspaceId = static::selectedWorkspaceId();
 
         if ($selectedWorkspaceId) {
-            $selectedWorkspace = Workspace::query()
+            $selectedWorkspace = static::scopeToUserMemberships(Workspace::query())
                 ->whereKey($selectedWorkspaceId)
                 ->where('status', 'active')
                 ->first();
@@ -40,11 +40,11 @@ class WorkspaceContext
             static::clearSelectedWorkspace();
         }
 
-        return static::$currentWorkspace = Workspace::query()
+        return static::$currentWorkspace = static::scopeToUserMemberships(Workspace::query())
             ->where('is_default', true)
             ->orderBy('id')
             ->first()
-            ?: Workspace::query()->orderBy('id')->first();
+            ?: static::scopeToUserMemberships(Workspace::query())->orderBy('id')->first();
     }
 
     public static function currentWorkspaceId(): ?int
@@ -58,7 +58,7 @@ class WorkspaceContext
             return collect();
         }
 
-        return Workspace::query()
+        return static::scopeToUserMemberships(Workspace::query())
             ->where('status', 'active')
             ->orderBy('entity_name')
             ->orderBy('name')
@@ -71,7 +71,7 @@ class WorkspaceContext
             return null;
         }
 
-        $workspace = Workspace::query()
+        $workspace = static::scopeToUserMemberships(Workspace::query())
             ->whereKey($workspaceId)
             ->where('status', 'active')
             ->first();
@@ -218,5 +218,35 @@ class WorkspaceContext
         }
 
         return static::$tableReady;
+    }
+
+    protected static function scopeToUserMemberships(Builder $query): Builder
+    {
+        if (app()->runningInConsole()) {
+            return $query;
+        }
+
+        try {
+            if (! Schema::hasTable('workspace_user_memberships') || ! auth()->check()) {
+                return $query;
+            }
+
+            $userId = (int) auth()->id();
+            $workspaceIds = DB::table('workspace_user_memberships')
+                ->where('user_id', $userId)
+                ->where('status', 'active')
+                ->pluck('workspace_id')
+                ->map(fn ($id) => (int) $id)
+                ->filter()
+                ->values();
+
+            if ($workspaceIds->isEmpty()) {
+                return $query;
+            }
+
+            return $query->whereIn('id', $workspaceIds->all());
+        } catch (\Throwable) {
+            return $query;
+        }
     }
 }

@@ -83,8 +83,9 @@ Objective: support multiple workspaces for one entity without mixing data.
 
 Objective: support multiple organizations safely from the same codebase.
 
-- [ ] Add a `tenants` or `entities` table.
-- [ ] Add tenant membership and roles.
+- [x] Add initial tenant/workspace membership and roles table.
+- [ ] Add a dedicated `tenants` or `entities` table if workspace entity fields are not sufficient.
+- [x] Restrict active workspace selection by logged-in user's active memberships.
 - [ ] Add `tenant_id` to workspaces and tenant-owned business tables.
 - [ ] Make authentication tenant-aware.
 - [ ] Add tenant-aware authorization policies.
@@ -143,7 +144,7 @@ Initial review categories:
 
 ## Next Immediate Coding Pass
 
-1. Add tenant/entity membership and roles after workspace switching is proven.
+1. Add tenant/entity admin UI for managing workspace memberships and roles.
 2. Add the first secure API vertical slice for opportunities, tasks, and activity logging.
 3. Add tenant-aware API tokens and audit logging.
 4. Add workspace-aware security policies for setup, crawler, and import actions.

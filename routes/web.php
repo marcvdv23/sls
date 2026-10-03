@@ -2654,10 +2654,14 @@ Route::get('/sls/settings/workspace', function () {
         WorkspaceContext::seedDefaultWorkspace();
     }
     $currentWorkspace = Schema::hasTable('workspaces') ? WorkspaceContext::current() : null;
+    $workspaceMemberships = $currentWorkspace && Schema::hasTable('workspace_user_memberships')
+        ? $currentWorkspace->memberships()->with('user')->orderBy('role')->orderBy('id')->get()
+        : collect();
 
     return view('sls.settings.workspace', [
         'migrationMissing' => $migrationMissing,
         'currentWorkspace' => $currentWorkspace,
+        'workspaceMemberships' => $workspaceMemberships,
         'workspaces' => Schema::hasTable('workspaces') ? WorkspaceContext::selectableWorkspaces() : collect(),
         'workspacesTableReady' => Schema::hasTable('workspaces'),
         'settingsByGroup' => $migrationMissing ? collect() : SlsSettings::grouped(),

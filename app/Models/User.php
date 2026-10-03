@@ -35,4 +35,16 @@ class User extends Authenticatable
     {
         return $this->belongsTo(UserGroup::class, 'user_group_id');
     }
+
+    public function workspaceMemberships()
+    {
+        return $this->hasMany(WorkspaceUserMembership::class);
+    }
+
+    public function workspaces()
+    {
+        return $this->belongsToMany(Workspace::class, 'workspace_user_memberships')
+            ->withPivot(['role', 'status', 'metadata'])
+            ->withTimestamps();
+    }
 }

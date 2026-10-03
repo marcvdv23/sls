@@ -22,4 +22,16 @@ class Workspace extends Model
         'is_default' => 'boolean',
         'metadata' => 'array',
     ];
+
+    public function memberships()
+    {
+        return $this->hasMany(WorkspaceUserMembership::class);
+    }
+
+    public function users()
+    {
+        return $this->belongsToMany(User::class, 'workspace_user_memberships')
+            ->withPivot(['role', 'status', 'metadata'])
+            ->withTimestamps();
+    }
 }
