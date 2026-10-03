@@ -5234,20 +5234,22 @@ $seedMarketCrawlers = function () {
         'Instituto Salvadoreno del Seguro Social' => 'Instituto SalvadoreÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â±o del Seguro Social',
         'Banco de Prevision Social Uruguay' => 'Banco de PrevisiÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n Social Uruguay',
     ])->each(function (string $displayName, string $plainName) {
+        $safeDisplayName = Str::limit($displayName, 240, '');
+
         MarketOrganization::query()
             ->where('name', $plainName)
             ->where('organization_type', 'government_agency')
             ->where('industry', 'government')
             ->where('organization_subcategory', 'social_security_administration')
             ->update([
-                'name' => $displayName,
-                'name_normalized' => Str::of(Str::ascii($displayName))->lower()->replaceMatches('/[^a-z0-9]+/', ' ')->trim()->toString(),
+                'name' => $safeDisplayName,
+                'name_normalized' => Str::of(Str::ascii($safeDisplayName))->lower()->replaceMatches('/[^a-z0-9]+/', ' ')->trim()->toString(),
             ]);
 
         IntelligenceSource::query()
             ->where('name', $plainName)
             ->where('source_class', 'social_security_admin')
-            ->update(['name' => $displayName]);
+            ->update(['name' => $safeDisplayName]);
     });
 
     MarketOrganization::query()
@@ -8042,25 +8044,45 @@ Route::get('/sls/intelligence/sources', function (Request $request) use ($allMap
         'consultancy services',
         'consulting services',
     ];
-    $sourceDomainMatches = function (string $candidateHost, string $sourceDomain): bool {
-        $candidateHost = Str::of($candidateHost)->lower()->replace('www.', '')->toString();
-        $sourceDomain = Str::of($sourceDomain)->lower()->replace('www.', '')->toString();
+    $countCapturedTendersForSource = function (IntelligenceSource $source, ?Carbon $publishedSince = null) use ($tenderSignalTermsForSourceCounts): int {
+        $sourceName = Str::lower(trim((string) $source->name));
+        $sourceDomain = Str::of((string) $source->domain)->lower()->replace('www.', '')->toString();
+        $sourceUrlHost = Str::of(parse_url((string) $source->url, PHP_URL_HOST) ?: '')->lower()->replace('www.', '')->toString();
+        $domains = collect([$sourceDomain, $sourceUrlHost])
+            ->filter()
+            ->unique()
+            ->values();
 
-        return $candidateHost !== ''
-            && $sourceDomain !== ''
-            && ($candidateHost === $sourceDomain || Str::endsWith($candidateHost, '.' . $sourceDomain));
+        if ($sourceName === '' && $domains->isEmpty()) {
+            return 0;
+        }
+
+        return CountryUpdate::query()
+            ->where('review_status', '<>', 'rejected')
+            ->when($publishedSince, fn ($query) => $query->where('publication_date', '>=', $publishedSince))
+            ->where(function ($query) use ($tenderSignalTermsForSourceCounts) {
+                foreach ($tenderSignalTermsForSourceCounts as $term) {
+                    $like = '%' . $term . '%';
+
+                    $query->orWhere('title', 'like', $like)
+                        ->orWhere('title_english', 'like', $like)
+                        ->orWhere('title_original', 'like', $like)
+                        ->orWhere('summary', 'like', $like)
+                        ->orWhere('source_name', 'like', $like)
+                        ->orWhere('source_url', 'like', $like);
+                }
+            })
+            ->where(function ($query) use ($sourceName, $domains) {
+                if ($sourceName !== '') {
+                    $query->orWhereRaw('LOWER(source_name) = ?', [$sourceName]);
+                }
+
+                foreach ($domains as $domain) {
+                    $query->orWhere('source_url', 'like', '%' . $domain . '%');
+                }
+            })
+            ->count();
     };
-    $capturedTenderUpdates = CountryUpdate::query()
-        ->select(['id', 'title', 'title_english', 'title_original', 'summary', 'source_name', 'source_url', 'publication_date'])
-        ->where('review_status', '<>', 'rejected')
-        ->get()
-        ->filter(function (CountryUpdate $update) use ($tenderSignalTermsForSourceCounts) {
-            $text = Str::lower($update->title . ' ' . $update->title_english . ' ' . $update->title_original . ' ' . $update->summary . ' ' . $update->source_name . ' ' . $update->source_url);
-
-            return Str::contains($text, $tenderSignalTermsForSourceCounts);
-        })
-        ->unique(fn (CountryUpdate $update) => filled($update->source_url) ? Str::lower((string) $update->source_url) : 'update:' . $update->id)
-        ->values();
 
     $allManagedSources = Schema::hasTable('intelligence_sources')
         ? IntelligenceSource::query()
@@ -8073,7 +8095,7 @@ Route::get('/sls/intelligence/sources', function (Request $request) use ($allMap
             ->orderBy('source_class')
             ->orderBy('name')
             ->get()
-            ->map(function (IntelligenceSource $source) use ($latestRunsByCountryIso, $latestGlobalRun, $nextGlobalHrmsSweep, $nextGlobalErmsSweep, $nextGlobalEbpcSweep, $nextGlobalSocialSweep, $socialSecuritySourceNextRuns, $hrmsSourceNextRuns, $sectorSourceNextRuns, $capturedTenderUpdates, $publishedSinceForSourceCounts, $sourceDomainMatches) {
+            ->map(function (IntelligenceSource $source) use ($latestRunsByCountryIso, $latestGlobalRun, $nextGlobalHrmsSweep, $nextGlobalErmsSweep, $nextGlobalEbpcSweep, $nextGlobalSocialSweep, $socialSecuritySourceNextRuns, $hrmsSourceNextRuns, $sectorSourceNextRuns, $publishedSinceForSourceCounts, $countCapturedTendersForSource) {
                 $lastRun = $source->country_iso
                     ? $latestRunsByCountryIso->get(strtoupper((string) $source->country_iso))
                     : $latestGlobalRun;
@@ -8147,23 +8169,9 @@ Route::get('/sls/intelligence/sources', function (Request $request) use ($allMap
                         })
                         ->count()
                     : 0;
-                $sourceName = Str::lower(trim((string) $source->name));
                 $sourceDomain = Str::of((string) $source->domain)->lower()->replace('www.', '')->toString();
-                $sourceUrlHost = Str::of(parse_url((string) $source->url, PHP_URL_HOST) ?: '')->lower()->replace('www.', '')->toString();
-                $matchedTenders = $capturedTenderUpdates
-                    ->filter(function (CountryUpdate $update) use ($sourceName, $sourceDomain, $sourceUrlHost, $sourceDomainMatches) {
-                        $updateSourceName = Str::lower(trim((string) $update->source_name));
-                        $updateHost = (string) parse_url((string) $update->source_url, PHP_URL_HOST);
-
-                        return ($sourceName !== '' && $updateSourceName === $sourceName)
-                            || $sourceDomainMatches($updateHost, $sourceDomain)
-                            || $sourceDomainMatches($updateHost, $sourceUrlHost);
-                    })
-                    ->values();
-                $source->captured_tenders_total_count = $matchedTenders->count();
-                $source->captured_tenders_last_120_count = $matchedTenders
-                    ->filter(fn (CountryUpdate $update) => $update->publication_date && $update->publication_date->greaterThanOrEqualTo($publishedSinceForSourceCounts))
-                    ->count();
+                $source->captured_tenders_total_count = $countCapturedTendersForSource($source);
+                $source->captured_tenders_last_120_count = $countCapturedTendersForSource($source, $publishedSinceForSourceCounts);
                 if ($source->captured_tenders_total_count === 0 && $source->audit_count > 0) {
                     $source->connection_status_label = 'No parsed tender output';
                     $source->connection_status_class = 'warn';
