@@ -42,7 +42,23 @@
             @if ($workspacesTableReady && $currentWorkspace)
                 <h2>{{ $currentWorkspace->entity_name }} / {{ $currentWorkspace->name }}</h2>
                 <p class="muted">Key: <code>{{ $currentWorkspace->workspace_key }}</code> · Entity: <code>{{ $currentWorkspace->entity_key }}</code> · Status: {{ $currentWorkspace->status }}</p>
-                <p class="muted">Configuration tables now store rows against this workspace. The selector comes in the next pass after more tables are scoped.</p>
+                <p class="muted">Configuration tables now store rows against this selected workspace. Use the sidebar selector to switch workspaces.</p>
+                @if ($workspaces->count() > 1)
+                    <form method="post" action="{{ route('sls.workspaces.current') }}" style="display:flex;gap:10px;align-items:end;margin-top:12px;max-width:520px;">
+                        @csrf
+                        <label style="display:grid;gap:5px;flex:1;">
+                            <span class="muted" style="font-weight:800;">Active workspace</span>
+                            <select name="workspace_id">
+                                @foreach ($workspaces as $workspace)
+                                    <option value="{{ $workspace->id }}" @selected($currentWorkspace->id === $workspace->id)>
+                                        {{ $workspace->entity_name }} / {{ $workspace->name }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </label>
+                        <button class="button secondary" type="submit">Switch</button>
+                    </form>
+                @endif
             @elseif ($workspacesTableReady)
                 <h2>No workspace record found</h2>
                 <p class="muted">The workspace table exists, but the default workspace has not been seeded yet.</p>

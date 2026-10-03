@@ -2626,15 +2626,33 @@ Route::get('/sls/security', function () use ($securityActions, $ensureSecurityAc
 
 Route::get('/sls/settings/workspace', function () {
     $migrationMissing = ! Schema::hasTable('sls_settings');
-    $currentWorkspace = Schema::hasTable('workspaces') ? WorkspaceContext::seedDefaultWorkspace() : null;
+    if (Schema::hasTable('workspaces')) {
+        WorkspaceContext::seedDefaultWorkspace();
+    }
+    $currentWorkspace = Schema::hasTable('workspaces') ? WorkspaceContext::current() : null;
 
     return view('sls.settings.workspace', [
         'migrationMissing' => $migrationMissing,
         'currentWorkspace' => $currentWorkspace,
+        'workspaces' => Schema::hasTable('workspaces') ? WorkspaceContext::selectableWorkspaces() : collect(),
         'workspacesTableReady' => Schema::hasTable('workspaces'),
         'settingsByGroup' => $migrationMissing ? collect() : SlsSettings::grouped(),
     ]);
 })->name('sls.settings.workspace');
+
+Route::post('/sls/workspaces/current', function (Request $request) {
+    abort_if(! Schema::hasTable('workspaces'), 503, 'Workspace table is not available yet.');
+
+    $data = $request->validate([
+        'workspace_id' => ['required', 'integer', 'exists:workspaces,id'],
+    ]);
+
+    $workspace = WorkspaceContext::selectWorkspace((int) $data['workspace_id']);
+
+    abort_unless($workspace, 422, 'Selected workspace is not active.');
+
+    return back()->with('status', 'Workspace switched to ' . $workspace->entity_name . ' / ' . $workspace->name . '.');
+})->name('sls.workspaces.current');
 
 Route::post('/sls/settings/workspace', function (Request $request) {
     abort_if(! Schema::hasTable('sls_settings'), 503, 'Workspace settings table is not available yet.');
@@ -2668,7 +2686,8 @@ Route::post('/sls/settings/workspace', function (Request $request) {
     WorkspaceContext::flush();
 
     if (Schema::hasTable('workspaces')) {
-        $workspace = WorkspaceContext::seedDefaultWorkspace();
+        WorkspaceContext::seedDefaultWorkspace();
+        $workspace = WorkspaceContext::current();
 
         if ($workspace) {
             $values = collect($data['settings'] ?? [])->map(fn ($value) => is_string($value) ? trim($value) : $value);
@@ -2681,7 +2700,6 @@ Route::post('/sls/settings/workspace', function (Request $request) {
                 'description' => $values->get('workspace.description') ?: $workspace->description,
                 'domain_label' => $values->get('workspace.domain_label') ?: $workspace->domain_label,
                 'status' => 'active',
-                'is_default' => true,
             ])->save();
 
             WorkspaceContext::flush();

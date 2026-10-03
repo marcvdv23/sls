@@ -4,11 +4,14 @@ namespace App\Support;
 
 use App\Models\Workspace;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 class WorkspaceContext
 {
+    public const SESSION_KEY = 'sls.current_workspace_id';
+
     protected static ?Workspace $currentWorkspace = null;
     protected static ?bool $tableReady = null;
 
@@ -22,6 +25,21 @@ class WorkspaceContext
             return static::$currentWorkspace;
         }
 
+        $selectedWorkspaceId = static::selectedWorkspaceId();
+
+        if ($selectedWorkspaceId) {
+            $selectedWorkspace = Workspace::query()
+                ->whereKey($selectedWorkspaceId)
+                ->where('status', 'active')
+                ->first();
+
+            if ($selectedWorkspace) {
+                return static::$currentWorkspace = $selectedWorkspace;
+            }
+
+            static::clearSelectedWorkspace();
+        }
+
         return static::$currentWorkspace = Workspace::query()
             ->where('is_default', true)
             ->orderBy('id')
@@ -32,6 +50,40 @@ class WorkspaceContext
     public static function currentWorkspaceId(): ?int
     {
         return static::current()?->id;
+    }
+
+    public static function selectableWorkspaces(): Collection
+    {
+        if (! static::tableReady()) {
+            return collect();
+        }
+
+        return Workspace::query()
+            ->where('status', 'active')
+            ->orderBy('entity_name')
+            ->orderBy('name')
+            ->get();
+    }
+
+    public static function selectWorkspace(int $workspaceId): ?Workspace
+    {
+        if (! static::tableReady()) {
+            return null;
+        }
+
+        $workspace = Workspace::query()
+            ->whereKey($workspaceId)
+            ->where('status', 'active')
+            ->first();
+
+        if (! $workspace) {
+            return null;
+        }
+
+        static::storeSelectedWorkspaceId($workspace->id);
+        static::flush();
+
+        return $workspace;
     }
 
     public static function seedDefaultWorkspace(): ?Workspace
@@ -108,6 +160,49 @@ class WorkspaceContext
         SlsSettings::flush();
         ReviewFocuses::flush();
         PriorityOpportunityConfig::flush();
+    }
+
+    protected static function selectedWorkspaceId(): ?int
+    {
+        try {
+            if (app()->runningInConsole()) {
+                return null;
+            }
+
+            $request = request();
+
+            if (! $request->hasSession()) {
+                return null;
+            }
+
+            $workspaceId = (int) $request->session()->get(static::SESSION_KEY);
+
+            return $workspaceId > 0 ? $workspaceId : null;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    protected static function storeSelectedWorkspaceId(int $workspaceId): void
+    {
+        try {
+            if (! app()->runningInConsole() && request()->hasSession()) {
+                request()->session()->put(static::SESSION_KEY, $workspaceId);
+            }
+        } catch (\Throwable) {
+            // Console and early boot contexts do not have a writable session.
+        }
+    }
+
+    protected static function clearSelectedWorkspace(): void
+    {
+        try {
+            if (! app()->runningInConsole() && request()->hasSession()) {
+                request()->session()->forget(static::SESSION_KEY);
+            }
+        } catch (\Throwable) {
+            // Console and early boot contexts do not have a writable session.
+        }
     }
 
     protected static function tableReady(): bool

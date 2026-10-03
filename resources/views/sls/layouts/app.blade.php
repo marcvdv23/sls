@@ -2,6 +2,8 @@
 <html lang="en" data-theme="{{ auth()->user()->theme_preference ?? 'white' }}">
     <head>
         @php
+            $slsCurrentWorkspace = \App\Support\WorkspaceContext::current();
+            $slsSelectableWorkspaces = \App\Support\WorkspaceContext::selectableWorkspaces();
             $slsPlatformName = \App\Support\SlsSettings::get('platform.name', config('sls.platform.name', 'SLS'));
             $slsEntityName = \App\Support\SlsSettings::get('entity.display_name', config('sls.entity.display_name', config('sls.entity.name', '2interact')));
             $slsWorkspaceName = \App\Support\SlsSettings::get('workspace.name', config('sls.workspace.name', 'Social Security Sales'));
@@ -32,6 +34,19 @@
                 <div style="margin:10px 12px 18px;color:#536173;font-size:12px;line-height:1.35;">
                     <strong style="display:block;color:#111827;font-size:13px;">{{ $slsEntityName }}</strong>
                     <span>{{ $slsWorkspaceName }}</span>
+                    @if ($slsCurrentWorkspace)
+                        <form method="post" action="{{ route('sls.workspaces.current') }}" style="display:grid;gap:5px;margin-top:10px;">
+                            @csrf
+                            <label for="workspace-selector" style="font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#8a96a8;">Workspace</label>
+                            <select id="workspace-selector" name="workspace_id" onchange="this.form.submit()" style="font-size:12px;min-height:34px;padding:5px 7px;">
+                                @foreach ($slsSelectableWorkspaces as $workspace)
+                                    <option value="{{ $workspace->id }}" @selected($slsCurrentWorkspace->id === $workspace->id)>
+                                        {{ $workspace->entity_name }} / {{ $workspace->name }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </form>
+                    @endif
                 </div>
 
                 @php
