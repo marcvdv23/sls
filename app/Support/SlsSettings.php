@@ -163,11 +163,19 @@ class SlsSettings
             return;
         }
 
+        $workspaceKey = (string) (WorkspaceContext::current()?->workspace_key ?? config('sls.workspace.key', 'social_security'));
+
         foreach (static::definitions() as $key => $definition) {
+            $default = $definition['default'] ?? null;
+
+            if ($workspaceKey !== 'social_security' && in_array($key, ['products.default_code', 'products.default_name', 'products.order', 'products.focus_map'], true)) {
+                $default = '';
+            }
+
             $setting = SlsSetting::query()->firstOrCreate(
                 ['setting_key' => $key],
                 [
-                    'setting_value' => $definition['default'] ?? null,
+                    'setting_value' => $default,
                     'value_type' => $definition['value_type'] ?? 'string',
                     'setting_group' => $definition['group'] ?? 'General',
                     'label' => $definition['label'] ?? $key,

@@ -133,6 +133,7 @@ $defaultSlsProduct = fn () => Product::query()
 $productFocusKey = function (Product|string|null $product): string {
     $code = $product instanceof Product ? $product->code : (string) $product;
     $name = $product instanceof Product ? $product->name : (string) $product;
+    $workspaceKey = (string) (WorkspaceContext::current()?->workspace_key ?: SlsSettings::get('workspace.key', 'social_security'));
 
     $configuredFocus = collect(preg_split('/[\r\n,]+/', (string) SlsSettings::get('products.focus_map', '')))
         ->mapWithKeys(function (string $line): array {
@@ -147,27 +148,31 @@ $productFocusKey = function (Product|string|null $product): string {
                 : [];
         });
 
-    $legacyFocus = collect([
+    $focusMap = $workspaceKey === 'social_security' ? collect([
         'SSAS' => 'social_security',
         'HRMS' => 'hrms_tenders',
         'ERMS' => 'erms_tenders',
         'EBPC' => 'ebpc_tenders',
-    ])->merge($configuredFocus);
+    ])->merge($configuredFocus) : $configuredFocus;
 
     $code = Str::upper(trim((string) $code));
     $nameKey = Str::upper(trim((string) $name));
 
     foreach ([$code, $nameKey] as $candidate) {
-        if ($candidate !== '' && $legacyFocus->has($candidate)) {
-            return (string) $legacyFocus->get($candidate);
+        if ($candidate !== '' && $focusMap->has($candidate)) {
+            return (string) $focusMap->get($candidate);
         }
     }
 
     $combined = Str::upper($code . ' ' . $nameKey);
-    foreach ($legacyFocus as $productKey => $focusKey) {
+    foreach ($focusMap as $productKey => $focusKey) {
         if ($productKey !== '' && Str::contains($combined, (string) $productKey)) {
             return (string) $focusKey;
         }
+    }
+
+    if ($workspaceKey !== 'social_security') {
+        return ReviewFocuses::defaultKey();
     }
 
     $source = $code !== '' ? $code : $name;
