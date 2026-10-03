@@ -2,11 +2,15 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToWorkspace;
 use Illuminate\Database\Eloquent\Model;
 
 class PriorityOpportunity extends Model
 {
+    use BelongsToWorkspace;
+
     protected $fillable = [
+        'workspace_id',
         'country_id',
         'primary_organization_id',
         'primary_task_id',

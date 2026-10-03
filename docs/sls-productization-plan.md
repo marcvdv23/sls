@@ -73,7 +73,7 @@ Objective: support multiple workspaces for one entity without mixing data.
 - [x] Add `workspace_id` to configurable products/services.
 - [x] Add `workspace_id` to review categories, priority-opportunity settings, crawler settings, SLS settings, and SerpAPI templates.
 - [x] Add `workspace_id` to source definitions, keywords, and operation runs.
-- [ ] Add `workspace_id` to priority opportunities and any future imported shortlist records.
+- [x] Add `workspace_id` to priority opportunities and imported shortlist follow-up tasks.
 - [ ] Decide whether Review Desk items and `country_updates` should be workspace-scoped directly or through source/campaign ownership.
 - [ ] Add an active workspace selector.
 - [ ] Scope queries by active workspace.
@@ -141,11 +141,11 @@ Initial review categories:
 
 ## Next Immediate Coding Pass
 
-1. Add workspace ownership to priority opportunities and imported shortlist records.
-2. Add workspace ownership to Review Desk/intelligence data after config scoping is stable.
-3. Add a workspace selector after the first workspace-scoped tables are in place.
-4. Seed the rckgrp sustainability workspace configuration.
-5. Add workspace-specific source/keyword presets for rckgrp sustainability.
+1. Add workspace ownership to Review Desk/intelligence data after config scoping is stable.
+2. Add a workspace selector after the first workspace-scoped tables are in place.
+3. Seed the rckgrp sustainability workspace configuration.
+4. Add workspace-specific source/keyword presets for rckgrp sustainability.
+5. Add tenant/entity membership and roles after workspace switching is proven.
 
 ## Open Decisions
 
