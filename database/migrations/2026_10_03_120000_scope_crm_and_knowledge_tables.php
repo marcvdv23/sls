@@ -103,6 +103,8 @@ return new class extends Migration
         if (Schema::hasTable('market_crawlers')) {
             $this->dropIndexIfExists('market_crawlers', 'market_crawlers_name_unique');
             $this->dropIndexIfExists('market_crawlers', 'market_crawlers_crawler_key_unique');
+            $this->dropIndexIfExists('market_crawlers', 'market_crawlers_workspace_name_unique');
+            $this->dropIndexIfExists('market_crawlers', 'market_crawlers_workspace_key_unique');
             Schema::table('market_crawlers', function (Blueprint $table) {
                 $table->unique(['workspace_id', 'name'], 'market_crawlers_workspace_name_unique');
                 $table->unique(['workspace_id', 'crawler_key'], 'market_crawlers_workspace_key_unique');
@@ -111,6 +113,7 @@ return new class extends Migration
 
         if (Schema::hasTable('market_organizations')) {
             $this->dropIndexIfExists('market_organizations', 'market_organizations_source_fingerprint_unique');
+            $this->dropIndexIfExists('market_organizations', 'market_orgs_workspace_fingerprint_unique');
             Schema::table('market_organizations', function (Blueprint $table) {
                 $table->unique(['workspace_id', 'source_fingerprint'], 'market_orgs_workspace_fingerprint_unique');
             });
@@ -118,6 +121,7 @@ return new class extends Migration
 
         if (Schema::hasTable('market_organization_contacts')) {
             $this->dropIndexIfExists('market_organization_contacts', 'market_organization_contacts_source_fingerprint_unique');
+            $this->dropIndexIfExists('market_organization_contacts', 'market_contacts_workspace_fingerprint_unique');
             Schema::table('market_organization_contacts', function (Blueprint $table) {
                 $table->unique(['workspace_id', 'source_fingerprint'], 'market_contacts_workspace_fingerprint_unique');
             });
@@ -166,6 +170,8 @@ return new class extends Migration
             if (! Schema::hasTable($table)) {
                 continue;
             }
+
+            $this->dropIndexIfExists($table, $table . '_workspace_lookup_idx');
 
             Schema::table($table, function (Blueprint $schema) use ($table, $columns) {
                 $schema->index($columns, $table . '_workspace_lookup_idx');
