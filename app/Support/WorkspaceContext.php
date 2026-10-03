@@ -52,6 +52,20 @@ class WorkspaceContext
         return static::current()?->id;
     }
 
+    public static function forceWorkspace(?int $workspaceId): ?Workspace
+    {
+        static::flush();
+
+        if (! $workspaceId || ! static::tableReady()) {
+            return null;
+        }
+
+        return static::$currentWorkspace = Workspace::query()
+            ->whereKey($workspaceId)
+            ->where('status', 'active')
+            ->first();
+    }
+
     public static function selectableWorkspaces(): Collection
     {
         if (! static::tableReady()) {

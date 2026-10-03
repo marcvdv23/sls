@@ -1975,42 +1975,6 @@ Route::post('/sls/system/scheduler/restart', function () {
     return back()->with('status', 'Laravel scheduler loop restarted. The monitors will continue on their normal schedule.');
 })->name('sls.system.scheduler.restart');
 
-Route::post('/sls/intelligence/monitors/{monitor}/run-now', function (string $monitor, CountryIntelligenceMonitor $countryMonitor) use ($workspaceMonitorConfigs) {
-    $monitorConfigs = $workspaceMonitorConfigs();
-
-    if (! array_key_exists($monitor, $monitorConfigs)) {
-        abort(404);
-    }
-
-    $config = $monitorConfigs[$monitor];
-    $maxResults = (int) config('country_intelligence.scheduled_max_results', config('country_intelligence.default_max_results', 3));
-    $ran = collect();
-
-    foreach ($config['focuses'] as $focus) {
-        $results = $countryMonitor->run(
-            countryKeys: [],
-            maxResults: max(1, min(10, $maxResults)),
-            dryRun: false,
-            cycleSize: 1,
-            focus: $focus,
-            region: $config['region'],
-        );
-
-        $ran = $ran->merge(collect($results)->map(fn (array $result, string $iso) => [
-            'iso' => $iso,
-            'country' => $result['country'] ?? $iso,
-            'items_found' => (int) ($result['items_found'] ?? 0),
-            'focus' => $focus,
-        ]));
-    }
-
-    $summary = $ran
-        ->map(fn (array $item) => $item['country'] . ' (' . $item['focus'] . ': ' . $item['items_found'] . ')')
-        ->implode(', ');
-
-    return back()->with('status', $config['label'] . ' was run now' . ($summary ? ': ' . $summary : '.'));
-})->name('sls.intelligence.monitors.runNow');
-
 Route::get('/sls/tracked-countries/export', function () {
     $databaseCountries = Country::with('topics')->get()->keyBy(fn (Country $country) => strtoupper((string) $country->iso_code));
     $adminSources = IntelligenceSource::query()
@@ -2226,6 +2190,45 @@ $startOperationRun = function (SlsOperationRun $run): void {
         . ' &';
     pclose(popen($command, 'r'));
 };
+
+Route::post('/sls/intelligence/monitors/{monitor}/run-now', function (string $monitor) use ($startOperationRun, $workspaceMonitorConfigs) {
+    $monitorConfigs = $workspaceMonitorConfigs();
+
+    if (! array_key_exists($monitor, $monitorConfigs)) {
+        abort(404);
+    }
+
+    $config = $monitorConfigs[$monitor];
+    $maxResults = (int) config('country_intelligence.scheduled_max_results', config('country_intelligence.default_max_results', 3));
+    $focuses = collect($config['focuses'] ?? [])
+        ->map(fn ($focus) => trim((string) $focus))
+        ->filter()
+        ->values()
+        ->all();
+
+    $run = SlsOperationRun::query()->create([
+        'operation_key' => 'country_intelligence_monitor',
+        'operation_name' => 'Monitor: ' . $config['label'],
+        'status' => 'queued',
+        'parameters' => [
+            'monitor' => $monitor,
+            'label' => $config['label'],
+            'focuses' => $focuses,
+            'region' => $config['region'] ?? 'all',
+            'max_results' => max(1, min(10, $maxResults)),
+            'cycle_size' => 1,
+            'dry_run' => false,
+        ],
+        'items' => [],
+        'summary' => [],
+        'dry_run' => false,
+        'total_count' => max(1, count($focuses)),
+    ]);
+
+    $startOperationRun($run);
+
+    return back()->with('status', $config['label'] . ' queued as operation #' . $run->id . '. It will continue in the background without holding the browser open.');
+})->name('sls.intelligence.monitors.runNow');
 
 $serpApiSearchState = function () {
     try {

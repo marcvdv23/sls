@@ -250,10 +250,16 @@ Artisan::command('sls:guess-bank-domains {--limit=50 : Maximum bank records to p
     return 0;
 })->purpose('Guess and verify official bank domains using bank-specific domain rules');
 
-Artisan::command('sls:run-operation {operation_run_id}', function (BankDomainGuessService $bankDomainGuesser, SerpApiSearchService $serpApiSearch) {
-    $run = SlsOperationRun::query()->findOrFail((int) $this->argument('operation_run_id'));
+Artisan::command('sls:run-operation {operation_run_id}', function (BankDomainGuessService $bankDomainGuesser, CountryIntelligenceMonitor $countryMonitor, SerpApiSearchService $serpApiSearch) {
+    $run = SlsOperationRun::query()
+        ->withoutGlobalScope('workspace')
+        ->findOrFail((int) $this->argument('operation_run_id'));
 
-    if (! in_array($run->operation_key, ['bank_domain_guesser', 'serpapi_search'], true)) {
+    if ($run->workspace_id) {
+        WorkspaceContext::forceWorkspace((int) $run->workspace_id);
+    }
+
+    if (! in_array($run->operation_key, ['bank_domain_guesser', 'country_intelligence_monitor', 'serpapi_search'], true)) {
         $run->update([
             'status' => 'failed',
             'error_message' => 'Unknown operation key: ' . $run->operation_key,
@@ -267,6 +273,115 @@ Artisan::command('sls:run-operation {operation_run_id}', function (BankDomainGue
 
     $parameters = $run->parameters ?? [];
     $items = [];
+
+    if ($run->operation_key === 'country_intelligence_monitor') {
+        $focuses = collect($parameters['focuses'] ?? [])
+            ->map(fn ($focus) => trim((string) $focus))
+            ->filter()
+            ->values()
+            ->all();
+
+        if ($focuses === []) {
+            $focuses = ['social_security'];
+        }
+
+        $run->update([
+            'status' => 'running',
+            'started_at' => now(),
+            'error_message' => null,
+            'items' => [],
+            'summary' => [
+                'focuses' => count($focuses),
+                'countries' => 0,
+                'items_found' => 0,
+                'errors' => 0,
+            ],
+        ]);
+
+        $itemsFound = 0;
+        $countriesChecked = 0;
+        $errors = 0;
+
+        try {
+            foreach ($focuses as $focus) {
+                $results = $countryMonitor->run(
+                    countryKeys: [],
+                    maxResults: max(1, min(10, (int) ($parameters['max_results'] ?? 3))),
+                    dryRun: (bool) ($parameters['dry_run'] ?? false),
+                    cycleSize: max(1, (int) ($parameters['cycle_size'] ?? 1)),
+                    focus: $focus,
+                    region: (string) ($parameters['region'] ?? 'all'),
+                );
+
+                $focusItems = collect($results)
+                    ->map(function (array $result, string $iso) use ($focus) {
+                        return [
+                            'focus' => $focus,
+                            'iso' => $iso,
+                            'country' => $result['country'] ?? $iso,
+                            'items_found' => (int) ($result['items_found'] ?? 0),
+                            'error' => $result['error'] ?? null,
+                        ];
+                    })
+                    ->values()
+                    ->all();
+
+                foreach ($focusItems as $item) {
+                    $items[] = $item;
+                    $itemsFound += (int) ($item['items_found'] ?? 0);
+                    $countriesChecked++;
+
+                    if (filled($item['error'] ?? null)) {
+                        $errors++;
+                    }
+                }
+
+                $run->forceFill([
+                    'items' => $items,
+                    'summary' => [
+                        'focuses' => count($focuses),
+                        'countries' => $countriesChecked,
+                        'items_found' => $itemsFound,
+                        'errors' => $errors,
+                    ],
+                    'processed_count' => $countriesChecked,
+                    'total_count' => count($focuses),
+                    'success_count' => $itemsFound,
+                    'failure_count' => $errors,
+                ])->save();
+            }
+
+            $run->update([
+                'status' => 'completed',
+                'items' => $items,
+                'summary' => [
+                    'focuses' => count($focuses),
+                    'countries' => $countriesChecked,
+                    'items_found' => $itemsFound,
+                    'errors' => $errors,
+                ],
+                'processed_count' => $countriesChecked,
+                'total_count' => count($focuses),
+                'success_count' => $itemsFound,
+                'failure_count' => $errors,
+                'finished_at' => now(),
+            ]);
+
+            $this->info('Country intelligence monitor operation run #' . $run->id . ' completed.');
+
+            return 0;
+        } catch (Throwable $exception) {
+            $run->update([
+                'status' => 'failed',
+                'error_message' => $exception->getMessage(),
+                'finished_at' => now(),
+            ]);
+
+            $this->error($exception->getMessage());
+
+            return 1;
+        }
+    }
 
     if ($run->operation_key === 'serpapi_search') {
         $run->update([
