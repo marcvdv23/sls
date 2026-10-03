@@ -2273,6 +2273,57 @@ Artisan::command('sls:worker-health-check {--focus=sector_tenders : Monitor focu
     $this->warn('Worker stale. Alert sent to ' . $alertEmail . '.');
 })->purpose('Alert if the iMac/worker has stopped triggering intelligence monitor runs');
 
+Artisan::command('sls:monitor-runs {--workspace= : Workspace key, such as social_security or sustainability_consulting} {--limit=10 : Number of recent runs}', function () {
+    $workspaceKey = trim((string) $this->option('workspace'));
+    $limit = max(1, min(100, (int) $this->option('limit')));
+
+    $workspace = null;
+    if ($workspaceKey !== '') {
+        $workspace = \App\Models\Workspace::query()
+            ->where('workspace_key', $workspaceKey)
+            ->first();
+
+        if (! $workspace) {
+            $this->error('Workspace not found: ' . $workspaceKey);
+
+            return 1;
+        }
+
+        WorkspaceContext::forceWorkspace((int) $workspace->id);
+    }
+
+    $runs = CountryMonitorRun::query()
+        ->with('country:id,name,iso_code')
+        ->latest('finished_at')
+        ->latest('id')
+        ->limit($limit)
+        ->get();
+
+    $this->info('Recent monitor runs' . ($workspace ? ' for ' . $workspace->entity_name . ' / ' . $workspace->name : ' for current/default workspace'));
+
+    if ($runs->isEmpty()) {
+        $this->warn('No monitor runs found.');
+
+        return 0;
+    }
+
+    $runs->each(function (CountryMonitorRun $run): void {
+        $this->line(sprintf(
+            '#%d | %s | %s | %s | %d item(s) | %s -> %s%s',
+            $run->id,
+            $run->country?->iso_code ?: ('country_id=' . $run->country_id),
+            $run->focus,
+            $run->status,
+            (int) $run->items_found,
+            $run->started_at?->toDateTimeString() ?: 'not started',
+            $run->finished_at?->toDateTimeString() ?: 'not finished',
+            $run->error_message ? ' | ' . $run->error_message : ''
+        ));
+    });
+
+    return 0;
+})->purpose('Show recent country intelligence monitor runs for one workspace');
+
 $crawlerSetting = function (string $key, mixed $default = null): mixed {
     try {
         if (! Schema::hasTable('crawler_settings')) {

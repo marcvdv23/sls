@@ -445,11 +445,15 @@ class CountryIntelligenceMonitor
     private function sourceMatchesFocus(array $source, string $focus): bool
     {
         $sourceFocus = (string) ($source['focus'] ?? 'both');
+        $genericWorkspaceFocuses = ['sustainability', 'climate', 'environment', 'environmental', 'esg'];
 
         return $sourceFocus === 'both'
             || $sourceFocus === $focus
+            || (in_array($sourceFocus, $genericWorkspaceFocuses, true) && ! in_array($focus, ['social_security', 'hrms_tenders', 'erms_tenders', 'ebpc_tenders', 'sector_tenders'], true))
             || ($sourceFocus === 'news' && $focus === 'social_security')
-            || ($sourceFocus === 'tenders' && in_array($focus, ['social_security', 'hrms_tenders', 'erms_tenders', 'ebpc_tenders', 'sector_tenders'], true));
+            || ($sourceFocus === 'news' && ! str_contains($focus, 'tender'))
+            || ($sourceFocus === 'tenders' && in_array($focus, ['social_security', 'hrms_tenders', 'erms_tenders', 'ebpc_tenders', 'sector_tenders'], true))
+            || ($sourceFocus === 'tenders' && str_contains($focus, 'tender'));
     }
 
     private function searchLanguageCodes(array $countryConfig): Collection
