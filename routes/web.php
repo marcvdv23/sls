@@ -1369,16 +1369,24 @@ Route::get('/sls', function () use ($orderedProducts, $allMapCountries, $relevan
     $workspaceDefaultFocusConfig = ReviewFocuses::get($workspaceDefaultFocus);
     $workspaceNewsItems = $recentPublishedItems
         ->filter(fn (CountryUpdate $update) => $update->inferred_focus === $workspaceDefaultFocus && ! $hasTenderSignal($update));
-    $workspaceSourceRows = IntelligenceSource::query()
+    $workspaceSourceClasses = $currentWorkspaceKey === 'sustainability_consulting'
+        ? ['donor_portal', 'donor_tender_portal', 'project_pipeline', 'procurement_portal', 'climate_finance_fund', 'policy_source', 'government', 'central_tender_portal', 'local_media', 'news_aggregator']
+        : [];
+    $workspaceSourceQuery = IntelligenceSource::query()
+        ->when($workspaceSourceClasses !== [], fn ($query) => $query->whereIn('source_class', $workspaceSourceClasses))
+        ->when($currentWorkspaceKey === 'sustainability_consulting', fn ($query) => $query->where('source_class', '<>', 'social_security_admin'));
+    $workspaceSourceClassCounts = (clone $workspaceSourceQuery)
+        ->get()
+        ->groupBy(fn (IntelligenceSource $source) => $source->source_class ?: 'source')
+        ->map->count()
+        ->sortDesc();
+    $workspaceSourceRows = $workspaceSourceQuery
+        ->orderByRaw('country_iso IS NULL DESC')
         ->orderBy('country_iso')
         ->orderBy('source_class')
         ->orderBy('name')
         ->limit(80)
         ->get();
-    $workspaceSourceClassCounts = $workspaceSourceRows
-        ->groupBy(fn (IntelligenceSource $source) => $source->source_class ?: 'source')
-        ->map->count()
-        ->sortDesc();
     $workspaceMonitoringFocuses = $currentWorkspaceKey === 'sustainability_consulting'
         ? [
             'Donor and development-bank project pipelines',
