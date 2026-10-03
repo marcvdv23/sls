@@ -2273,9 +2273,10 @@ Artisan::command('sls:worker-health-check {--focus=sector_tenders : Monitor focu
     $this->warn('Worker stale. Alert sent to ' . $alertEmail . '.');
 })->purpose('Alert if the iMac/worker has stopped triggering intelligence monitor runs');
 
-Artisan::command('sls:monitor-runs {--workspace= : Workspace key, such as social_security or sustainability_consulting} {--limit=10 : Number of recent runs}', function () {
+Artisan::command('sls:monitor-runs {--workspace= : Workspace key, such as social_security or sustainability_consulting} {--limit=10 : Number of recent runs} {--all : Include historical runs whose focus is no longer configured for the workspace}', function () {
     $workspaceKey = trim((string) $this->option('workspace'));
     $limit = max(1, min(100, (int) $this->option('limit')));
+    $includeHistoricalFocuses = (bool) $this->option('all');
 
     $workspace = null;
     if ($workspaceKey !== '') {
@@ -2292,14 +2293,29 @@ Artisan::command('sls:monitor-runs {--workspace= : Workspace key, such as social
         WorkspaceContext::forceWorkspace((int) $workspace->id);
     }
 
+    $validFocuses = collect();
+    if (! $includeHistoricalFocuses && Schema::hasTable('review_focuses')) {
+        $validFocuses = \App\Models\ReviewFocus::query()
+            ->where('is_enabled', true)
+            ->pluck('focus_key')
+            ->map(fn ($focus) => trim((string) $focus))
+            ->filter()
+            ->values();
+    }
+
     $runs = CountryMonitorRun::query()
         ->with('country:id,name,iso_code')
+        ->when($validFocuses->isNotEmpty(), fn ($query) => $query->whereIn('focus', $validFocuses->all()))
         ->latest('finished_at')
         ->latest('id')
         ->limit($limit)
         ->get();
 
     $this->info('Recent monitor runs' . ($workspace ? ' for ' . $workspace->entity_name . ' / ' . $workspace->name : ' for current/default workspace'));
+
+    if ($validFocuses->isNotEmpty()) {
+        $this->line('Showing current configured focuses only. Use --all to include obsolete historical focus rows.');
+    }
 
     if ($runs->isEmpty()) {
         $this->warn('No monitor runs found.');
