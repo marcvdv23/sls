@@ -176,6 +176,77 @@ $productFocusKey = function (Product|string|null $product): string {
     return $slug === '' ? 'sector_tenders' : $slug . '_tenders';
 };
 
+$workspaceMonitorConfigs = function (): array {
+    $workspaceKey = (string) (WorkspaceContext::current()?->workspace_key ?: SlsSettings::get('workspace.key', 'social_security'));
+    $domainLabel = (string) SlsSettings::get('workspace.domain_label', SlsSettings::get('workspace.name', 'Workspace'));
+    $focuses = collect(ReviewFocuses::all());
+    $focusKeys = $focuses->keys()->filter()->values();
+    $defaultFocus = ReviewFocuses::defaultKey();
+    $allRegion = 'africa_asia_caribbean_latin_america_north_america_europe';
+
+    if ($workspaceKey === 'sustainability_consulting' || Str::contains(Str::lower($domainLabel), ['sustainability', 'climate', 'environment'])) {
+        return [
+            'sustainability-intelligence' => [
+                'label' => 'Sustainability and Climate Intelligence',
+                'focuses' => $focusKeys
+                    ->filter(fn (string $focus) => ! Str::contains($focus, ['tender', 'rfp']))
+                    ->values()
+                    ->all() ?: [$defaultFocus],
+                'review_focus' => $defaultFocus,
+                'region' => $allRegion,
+            ],
+            'sustainability-tenders' => [
+                'label' => 'Sustainability Tender/RFP Monitor',
+                'focuses' => $focusKeys
+                    ->filter(fn (string $focus) => Str::contains($focus, ['tender', 'rfp', 'donor', 'opportunity']))
+                    ->values()
+                    ->all() ?: [$defaultFocus],
+                'review_focus' => $focusKeys->first(fn (string $focus) => Str::contains($focus, ['tender', 'rfp'])) ?: $defaultFocus,
+                'region' => $allRegion,
+            ],
+        ];
+    }
+
+    if ($defaultFocus !== 'social_security') {
+        $opportunityFocuses = $focusKeys
+            ->filter(fn (string $focus) => Str::contains($focus, ['tender', 'rfp', 'procurement', 'donor', 'opportunity']))
+            ->values();
+
+        return [
+            'workspace-intelligence' => [
+                'label' => $domainLabel . ' Intelligence',
+                'focuses' => $focusKeys
+                    ->reject(fn (string $focus) => $opportunityFocuses->contains($focus))
+                    ->values()
+                    ->all() ?: [$defaultFocus],
+                'review_focus' => $defaultFocus,
+                'region' => $allRegion,
+            ],
+            'workspace-opportunities' => [
+                'label' => $domainLabel . ' Opportunities',
+                'focuses' => $opportunityFocuses->all() ?: [$defaultFocus],
+                'review_focus' => $opportunityFocuses->first() ?: $defaultFocus,
+                'region' => $allRegion,
+            ],
+        ];
+    }
+
+    return [
+        'social-security-news' => [
+            'label' => 'Social Security and Pension News',
+            'focuses' => ['social_security'],
+            'review_focus' => 'social_security',
+            'region' => $allRegion,
+        ],
+        'tenders' => [
+            'label' => 'Tender Monitor',
+            'focuses' => ['hrms_tenders', 'sector_tenders', 'erms_tenders', 'ebpc_tenders'],
+            'review_focus' => 'hrms_tenders,sector_tenders,erms_tenders,ebpc_tenders',
+            'region' => $allRegion,
+        ],
+    ];
+};
+
 $africaCountries = fn () => collect([
     ['iso' => 'DZ', 'name' => 'Algeria', 'lat' => 28.0, 'lon' => 2.6],
     ['iso' => 'AO', 'name' => 'Angola', 'lat' => -11.2, 'lon' => 17.9],
@@ -850,7 +921,7 @@ Route::post('/sls/tracked-countries/admin-urls/delete', function (Request $reque
     ]);
 })->name('sls.trackedCountries.adminUrls.delete');
 
-Route::get('/sls', function () use ($orderedProducts, $allMapCountries, $relevantCountryUpdates, $productFocusKey) {
+Route::get('/sls', function () use ($orderedProducts, $allMapCountries, $relevantCountryUpdates, $productFocusKey, $workspaceMonitorConfigs) {
     $inferIntelligenceFocus = function (CountryUpdate $update): ?string {
         $text = Str::lower($update->title . ' ' . $update->title_english . ' ' . $update->title_original . ' ' . $update->summary . ' ' . $update->source_name . ' ' . $update->source_url);
         $sourceText = Str::lower($update->title . ' ' . $update->title_english . ' ' . $update->title_original . ' ' . $update->summary . ' ' . $update->source_name . ' ' . $update->source_url);
@@ -1292,6 +1363,37 @@ Route::get('/sls', function () use ($orderedProducts, $allMapCountries, $relevan
             'url' => $card['published_tender_url'],
         ])
         ->values();
+    $currentWorkspaceKey = (string) (WorkspaceContext::current()?->workspace_key ?: SlsSettings::get('workspace.key', 'social_security'));
+    $workspaceDomainLabel = (string) SlsSettings::get('workspace.domain_label', SlsSettings::get('workspace.name', 'Sales intelligence'));
+    $workspaceDefaultFocus = ReviewFocuses::defaultKey();
+    $workspaceDefaultFocusConfig = ReviewFocuses::get($workspaceDefaultFocus);
+    $workspaceNewsItems = $recentPublishedItems
+        ->filter(fn (CountryUpdate $update) => $update->inferred_focus === $workspaceDefaultFocus && ! $hasTenderSignal($update));
+    $workspaceSourceRows = IntelligenceSource::query()
+        ->orderBy('country_iso')
+        ->orderBy('source_class')
+        ->orderBy('name')
+        ->limit(80)
+        ->get();
+    $workspaceSourceClassCounts = $workspaceSourceRows
+        ->groupBy(fn (IntelligenceSource $source) => $source->source_class ?: 'source')
+        ->map->count()
+        ->sortDesc();
+    $workspaceMonitoringFocuses = $currentWorkspaceKey === 'sustainability_consulting'
+        ? [
+            'Donor and development-bank project pipelines',
+            'RFP, RFI, EOI, tender, and procurement portals',
+            'Environmental, climate, and sustainability policy announcements',
+            'Climate finance funds, facilities, and grant windows',
+            'ESG regulation, carbon markets, and national climate plans',
+            'Relevant sustainability media and implementing-partner signals',
+        ]
+        : [
+            'Official agency and ministry sources',
+            'Procurement and tender portals',
+            'Local and regional media',
+            'Donor and multilateral project pipelines',
+        ];
     $regionSlug = fn (string $region) => match (Str::lower($region)) {
         'latin america' => 'latin_america',
         default => Str::of($region)->lower()->replace(' ', '_')->toString(),
@@ -1302,7 +1404,7 @@ Route::get('/sls', function () use ($orderedProducts, $allMapCountries, $relevan
         ->unique()
         ->values();
     $regionTotals = $regionNames
-        ->map(function (string $region) use ($productCards, $recentPublishedItems, $recentSocialSecurityNews, $regionSlug, $publishedWindowKey, $hasTenderSignal) {
+        ->map(function (string $region) use ($productCards, $recentPublishedItems, $regionSlug, $publishedWindowKey, $hasTenderSignal, $workspaceDefaultFocus, $workspaceNewsItems) {
             $matchesRegion = fn (CountryUpdate $update) => Str::lower((string) $update->country?->region) === Str::lower($region);
             $slug = $regionSlug($region);
             $productTenders = $productCards
@@ -1322,9 +1424,9 @@ Route::get('/sls', function () use ($orderedProducts, $allMapCountries, $relevan
                 'name' => $region,
                 'slug' => $slug,
                 'product_tenders' => $productTenders,
-                'social_security_news' => $recentSocialSecurityNews->filter($matchesRegion)->count(),
+                'workspace_news' => $workspaceNewsItems->filter($matchesRegion)->count(),
                 'links' => [
-                    'social_security_news' => route('sls.intelligence.review', ['focus' => 'social_security', 'region' => $slug, 'published' => $publishedWindowKey, 'type' => 'news', 'limit' => 500]),
+                    'workspace_news' => route('sls.intelligence.review', ['focus' => $workspaceDefaultFocus, 'region' => $slug, 'published' => $publishedWindowKey, 'type' => 'news', 'limit' => 500]),
                 ],
             ];
         })
@@ -1769,7 +1871,7 @@ Route::get('/sls', function () use ($orderedProducts, $allMapCountries, $relevan
         ->values();
     $trackedRegions = $trackedCountries->pluck('region')->filter()->unique()->sort()->values();
     $trackedLanguages = $trackedCountries->pluck('default_language_code')->filter()->map(fn ($code) => strtoupper($code))->unique()->sort()->values();
-    $dashboardMapCountries = $relevantCountryUpdates($allMapCountries(), 'social_security', $publishedSince);
+    $dashboardMapCountries = $relevantCountryUpdates($allMapCountries(), $workspaceDefaultFocus, $publishedSince);
     $backupRoot = PHP_OS_FAMILY === 'Windows'
         ? 'C:\\Users\\marcv\\Documents\\1G-SLS-Backups'
         : storage_path('app/backups');
@@ -1818,6 +1920,7 @@ Route::get('/sls', function () use ($orderedProducts, $allMapCountries, $relevan
                 'erms_tenders' => route('sls.intelligence.review', ['focus' => 'erms_tenders', 'region' => 'all', 'published' => $publishedWindowKey, 'type' => 'tenders', 'limit' => 500]),
                 'ebpc_tenders' => route('sls.intelligence.review', ['focus' => 'ebpc_tenders', 'region' => 'all', 'published' => $publishedWindowKey, 'type' => 'tenders', 'limit' => 500]),
                 'social_security_news' => route('sls.intelligence.review', ['focus' => 'social_security', 'region' => 'all', 'published' => $publishedWindowKey, 'type' => 'news', 'limit' => 500]),
+                'workspace_news' => route('sls.intelligence.review', ['focus' => $workspaceDefaultFocus, 'region' => 'all', 'published' => $publishedWindowKey, 'type' => 'news', 'limit' => 500]),
             ],
             'social_security_tenders' => $recentSocialSecurityTenders->count(),
             'hrms_tenders' => $recentHrmsTenders->count(),
@@ -1825,18 +1928,25 @@ Route::get('/sls', function () use ($orderedProducts, $allMapCountries, $relevan
             'ebpc_tenders' => $recentEbpcTenders->count(),
             'product_tenders' => $productTenderStats,
             'social_security_news' => $recentSocialSecurityNews->count(),
+            'workspace_news' => [
+                'label' => $workspaceDefaultFocusConfig['label'] ?? Str::of($workspaceDefaultFocus)->replace('_', ' ')->title()->toString(),
+                'description' => $workspaceDomainLabel,
+                'count' => $workspaceNewsItems->count(),
+                'url' => route('sls.intelligence.review', ['focus' => $workspaceDefaultFocus, 'region' => 'all', 'published' => $publishedWindowKey, 'type' => 'news', 'limit' => 500]),
+            ],
             'regions' => $regionTotals,
         ],
-        'intelligenceMonitorHealths' => [
-            array_merge(
-                $monitorHealth('social_security', 'Social Security and Pension News', 'africa_asia_caribbean_latin_america_north_america_europe'),
-                ['run_key' => 'social-security-news']
-            ),
-            array_merge(
-                $monitorHealth(['hrms_tenders', 'sector_tenders', 'erms_tenders', 'ebpc_tenders'], 'Tender Monitor', 'africa_asia_caribbean_latin_america_north_america_europe'),
-                ['run_key' => 'tenders']
-            ),
-        ],
+        'intelligenceMonitorHealths' => collect($workspaceMonitorConfigs())
+            ->map(fn (array $config, string $key) => array_merge(
+                $monitorHealth($config['focuses'], $config['label'], $config['region']),
+                ['focus' => $config['review_focus'] ?? implode(',', $config['focuses']), 'run_key' => $key]
+            ))
+            ->values(),
+        'dashboardMapHeading' => $workspaceDomainLabel . ' activity by country',
+        'showSocialSecurityTrackedCountries' => $currentWorkspaceKey === 'social_security',
+        'workspaceMonitoringFocuses' => $workspaceMonitoringFocuses,
+        'workspaceSourceRows' => $workspaceSourceRows,
+        'workspaceSourceClassCounts' => $workspaceSourceClassCounts,
     ]);
 });
 
@@ -1865,19 +1975,8 @@ Route::post('/sls/system/scheduler/restart', function () {
     return back()->with('status', 'Laravel scheduler loop restarted. The monitors will continue on their normal schedule.');
 })->name('sls.system.scheduler.restart');
 
-Route::post('/sls/intelligence/monitors/{monitor}/run-now', function (string $monitor, CountryIntelligenceMonitor $countryMonitor) {
-    $monitorConfigs = [
-        'social-security-news' => [
-            'label' => 'Social Security and Pension News',
-            'focuses' => ['social_security'],
-            'region' => 'africa_asia_caribbean_latin_america_north_america_europe',
-        ],
-        'tenders' => [
-            'label' => 'Tender Monitor',
-            'focuses' => ['hrms_tenders', 'sector_tenders', 'erms_tenders', 'ebpc_tenders'],
-            'region' => 'africa_asia_caribbean_latin_america_north_america_europe',
-        ],
-    ];
+Route::post('/sls/intelligence/monitors/{monitor}/run-now', function (string $monitor, CountryIntelligenceMonitor $countryMonitor) use ($workspaceMonitorConfigs) {
+    $monitorConfigs = $workspaceMonitorConfigs();
 
     if (! array_key_exists($monitor, $monitorConfigs)) {
         abort(404);
@@ -8306,15 +8405,31 @@ Route::get('/sls/intelligence/sources', function (Request $request) use ($allMap
             ->unique()
             ->sort()
             ->values(),
-        'sourceClassOptions' => [
-            'social_security_admin' => 'Social security administration',
+        'focusOptions' => collect([
+            'both' => 'Both',
+            'news' => 'News',
+            'tenders' => 'Tenders',
+        ])
+            ->merge(collect(ReviewFocuses::all())->map(fn (array $focus, string $key) => $focus['label'] ?? Str::of($key)->replace('_', ' ')->title()->toString()))
+            ->all(),
+        'sourceClassOptions' => collect([
             'government' => 'Ministry / government',
             'central_tender_portal' => 'Central tender portal',
             'donor_tender_portal' => 'Donor / development bank tender portal',
-            'oil_gas_company' => 'Oil & gas company / procurement',
+            'project_pipeline' => 'Project pipeline',
+            'climate_finance_fund' => 'Climate finance fund',
+            'policy_source' => 'Policy / regulatory source',
             'local_media' => 'Local media / business news',
             'news_aggregator' => 'News aggregator',
-        ],
+            'social_security_admin' => 'Social security administration',
+            'oil_gas_company' => 'Oil & gas company / procurement',
+        ])
+            ->merge($allManagedSources
+                ->pluck('source_class')
+                ->filter()
+                ->unique()
+                ->mapWithKeys(fn (string $sourceClass) => [$sourceClass => Str::of($sourceClass)->replace('_', ' ')->title()->toString()]))
+            ->all(),
         'procurementPortalOptions' => [
             'not_applicable' => 'Not applicable',
             'government' => 'Government / official public procurement',
@@ -8345,7 +8460,7 @@ Route::post('/sls/intelligence/sources', function (Request $request) {
         'region' => ['nullable', 'string', 'max:255'],
         'source_class' => ['required', 'string', 'max:80'],
         'procurement_portal_type' => ['nullable', 'string', 'max:80'],
-        'focus' => ['required', 'in:both,news,tenders,social_security,hrms_tenders,erms_tenders,ebpc_tenders,sector_tenders'],
+        'focus' => ['required', 'string', 'max:80'],
         'access_method' => ['nullable', 'string', 'max:80'],
         'connector' => ['nullable', 'string', 'max:80'],
         'registration_status' => ['nullable', 'string', 'max:80'],

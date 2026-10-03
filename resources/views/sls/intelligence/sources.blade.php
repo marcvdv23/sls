@@ -59,7 +59,7 @@
             <div>
                 <p class="eyebrow">Filters</p>
                 <h2>Source registry by region</h2>
-                <p class="muted">For social security and pension stories, the monitor prioritizes configured local media sources every run, then checks official social security, ministry, government, and tender sources.</p>
+                <p class="muted">For {{ \App\Support\SlsSettings::get('workspace.domain_label', 'this workspace') }}, the monitor uses configured official sources, tender and donor portals, media feeds, and workspace review focuses.</p>
             </div>
             <div class="filters">
                 <a class="button {{ $region === 'all' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.sources', ['region' => 'all']) }}">All regions</a>
@@ -90,7 +90,7 @@
                 <label class="field">Focus
                     <select name="focus">
                         <option value="all">All</option>
-                        <?php foreach (['both' => 'Both', 'news' => 'News', 'tenders' => 'Tenders', 'social_security' => 'Social security', 'hrms_tenders' => 'HRMS tenders', 'erms_tenders' => 'ERMS tenders', 'ebpc_tenders' => 'EBPC tenders', 'sector_tenders' => 'Sector tenders'] as $value => $label): ?>
+                        <?php foreach ($focusOptions as $value => $label): ?>
                             <option value="{{ $value }}" {{ $filters['focus'] === $value ? 'selected' : '' }}>{{ $label }}</option>
                         <?php endforeach; ?>
                     </select>

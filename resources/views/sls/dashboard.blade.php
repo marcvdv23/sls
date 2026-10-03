@@ -153,10 +153,10 @@
                 </article>
             @endforeach
             <article class="panel tracker-card">
-                <p class="eyebrow">Social Security News</p>
-                <a class="stat-link" href="{{ $recentIntelligenceStats['links']['social_security_news'] }}">
-                    <strong>{{ $recentIntelligenceStats['social_security_news'] }}</strong>
-                    <p class="muted">Pensions, social security, social protection.</p>
+                <p class="eyebrow">{{ $recentIntelligenceStats['workspace_news']['label'] }}</p>
+                <a class="stat-link" href="{{ $recentIntelligenceStats['workspace_news']['url'] }}">
+                    <strong>{{ $recentIntelligenceStats['workspace_news']['count'] }}</strong>
+                    <p class="muted">{{ $recentIntelligenceStats['workspace_news']['description'] }}</p>
                 </a>
             </article>
         </section>
@@ -201,7 +201,7 @@
             <div class="map-head">
                 <div>
                     <p class="eyebrow">World Intelligence Map</p>
-                    <h2>SSAS news and tender activity by country</h2>
+                    <h2>{{ $dashboardMapHeading }}</h2>
                 </div>
                 <div class="toolbar">
                     <span class="pill">{{ $dashboardMapMonitoredCount }} monitored</span>
@@ -225,7 +225,7 @@
                             @foreach ($recentIntelligenceStats['product_tenders'] as $productTenderStat)
                                 <th>{{ $productTenderStat['label'] }} Tenders</th>
                             @endforeach
-                            <th>Social Security News</th>
+                            <th>{{ $recentIntelligenceStats['workspace_news']['label'] }}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -235,7 +235,7 @@
                                 @foreach ($regionTotal['product_tenders'] as $productTenderStat)
                                     <td><a class="region-count" href="{{ $productTenderStat['url'] }}">{{ $productTenderStat['tender_count'] }}</a></td>
                                 @endforeach
-                                <td><a class="region-count" href="{{ $regionTotal['links']['social_security_news'] }}">{{ $regionTotal['social_security_news'] }}</a></td>
+                                <td><a class="region-count" href="{{ $regionTotal['links']['workspace_news'] }}">{{ $regionTotal['workspace_news'] }}</a></td>
                             </tr>
                         @endforeach
                     </tbody>
@@ -333,6 +333,69 @@
             </div>
         </section>
 
+        @if (! $showSocialSecurityTrackedCountries)
+        <section class="panel stack">
+            <div>
+                <p class="eyebrow">Workspace Source Coverage</p>
+                <h2>What this workspace should monitor</h2>
+                <p class="muted">This workspace uses configured source records, keywords, products, and review focuses instead of the legacy social-security country directory.</p>
+            </div>
+            <div class="tracker-grid">
+                @foreach ($workspaceMonitoringFocuses as $focus)
+                    <article class="card dense-stack">
+                        <h3>{{ $focus }}</h3>
+                    </article>
+                @endforeach
+            </div>
+            <div class="toolbar" style="gap:6px;">
+                @forelse ($workspaceSourceClassCounts as $sourceClass => $count)
+                    <span class="pill">{{ Str::of($sourceClass)->replace('_', ' ')->title() }}: {{ $count }}</span>
+                @empty
+                    <span class="pill bad">No workspace sources configured yet</span>
+                @endforelse
+            </div>
+            <div class="table-wrap">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Country</th>
+                            <th>Source</th>
+                            <th>Type</th>
+                            <th>Focus</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @forelse ($workspaceSourceRows as $source)
+                            <tr>
+                                <td class="mono">{{ strtoupper($source->country_iso ?: 'global') }}</td>
+                                <td>
+                                    @if (filled($source->url))
+                                        <a href="{{ $source->url }}" target="_blank" rel="noreferrer">{{ $source->name }}</a>
+                                    @else
+                                        <strong>{{ $source->name }}</strong>
+                                    @endif
+                                </td>
+                                <td>{{ Str::of($source->source_class ?: 'source')->replace('_', ' ')->title() }}</td>
+                                <td>{{ Str::of($source->focus ?: 'all')->replace('_', ' ')->title() }}</td>
+                                <td>{{ $source->enabled ? 'Enabled' : 'Disabled' }}</td>
+                            </tr>
+                        @empty
+                            <tr>
+                                <td colspan="5" class="muted">No configured sources yet. Add donor portals, procurement portals, official agencies, and media sources from Source Coverage.</td>
+                            </tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+            <div class="toolbar">
+                <a class="button secondary tiny" href="{{ route('sls.intelligence.sources') }}">Manage sources</a>
+                <a class="button secondary tiny" href="{{ route('sls.serpapi.index') }}">SerpAPI searches</a>
+            </div>
+        </section>
+        @endif
+
+        @if ($showSocialSecurityTrackedCountries)
         <section class="panel stack">
             @php
                 $trackedRegions = $countries->pluck('region')->filter()->unique()->sort()->values();
@@ -467,6 +530,7 @@
                 </table>
             </div>
         </section>
+        @endif
     </div>
 
     <div class="source-url-modal" id="source-url-modal" hidden>
