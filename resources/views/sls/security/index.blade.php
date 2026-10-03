@@ -139,6 +139,86 @@
             </section>
 
             <section class="panel stack">
+                <div class="toolbar">
+                    <div>
+                        <p class="eyebrow">Workspace Access</p>
+                        <h2>Workspace memberships</h2>
+                        <p class="muted">A user can belong to more than one workspace. Active memberships control which workspaces appear in the selector.</p>
+                    </div>
+                </div>
+                @if ($workspaces->isEmpty())
+                    <div class="empty muted">Run workspace migrations before assigning workspace memberships.</div>
+                @else
+                    <form method="post" action="{{ route('sls.security.workspaceMemberships.store') }}" class="form-grid">
+                        @csrf
+                        <label>User
+                            <select name="user_id" required>
+                                @foreach ($users as $user)
+                                    <option value="{{ $user->id }}">{{ $user->name }} · {{ $user->email }}</option>
+                                @endforeach
+                            </select>
+                        </label>
+                        <label>Workspace
+                            <select name="workspace_id" required>
+                                @foreach ($workspaces as $workspace)
+                                    <option value="{{ $workspace->id }}">{{ $workspace->entity_name }} / {{ $workspace->name }}</option>
+                                @endforeach
+                            </select>
+                        </label>
+                        <label>Role
+                            <select name="role">
+                                @foreach (['owner' => 'Owner', 'admin' => 'Admin', 'member' => 'Member', 'viewer' => 'Viewer'] as $value => $label)
+                                    <option value="{{ $value }}" @selected($value === 'member')>{{ $label }}</option>
+                                @endforeach
+                            </select>
+                        </label>
+                        <label>Status
+                            <select name="status">
+                                <option value="active">Active</option>
+                                <option value="inactive">Inactive</option>
+                            </select>
+                        </label>
+                        <div><button type="submit">Save membership</button></div>
+                    </form>
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr><th>Workspace</th><th>User</th><th>Role</th><th>Status</th><th>Action</th></tr></thead>
+                            <tbody>
+                                @forelse ($workspaceMemberships as $membership)
+                                    <tr>
+                                        <form method="post" action="{{ route('sls.security.workspaceMemberships.update', $membership) }}">
+                                            @csrf
+                                            <td>
+                                                <strong>{{ $membership->workspace?->entity_name }} / {{ $membership->workspace?->name }}</strong><br>
+                                                <span class="muted">{{ $membership->workspace?->workspace_key }}</span>
+                                            </td>
+                                            <td>{{ $membership->user?->name }}<br><span class="muted">{{ $membership->user?->email }}</span></td>
+                                            <td>
+                                                <select name="role">
+                                                    @foreach (['owner' => 'Owner', 'admin' => 'Admin', 'member' => 'Member', 'viewer' => 'Viewer'] as $value => $label)
+                                                        <option value="{{ $value }}" @selected($membership->role === $value)>{{ $label }}</option>
+                                                    @endforeach
+                                                </select>
+                                            </td>
+                                            <td>
+                                                <select name="status">
+                                                    <option value="active" @selected($membership->status === 'active')>Active</option>
+                                                    <option value="inactive" @selected($membership->status === 'inactive')>Inactive</option>
+                                                </select>
+                                            </td>
+                                            <td><button type="submit" class="secondary">Save</button></td>
+                                        </form>
+                                    </tr>
+                                @empty
+                                    <tr><td colspan="5" class="muted">No workspace memberships yet.</td></tr>
+                                @endforelse
+                            </tbody>
+                        </table>
+                    </div>
+                @endif
+            </section>
+
+            <section class="panel stack">
                 <div>
                     <p class="eyebrow">Groups</p>
                     <h2>User groups</h2>

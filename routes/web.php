@@ -49,6 +49,7 @@ use App\Models\UserGroupCountryAccess;
 use App\Models\UserGroupPermission;
 use App\Models\UserGroupProductAccess;
 use App\Models\Workspace;
+use App\Models\WorkspaceUserMembership;
 use App\Services\KnowledgeChatService;
 use App\Services\KnowledgeIngestionService;
 use App\Services\BankDomainGuessService;
@@ -2644,6 +2645,17 @@ Route::get('/sls/security', function () use ($securityActions, $ensureSecurityAc
         'countries' => Country::query()->orderBy('name')->get(['id', 'name', 'iso_code', 'region']),
         'regions' => Country::query()->whereNotNull('region')->distinct()->orderBy('region')->pluck('region')->filter()->values(),
         'products' => Product::query()->orderBy('name')->get(['id', 'name']),
+        'workspaces' => Schema::hasTable('workspaces')
+            ? Workspace::query()->orderBy('entity_name')->orderBy('name')->get()
+            : collect(),
+        'workspaceMemberships' => Schema::hasTable('workspace_user_memberships')
+            ? WorkspaceUserMembership::query()
+                ->with(['workspace', 'user'])
+                ->orderBy('workspace_id')
+                ->orderBy('role')
+                ->orderBy('user_id')
+                ->get()
+            : collect(),
         'recentAuditLogs' => AccessAuditLog::query()->with('user')->latest('created_at')->limit(25)->get(),
     ]);
 })->name('sls.security.index');
@@ -3104,6 +3116,50 @@ Route::post('/sls/security/users/{user}', function (Request $request, User $user
 
     return back()->with('status', 'User updated.');
 })->name('sls.security.users.update');
+
+Route::post('/sls/security/workspace-memberships', function (Request $request) use ($ensureSecurityAccess) {
+    $ensureSecurityAccess('configure');
+    abort_if(! Schema::hasTable('workspace_user_memberships'), 503, 'Workspace memberships table is not available yet.');
+
+    $data = $request->validate([
+        'workspace_id' => ['required', 'integer', 'exists:workspaces,id'],
+        'user_id' => ['required', 'integer', 'exists:users,id'],
+        'role' => ['required', Rule::in(['owner', 'admin', 'member', 'viewer'])],
+        'status' => ['required', Rule::in(['active', 'inactive'])],
+    ]);
+
+    $membership = WorkspaceUserMembership::query()->updateOrCreate(
+        [
+            'workspace_id' => (int) $data['workspace_id'],
+            'user_id' => (int) $data['user_id'],
+        ],
+        [
+            'role' => $data['role'],
+            'status' => $data['status'],
+        ],
+    );
+
+    WorkspaceContext::flush();
+    app(\App\Services\AccessControlService::class)->log('configure', 'security', $membership, ['screen' => 'workspace_memberships']);
+
+    return back()->with('status', 'Workspace membership saved.');
+})->name('sls.security.workspaceMemberships.store');
+
+Route::post('/sls/security/workspace-memberships/{membership}', function (Request $request, WorkspaceUserMembership $membership) use ($ensureSecurityAccess) {
+    $ensureSecurityAccess('configure');
+
+    $data = $request->validate([
+        'role' => ['required', Rule::in(['owner', 'admin', 'member', 'viewer'])],
+        'status' => ['required', Rule::in(['active', 'inactive'])],
+    ]);
+
+    $membership->update($data);
+
+    WorkspaceContext::flush();
+    app(\App\Services\AccessControlService::class)->log('configure', 'security', $membership, ['screen' => 'workspace_memberships']);
+
+    return back()->with('status', 'Workspace membership updated.');
+})->name('sls.security.workspaceMemberships.update');
 
 Route::post('/sls/security/groups', function (Request $request) use ($ensureSecurityAccess) {
     $ensureSecurityAccess('insert');

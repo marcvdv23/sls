@@ -86,6 +86,7 @@ Objective: support multiple organizations safely from the same codebase.
 - [x] Add initial tenant/workspace membership and roles table.
 - [ ] Add a dedicated `tenants` or `entities` table if workspace entity fields are not sufficient.
 - [x] Restrict active workspace selection by logged-in user's active memberships.
+- [x] Add admin UI for assigning workspace memberships and roles.
 - [ ] Add `tenant_id` to workspaces and tenant-owned business tables.
 - [ ] Make authentication tenant-aware.
 - [ ] Add tenant-aware authorization policies.
@@ -144,11 +145,11 @@ Initial review categories:
 
 ## Next Immediate Coding Pass
 
-1. Add tenant/entity admin UI for managing workspace memberships and roles.
-2. Add the first secure API vertical slice for opportunities, tasks, and activity logging.
-3. Add tenant-aware API tokens and audit logging.
-4. Add workspace-aware security policies for setup, crawler, and import actions.
-5. Add workspace-specific reporting dashboards.
+1. Add the first secure API vertical slice for opportunities, tasks, and activity logging.
+2. Add tenant-aware API tokens and audit logging.
+3. Add workspace-aware security policies for setup, crawler, and import actions.
+4. Add workspace-specific reporting dashboards.
+5. Decide whether workspace entity fields are enough or a dedicated entity/tenant table is needed.
 
 ## Open Decisions
 
