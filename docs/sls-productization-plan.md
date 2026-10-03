@@ -58,8 +58,8 @@ Objective: make the current deployment generic and configurable while still runn
 - [x] Add a Workspace Settings UI for entity name, workspace name, domain focus, review label, and default product labels.
 - [x] Add Product/Service configuration UI for product names, short codes, categories, sort order, default marker, and active/inactive state.
 - [x] Replace hardcoded dashboard product cards with configured products/services.
+- [x] Make Review Desk focus/category labels, terms, and strong signals configurable.
 - [ ] Make priority opportunity fields and status categories configurable.
-- [ ] Make Review Desk item/category labels configurable.
 - [ ] Move default SerpAPI keywords into editable system configuration.
 - [ ] Make SerpAPI query templates reusable and rerunnable from the UI.
 - [ ] Add or improve crawler/search profile admin screens so sources, schedules, keywords, and targets are clear.
@@ -140,11 +140,11 @@ Initial review categories:
 
 ## Next Immediate Coding Pass
 
-1. Build Workspace Settings UI backed by existing `config/sls.php` defaults and a database-backed settings table.
-2. Build Product/Service admin UI and migrate visible dashboard product blocks to configured products.
-3. Move SerpAPI keywords and query templates into editable workspace configuration.
-4. Add rerun support for saved SerpAPI searches.
-5. Add promotion flow from SerpAPI result to Review Desk/opportunity.
+1. Make priority opportunity fields and status categories configurable.
+2. Move SerpAPI keywords and query templates into editable workspace configuration.
+3. Add rerun support for saved SerpAPI searches.
+4. Add promotion flow from SerpAPI result to Review Desk/opportunity.
+5. Add or improve crawler/search profile admin screens so sources, schedules, keywords, and targets are clear.
 6. Start workspace scoping only after the single-workspace configuration screens are stable.
 
 ## Open Decisions

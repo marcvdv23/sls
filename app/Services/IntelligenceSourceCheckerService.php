@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\IntelligenceSource;
 use App\Models\IntelligenceSourceAudit;
+use App\Support\ReviewFocuses;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
@@ -266,7 +267,7 @@ class IntelligenceSourceCheckerService
         };
 
         return collect($focusKeys)
-            ->flatMap(fn (string $focus) => config("country_intelligence.focuses.$focus.terms", []))
+            ->flatMap(fn (string $focus) => ReviewFocuses::get($focus)['terms'] ?? [])
             ->merge($this->navigationTerms($source))
             ->map(fn (string $term) => Str::lower(trim($term)))
             ->filter(fn (string $term) => strlen($term) >= 3)

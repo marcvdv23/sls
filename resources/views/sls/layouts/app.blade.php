@@ -72,6 +72,7 @@
                         'Setup' => [
                             ['Workspace Settings', route('sls.settings.workspace'), 'sls.settings.workspace*', 'SET'],
                             ['Products & Services', route('sls.settings.products'), 'sls.settings.products*', 'PRD'],
+                            ['Review Categories', route('sls.settings.reviewFocuses'), 'sls.settings.reviewFocuses*', 'REV'],
                             ['Operations', route('sls.operations.index'), 'sls.operations.*', 'OPS'],
                             ['Security', route('sls.security.index'), 'sls.security.*', 'SEC'],
                             ['Backup', url('/sls#backup'), 'sls.system.backup', 'BAK'],

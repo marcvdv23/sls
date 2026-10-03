@@ -32,6 +32,7 @@ use App\Models\UniversitySurveyContact;
 use App\Models\KnowledgeChunk;
 use App\Models\PriorityOpportunity;
 use App\Models\Product;
+use App\Models\ReviewFocus;
 use App\Models\SourceDocument;
 use App\Models\SocialSecurityAdminCandidate;
 use App\Models\SlsOperationRun;
@@ -67,6 +68,7 @@ use App\Services\UniversitySurveyCrawlerService;
 use App\Support\CountryUpdateClassifier;
 use App\Support\CountryUpdateDedupeRules;
 use App\Support\CountryUpdateNoiseRules;
+use App\Support\ReviewFocuses;
 use App\Support\SlsSettings;
 use App\Support\SocialSecurityAdminNameCleaner;
 use App\Support\TitleLanguage;
@@ -336,10 +338,12 @@ $europeCountries = fn () => collect([
 $allMapCountries = fn () => $africaCountries()->merge($caribbeanCountries())->merge($asiaCountries())->merge($latinAmericaCountries())->merge($northAmericaCountries())->merge($europeCountries());
 
 $relevantCountryUpdates = function ($countries, string $focus = 'social_security', ?string $publishedSince = null) {
-    $focus = array_key_exists($focus, config('country_intelligence.focuses', [])) ? $focus : 'social_security';
-    $focusLabel = config("country_intelligence.focuses.$focus.label");
-    $focusTerms = collect(config("country_intelligence.focuses.$focus.terms", []))
-        ->merge(config("country_intelligence.focuses.$focus.strong_signals", []))
+    $focuses = ReviewFocuses::all();
+    $focus = array_key_exists($focus, $focuses) ? $focus : ReviewFocuses::defaultKey();
+    $focusConfig = $focuses[$focus] ?? [];
+    $focusLabel = $focusConfig['label'] ?? 'Country Intelligence';
+    $focusTerms = collect($focusConfig['terms'] ?? [])
+        ->merge($focusConfig['strong_signals'] ?? [])
         ->unique()
         ->values();
 
@@ -2816,6 +2820,87 @@ Route::post('/sls/settings/products/{product}', function (Request $request, Prod
     return $saveProductConfiguration($request, $product);
 })->name('sls.settings.products.update');
 
+$reviewFocusConfigurationReady = fn (): bool => ReviewFocuses::tableReady();
+
+$parseReviewFocusLines = fn (?string $value): array => collect(preg_split('/\R/', (string) $value))
+    ->map(fn ($line) => trim((string) $line))
+    ->filter()
+    ->unique()
+    ->values()
+    ->all();
+
+$saveReviewFocusConfiguration = function (Request $request, ?ReviewFocus $reviewFocus = null) use ($parseReviewFocusLines) {
+    abort_if(! ReviewFocuses::tableReady(), 503, 'Review category table is not available.');
+
+    $reviewFocus ??= new ReviewFocus();
+
+    $rules = [
+        'label' => ['required', 'string', 'max:255'],
+        'description' => ['nullable', 'string', 'max:5000'],
+        'terms' => ['nullable', 'string', 'max:20000'],
+        'strong_signals' => ['nullable', 'string', 'max:20000'],
+        'sort_order' => ['nullable', 'integer', 'min:-1000', 'max:1000'],
+        'is_enabled' => ['nullable', 'boolean'],
+        'is_default' => ['nullable', 'boolean'],
+    ];
+
+    if (! $reviewFocus->exists) {
+        $rules['focus_key'] = [
+            'required',
+            'string',
+            'max:120',
+            'regex:/^[a-z0-9_]+$/',
+            Rule::unique('review_focuses', 'focus_key'),
+        ];
+    }
+
+    $data = $request->validate($rules);
+
+    if (! $reviewFocus->exists) {
+        $reviewFocus->focus_key = trim($data['focus_key']);
+    }
+
+    $reviewFocus->label = trim($data['label']);
+    $reviewFocus->description = filled($data['description'] ?? null) ? trim($data['description']) : null;
+    $reviewFocus->terms = $parseReviewFocusLines($data['terms'] ?? null);
+    $reviewFocus->strong_signals = $parseReviewFocusLines($data['strong_signals'] ?? null);
+    $reviewFocus->sort_order = (int) ($data['sort_order'] ?? 0);
+    $reviewFocus->is_enabled = $request->boolean('is_enabled');
+    $reviewFocus->is_default = $request->boolean('is_default');
+    $reviewFocus->save();
+
+    if ($reviewFocus->is_default) {
+        ReviewFocus::query()
+            ->whereKeyNot($reviewFocus->id)
+            ->update(['is_default' => false]);
+    }
+
+    ReviewFocuses::flush();
+
+    return back()->with('status', 'Review category saved.');
+};
+
+Route::get('/sls/settings/review-categories', function () use ($reviewFocusConfigurationReady) {
+    $migrationMissing = ! $reviewFocusConfigurationReady();
+
+    if (! $migrationMissing) {
+        ReviewFocuses::seedDefaults();
+    }
+
+    return view('sls.settings.review-focuses', [
+        'migrationMissing' => $migrationMissing,
+        'reviewFocuses' => $migrationMissing ? collect() : ReviewFocuses::groupedForSettings(),
+    ]);
+})->name('sls.settings.reviewFocuses');
+
+Route::post('/sls/settings/review-categories', function (Request $request) use ($saveReviewFocusConfiguration) {
+    return $saveReviewFocusConfiguration($request);
+})->name('sls.settings.reviewFocuses.store');
+
+Route::post('/sls/settings/review-categories/{reviewFocus}', function (Request $request, ReviewFocus $reviewFocus) use ($saveReviewFocusConfiguration) {
+    return $saveReviewFocusConfiguration($request, $reviewFocus);
+})->name('sls.settings.reviewFocuses.update');
+
 Route::post('/sls/security/users', function (Request $request) use ($ensureSecurityAccess) {
     $ensureSecurityAccess('insert');
 
@@ -3017,9 +3102,10 @@ Route::post('/sls/security/product-access/{rule}/remove', function (UserGroupPro
 })->name('sls.security.productAccess.remove');
 
 Route::get('/sls/intelligence/world', function (Request $request) use ($allMapCountries, $relevantCountryUpdates) {
-    $focus = array_key_exists((string) $request->query('focus', 'social_security'), config('country_intelligence.focuses', []))
+    $focuses = ReviewFocuses::all();
+    $focus = array_key_exists((string) $request->query('focus', 'social_security'), $focuses)
         ? (string) $request->query('focus', 'social_security')
-        : 'social_security';
+        : ReviewFocuses::defaultKey();
     $region = Str::of((string) $request->query('region', 'all'))->lower()->replace('_', ' ')->toString();
     $allCountriesWithUpdates = $relevantCountryUpdates($allMapCountries(), $focus);
     $regionCount = [
@@ -3044,8 +3130,8 @@ Route::get('/sls/intelligence/world', function (Request $request) use ($allMapCo
         'countries' => $mapCountries,
         'latestItems' => $latestItems,
         'focus' => $focus,
-        'focusConfig' => config("country_intelligence.focuses.$focus"),
-        'focuses' => config('country_intelligence.focuses'),
+        'focusConfig' => $focuses[$focus] ?? [],
+        'focuses' => $focuses,
         'updateCount' => $mapCountries->sum('update_count'),
         'monitoredCount' => $mapCountries->filter(fn (array $country) => $country['database_id'] !== null)->count(),
         'regionCount' => $regionCount,
@@ -3064,7 +3150,8 @@ Route::match(['GET', 'POST'], '/sls/worker/intelligence/run', function (Request 
         abort(403, 'Invalid worker token.');
     }
 
-    $focus = array_key_exists((string) $request->query('focus', 'sector_tenders'), config('country_intelligence.focuses', []))
+    $focuses = ReviewFocuses::all();
+    $focus = array_key_exists((string) $request->query('focus', 'sector_tenders'), $focuses)
         ? (string) $request->query('focus', 'sector_tenders')
         : 'sector_tenders';
     $region = (string) $request->query('region', 'africa_asia_caribbean_latin_america_north_america_europe');
@@ -3107,12 +3194,12 @@ Route::get('/sls/intelligence/opportunities/intake', function () use ($orderedPr
     return view('sls.intelligence.opportunity-intake', [
         'countries' => Country::query()->orderBy('name')->get(['id', 'name', 'iso_code', 'region', 'default_language_code']),
         'products' => $orderedProducts(),
-        'focuses' => config('country_intelligence.focuses', []),
+        'focuses' => ReviewFocuses::all(),
     ]);
 })->name('sls.intelligence.opportunityIntake.create');
 
 Route::post('/sls/intelligence/opportunities/intake', function (Request $request) use ($orderedProducts) {
-    $focuses = config('country_intelligence.focuses', []);
+    $focuses = ReviewFocuses::all();
     $focusKeys = array_keys($focuses);
 
     $data = $request->validate([
@@ -3290,12 +3377,12 @@ Route::post('/sls/intelligence/opportunities/intake', function (Request $request
 Route::get('/sls/intelligence/stories/create', function () {
     return view('sls.intelligence.create-story', [
         'countries' => Country::query()->orderBy('name')->get(['id', 'name', 'iso_code', 'region', 'default_language_code']),
-        'focuses' => config('country_intelligence.focuses', []),
+        'focuses' => ReviewFocuses::all(),
     ]);
 })->name('sls.intelligence.stories.create');
 
 Route::post('/sls/intelligence/stories', function (Request $request) {
-    $focuses = config('country_intelligence.focuses', []);
+    $focuses = ReviewFocuses::all();
     $focusKeys = array_keys($focuses);
 
     $data = $request->validate([
@@ -3360,7 +3447,7 @@ Route::post('/sls/intelligence/stories', function (Request $request) {
 })->name('sls.intelligence.stories.store');
 
 Route::get('/sls/intelligence/review', function (Request $request) use ($allMapCountries, $orderedProducts) {
-    $focuses = config('country_intelligence.focuses', []);
+    $focuses = ReviewFocuses::all();
     $focus = array_key_exists((string) $request->query('focus', 'all'), $focuses)
         ? (string) $request->query('focus')
         : 'all';
@@ -3622,10 +3709,10 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
 })->name('sls.intelligence.review');
 
 Route::get('/sls/intelligence/coverage', function (Request $request) use ($allMapCountries) {
-    $focuses = config('country_intelligence.focuses', []);
+    $focuses = ReviewFocuses::all();
     $focus = array_key_exists((string) $request->query('focus', 'social_security'), $focuses)
         ? (string) $request->query('focus', 'social_security')
-        : 'social_security';
+        : ReviewFocuses::defaultKey();
     $region = Str::of((string) $request->query('region', 'all'))->lower()->toString();
 
     $configuredCountries = $allMapCountries();
@@ -3734,7 +3821,7 @@ Route::get('/sls/intelligence/intake-log', function (Request $request) {
         'days' => $days,
         'limit' => $limit,
     ];
-    $focuses = config('country_intelligence.focuses', []);
+    $focuses = ReviewFocuses::all();
     $reasonOptions = [
         'not_relevant' => 'Not relevant',
         'wrong_product' => 'Wrong product',
@@ -3885,7 +3972,7 @@ Route::get('/sls/intelligence/news-archive', function (Request $request) {
         'limit' => $limit,
         'countryFilter' => $countryFilter,
         'austinTz' => $austinTz,
-        'focuses' => config('country_intelligence.focuses', []),
+        'focuses' => ReviewFocuses::all(),
     ]);
 })->name('sls.intelligence.newsArchive');
 
@@ -3920,7 +4007,8 @@ Route::get('/sls/intelligence/dropped', function (Request $request) {
         'spam_or_scrape' => 'Scrape noise',
         'other' => 'Other',
     ];
-    $focus = array_key_exists((string) $request->query('focus', 'all'), config('country_intelligence.focuses', []))
+    $focuses = ReviewFocuses::all();
+    $focus = array_key_exists((string) $request->query('focus', 'all'), $focuses)
         ? (string) $request->query('focus')
         : 'all';
     $reason = array_key_exists((string) $request->query('reason', 'all'), $reasonOptions)
@@ -3958,7 +4046,7 @@ Route::get('/sls/intelligence/dropped', function (Request $request) {
         'reason' => $reason,
         'reasonOptions' => $reasonOptions,
         'reasonCounts' => $reasonCounts,
-        'focuses' => config('country_intelligence.focuses'),
+        'focuses' => $focuses,
         'displayLimit' => $displayLimit,
     ]);
 })->name('sls.intelligence.dropped');
@@ -3981,7 +4069,7 @@ Route::get('/sls/intelligence/search', function (Request $request) {
 Route::get('/sls/intelligence/favorites', function (Request $request) {
     $status = Str::of((string) $request->query('status', 'open'))->lower()->toString();
     $austinTz = 'America/Chicago';
-    $focuses = config('country_intelligence.focuses', []);
+    $focuses = ReviewFocuses::all();
 
     $inferFocus = function (CountryUpdate $update): ?string {
         $text = Str::lower($update->title . ' ' . $update->title_english . ' ' . $update->title_original . ' ' . $update->source_name . ' ' . $update->source_url);
@@ -7614,7 +7702,7 @@ $seedIntelligenceRegistries = function () use ($allMapCountries) {
     }
 
     if (Schema::hasTable('intelligence_keywords')) {
-        collect(config('country_intelligence.focuses', []))
+        collect(ReviewFocuses::all())
             ->each(function (array $focusConfig, string $focus) {
                 collect($focusConfig['terms'] ?? [])
                     ->merge($focusConfig['strong_signals'] ?? [])
@@ -8660,7 +8748,7 @@ Route::get('/sls/intelligence/keywords', function () use ($seedIntelligenceRegis
 
     return view('sls.intelligence.keywords', [
         'keywords' => $keywords,
-        'focuses' => collect(config('country_intelligence.focuses', []))
+        'focuses' => collect(ReviewFocuses::all())
             ->merge([
                 'source_discovery' => [
                     'label' => 'Source Discovery',

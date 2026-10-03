@@ -10,6 +10,7 @@ use App\Models\IntelligenceKeyword;
 use App\Models\IntelligenceSource;
 use App\Support\CountryUpdateDedupeRules;
 use App\Support\CountryUpdateNoiseRules;
+use App\Support\ReviewFocuses;
 use App\Support\TitleLanguage;
 use Carbon\Carbon;
 use Illuminate\Support\Arr;
@@ -257,7 +258,8 @@ class CountryIntelligenceMonitor
             ->merge(config('country_intelligence.localized_country_names.' . ($countryConfig['iso_code'] ?? ''), []))
             ->unique()
             ->take(8);
-        $focusTerms = collect(config("country_intelligence.focuses.$focus.terms", config('country_intelligence.topics', [])))
+        $focusConfig = ReviewFocuses::get($focus) ?? [];
+        $focusTerms = collect($focusConfig['terms'] ?? config('country_intelligence.topics', []))
             ->merge($this->databaseKeywordTerms($focus, ['en']))
             ->merge($this->localizedFocusTerms($countryConfig, $focus))
             ->unique()
@@ -1324,8 +1326,9 @@ class CountryIntelligenceMonitor
             return $hasSubject && $hasOperationalOpportunity;
         }
 
-        $terms = collect(config("country_intelligence.focuses.$focus.terms", []))
-            ->merge(config("country_intelligence.focuses.$focus.strong_signals", []))
+        $focusConfig = ReviewFocuses::get($focus) ?? [];
+        $terms = collect($focusConfig['terms'] ?? [])
+            ->merge($focusConfig['strong_signals'] ?? [])
             ->map(fn (string $term) => Str::lower($term));
 
         return $terms->contains(fn (string $term) => $term !== '' && Str::contains($bidText, $term));
@@ -1413,7 +1416,7 @@ class CountryIntelligenceMonitor
         $sourceName = $this->sourceNameForDomain($domain, $countryConfig) ?: trim((string) Arr::get($item, 'sourcecountry', ''));
         $publishedAt = $this->parseGdeltDate((string) Arr::get($item, 'seendate', ''));
         $sourceText = $this->plainText(trim((string) Arr::get($item, 'excerpt', '') . ' ' . (string) Arr::get($item, 'content', '')));
-        $focusLabel = config("country_intelligence.focuses.$focus.label", 'Country Intelligence');
+        $focusLabel = ReviewFocuses::get($focus)['label'] ?? 'Country Intelligence';
         $matchText = $title . ' ' . $domain . ' ' . $sourceText;
         $summary = $this->englishSummary($focus, $matchText, $countryConfig, $sourceName ?: $domain);
         $summary = '[' . $focusLabel . '] ' . $summary;
@@ -1551,7 +1554,7 @@ class CountryIntelligenceMonitor
 
     private function hrmsTargetIndustryTerms(): Collection
     {
-        return collect(config('country_intelligence.focuses.hrms_tenders.industry_contexts', []))
+        return collect(ReviewFocuses::get('hrms_tenders')['industry_contexts'] ?? [])
             ->filter()
             ->values();
     }
@@ -2148,13 +2151,15 @@ class CountryIntelligenceMonitor
         $text = Str::lower($text);
         $score = 0.0;
 
-        foreach (config("country_intelligence.focuses.$focus.terms", config('country_intelligence.topics', [])) as $topic) {
+        $focusConfig = ReviewFocuses::get($focus) ?? [];
+
+        foreach (($focusConfig['terms'] ?? config('country_intelligence.topics', [])) as $topic) {
             if (Str::contains($text, Str::lower($topic))) {
                 $score += in_array($topic, ['tenders', 'procurement', 'rfp', 'request for proposal', 'expression of interest'], true) ? 1.5 : 1.0;
             }
         }
 
-        foreach (config("country_intelligence.focuses.$focus.strong_signals", []) as $signal) {
+        foreach (($focusConfig['strong_signals'] ?? []) as $signal) {
             if (Str::contains($text, $signal)) {
                 $score += 1.0;
             }
@@ -2331,7 +2336,7 @@ class CountryIntelligenceMonitor
 
     private function focusKey(string $focus): string
     {
-        return array_key_exists($focus, config('country_intelligence.focuses', [])) ? $focus : 'social_security';
+        return ReviewFocuses::has($focus) ? $focus : ReviewFocuses::defaultKey();
     }
 
     private function storeUpdate(Country $country, ?CountryTopic $topic, array $item): CountryUpdate
