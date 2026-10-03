@@ -825,7 +825,7 @@ Route::post('/sls/tracked-countries/admin-urls/delete', function (Request $reque
     ]);
 })->name('sls.trackedCountries.adminUrls.delete');
 
-Route::get('/sls', function () use ($orderedProducts, $allMapCountries, $relevantCountryUpdates) {
+Route::get('/sls', function () use ($orderedProducts, $allMapCountries, $relevantCountryUpdates, $productFocusKey) {
     $inferIntelligenceFocus = function (CountryUpdate $update): ?string {
         $text = Str::lower($update->title . ' ' . $update->title_english . ' ' . $update->title_original . ' ' . $update->summary . ' ' . $update->source_name . ' ' . $update->source_url);
         $sourceText = Str::lower($update->title . ' ' . $update->title_english . ' ' . $update->title_original . ' ' . $update->summary . ' ' . $update->source_name . ' ' . $update->source_url);
