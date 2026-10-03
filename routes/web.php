@@ -3575,7 +3575,7 @@ Route::post('/sls/intelligence/stories', function (Request $request) {
         ->with('status', 'Manual ' . ($data['item_type'] === 'tender' ? 'tender' : 'news story') . ' added to Review Desk.');
 })->name('sls.intelligence.stories.store');
 
-Route::get('/sls/intelligence/review', function (Request $request) use ($allMapCountries, $orderedProducts) {
+Route::get('/sls/intelligence/review', function (Request $request) use ($allMapCountries, $orderedProducts, $productFocusKey) {
     $focuses = ReviewFocuses::all();
     $focus = array_key_exists((string) $request->query('focus', 'all'), $focuses)
         ? (string) $request->query('focus')
