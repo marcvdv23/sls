@@ -2,11 +2,15 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToWorkspace;
 use Illuminate\Database\Eloquent\Model;
 
 class MarketOrganization extends Model
 {
+    use BelongsToWorkspace;
+
     protected $fillable = [
+        'workspace_id',
         'market_crawler_id',
         'product_id',
         'name',

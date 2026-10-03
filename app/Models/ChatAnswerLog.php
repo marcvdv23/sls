@@ -2,11 +2,15 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToWorkspace;
 use Illuminate\Database\Eloquent\Model;
 
 class ChatAnswerLog extends Model
 {
+    use BelongsToWorkspace;
+
     protected $fillable = [
+        'workspace_id',
         'product_id',
         'ai_provider',
         'answer_language',
