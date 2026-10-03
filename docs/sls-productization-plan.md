@@ -77,7 +77,7 @@ Objective: support multiple workspaces for one entity without mixing data.
 - [x] Scope Review Desk items and related intelligence evidence directly by workspace.
 - [x] Add an active workspace selector.
 - [x] Scope workspace-aware model queries by active workspace.
-- [ ] Backfill existing production data to the default 2interact social security workspace.
+- [x] Backfill existing production data to the default 2interact social security workspace.
 
 ## Phase 3: Entity/Tenant Model
 
@@ -108,6 +108,8 @@ Objective: add a secure API that can support mobile, voice, and external AI work
 Expected entity: rckgrp
 
 Expected workspace: sustainability consulting sales.
+
+Status: seeded as `rckgrp / Sustainability Consulting` with starter services, Review Desk categories, SerpAPI templates, keywords, source presets, and crawler settings.
 
 Initial product/service areas:
 
@@ -141,11 +143,11 @@ Initial review categories:
 
 ## Next Immediate Coding Pass
 
-1. Seed the rckgrp sustainability workspace configuration.
-2. Add workspace-specific source/keyword presets for rckgrp sustainability.
-3. Add tenant/entity membership and roles after workspace switching is proven.
-4. Add the first secure API vertical slice for opportunities, tasks, and activity logging.
-5. Add tenant-aware API tokens and audit logging.
+1. Add tenant/entity membership and roles after workspace switching is proven.
+2. Add the first secure API vertical slice for opportunities, tasks, and activity logging.
+3. Add tenant-aware API tokens and audit logging.
+4. Add workspace-aware security policies for setup, crawler, and import actions.
+5. Add workspace-specific reporting dashboards.
 
 ## Open Decisions
 

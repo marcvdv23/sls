@@ -2770,6 +2770,12 @@ $saveProductConfiguration = function (Request $request, ?Product $product = null
     abort_if(! Schema::hasTable('products'), 503, 'Products table is not available.');
 
     $product ??= new Product();
+    $productCodeRule = Rule::unique('products', 'code')
+        ->ignore($product->exists ? $product->id : null);
+
+    if (Schema::hasColumn('products', 'workspace_id') && WorkspaceContext::currentWorkspaceId()) {
+        $productCodeRule->where('workspace_id', WorkspaceContext::currentWorkspaceId());
+    }
 
     $data = $request->validate([
         'name' => ['required', 'string', 'max:255'],
@@ -2777,7 +2783,7 @@ $saveProductConfiguration = function (Request $request, ?Product $product = null
             'required',
             'string',
             'max:80',
-            Rule::unique('products', 'code')->ignore($product->exists ? $product->id : null),
+            $productCodeRule,
         ],
         'description' => ['nullable', 'string', 'max:5000'],
         'category' => ['nullable', 'string', 'max:120'],
