@@ -2363,11 +2363,61 @@ $crawlerTimeList = function (string $key, array $default) use ($crawlerSetting):
         ->all();
 };
 
+$workspaceIdForKey = function (string $workspaceKey): ?int {
+    try {
+        if (! Schema::hasTable('workspaces')) {
+            return null;
+        }
+
+        $workspaceId = DB::table('workspaces')
+            ->where('workspace_key', $workspaceKey)
+            ->where('status', 'active')
+            ->value('id');
+
+        return $workspaceId ? (int) $workspaceId : null;
+    } catch (\Throwable) {
+        return null;
+    }
+};
+
+$workspaceCrawlerSetting = function (?int $workspaceId, string $key, mixed $default = null): mixed {
+    try {
+        if (! Schema::hasTable('crawler_settings')) {
+            return $default;
+        }
+
+        $query = DB::table('crawler_settings')->where('setting_key', $key);
+
+        if ($workspaceId && Schema::hasColumn('crawler_settings', 'workspace_id')) {
+            $query->where('workspace_id', $workspaceId);
+        }
+
+        $value = $query->value('setting_value');
+
+        return filled($value) ? $value : $default;
+    } catch (\Throwable) {
+        return $default;
+    }
+};
+
+$workspaceTimeList = function (?int $workspaceId, string $key, array $default) use ($workspaceCrawlerSetting): array {
+    return collect(explode(',', (string) $workspaceCrawlerSetting($workspaceId, $key, implode(',', $default))))
+        ->map(fn (string $time) => trim($time))
+        ->filter(fn (string $time) => preg_match('/^\d{2}:\d{2}$/', $time) === 1)
+        ->values()
+        ->all();
+};
+
+$socialSecurityWorkspaceId = $workspaceIdForKey('social_security');
 $dailySlots = $crawlerTimeList('social_security_daily_slots', config('country_intelligence.daily_slots', ['06:15']));
 $scheduledMaxResults = (int) $crawlerSetting('scheduled_max_results', config('country_intelligence.scheduled_max_results', config('country_intelligence.default_max_results')));
 
 $scheduleCountryMonitor = function (string $runTime, array $options, string $name): void {
     Schedule::call(function () use ($options) {
+        if (filled($options['workspace_id'] ?? null)) {
+            WorkspaceContext::forceWorkspace((int) $options['workspace_id']);
+        }
+
         app(CountryIntelligenceMonitor::class)->run(
             countryKeys: [],
             maxResults: (int) $options['max'],
@@ -2393,10 +2443,15 @@ foreach ($dailySlots as $slotIndex => $runTime) {
         'slots_per_day' => count($dailySlots),
         'max' => $scheduledMaxResults,
         'focus' => 'social_security',
+        'workspace_id' => $socialSecurityWorkspaceId,
     ], 'sls-country-news-' . $slotIndex);
 }
 
-Schedule::call(function () {
+Schedule::call(function () use ($socialSecurityWorkspaceId) {
+    if ($socialSecurityWorkspaceId) {
+        WorkspaceContext::forceWorkspace($socialSecurityWorkspaceId);
+    }
+
     app(SocialProtectionProfileMonitor::class)->run();
 })
     ->name('sls-social-protection-profile-weekly')
@@ -2404,7 +2459,11 @@ Schedule::call(function () {
     ->withoutOverlapping()
     ->onOneServer();
 
-Schedule::call(function () {
+Schedule::call(function () use ($socialSecurityWorkspaceId) {
+    if ($socialSecurityWorkspaceId) {
+        WorkspaceContext::forceWorkspace($socialSecurityWorkspaceId);
+    }
+
     $crawlerSetting = function (string $key, mixed $default = null): mixed {
         try {
             if (! Schema::hasTable('crawler_settings')) {
@@ -2441,6 +2500,7 @@ foreach ($hrmsTenderSlots as $slotIndex => $runTime) {
         'slots_per_day' => count($hrmsTenderSlots),
         'max' => $scheduledMaxResults,
         'focus' => 'hrms_tenders',
+        'workspace_id' => $socialSecurityWorkspaceId,
     ], 'sls-country-hrms-tenders-' . $slotIndex);
 }
 
@@ -2457,6 +2517,7 @@ foreach (['erms_tenders' => 5, 'ebpc_tenders' => 10] as $focus => $minuteOffset)
             'slots_per_day' => count($hrmsTenderSlots),
             'max' => $scheduledMaxResults,
             'focus' => $focus,
+            'workspace_id' => $socialSecurityWorkspaceId,
         ], 'sls-country-' . $focus . '-' . $slotIndex);
     }
 }
@@ -2471,11 +2532,16 @@ foreach ($sectorTenderSlots as $slotIndex => $runTime) {
         'slots_per_day' => count($sectorTenderSlots),
         'max' => $scheduledMaxResults,
         'focus' => 'sector_tenders',
+        'workspace_id' => $socialSecurityWorkspaceId,
     ], 'sls-country-sector-tenders-' . $slotIndex);
 }
 
-$scheduleGlobalTenderSweep = function (string $focus, string $runTime, string $name) use ($crawlerSetting): void {
-    Schedule::call(function () use ($focus, $crawlerSetting) {
+$scheduleGlobalTenderSweep = function (string $focus, string $runTime, string $name, ?int $workspaceId = null) use ($crawlerSetting): void {
+    Schedule::call(function () use ($focus, $crawlerSetting, $workspaceId) {
+        if ($workspaceId) {
+            WorkspaceContext::forceWorkspace($workspaceId);
+        }
+
         app(CountryIntelligenceMonitor::class)->run(
             maxResults: (int) $crawlerSetting('global_tender_sweep_max_results', 80),
             dryRun: false,
@@ -2489,15 +2555,19 @@ $scheduleGlobalTenderSweep = function (string $focus, string $runTime, string $n
         ->onOneServer();
 };
 
-$scheduleGlobalTenderSweep('hrms_tenders', (string) $crawlerSetting('global_hrms_tender_sweep_time', env('SLS_GLOBAL_HRMS_TENDER_SWEEP_TIME', '02:35')), 'sls-global-hrms-tender-sweep');
+$scheduleGlobalTenderSweep('hrms_tenders', (string) $crawlerSetting('global_hrms_tender_sweep_time', env('SLS_GLOBAL_HRMS_TENDER_SWEEP_TIME', '02:35')), 'sls-global-hrms-tender-sweep', $socialSecurityWorkspaceId);
 
-$scheduleGlobalTenderSweep('erms_tenders', (string) $crawlerSetting('global_erms_tender_sweep_time', env('SLS_GLOBAL_ERMS_TENDER_SWEEP_TIME', '03:05')), 'sls-global-erms-tender-sweep');
+$scheduleGlobalTenderSweep('erms_tenders', (string) $crawlerSetting('global_erms_tender_sweep_time', env('SLS_GLOBAL_ERMS_TENDER_SWEEP_TIME', '03:05')), 'sls-global-erms-tender-sweep', $socialSecurityWorkspaceId);
 
-$scheduleGlobalTenderSweep('ebpc_tenders', (string) $crawlerSetting('global_ebpc_tender_sweep_time', env('SLS_GLOBAL_EBPC_TENDER_SWEEP_TIME', '03:15')), 'sls-global-ebpc-tender-sweep');
+$scheduleGlobalTenderSweep('ebpc_tenders', (string) $crawlerSetting('global_ebpc_tender_sweep_time', env('SLS_GLOBAL_EBPC_TENDER_SWEEP_TIME', '03:15')), 'sls-global-ebpc-tender-sweep', $socialSecurityWorkspaceId);
 
-$scheduleGlobalTenderSweep('social_security', (string) $crawlerSetting('global_social_tender_sweep_time', env('SLS_GLOBAL_SOCIAL_TENDER_SWEEP_TIME', '02:55')), 'sls-global-social-security-tender-sweep');
+$scheduleGlobalTenderSweep('social_security', (string) $crawlerSetting('global_social_tender_sweep_time', env('SLS_GLOBAL_SOCIAL_TENDER_SWEEP_TIME', '02:55')), 'sls-global-social-security-tender-sweep', $socialSecurityWorkspaceId);
 
-Schedule::call(function () {
+Schedule::call(function () use ($socialSecurityWorkspaceId) {
+    if ($socialSecurityWorkspaceId) {
+        WorkspaceContext::forceWorkspace($socialSecurityWorkspaceId);
+    }
+
     $crawlerSetting = function (string $key, mixed $default = null): mixed {
         try {
             if (! Schema::hasTable('crawler_settings')) {
@@ -2523,6 +2593,57 @@ Schedule::call(function () {
     ->dailyAt((string) $crawlerSetting('global_social_news_sweep_time', env('SLS_GLOBAL_SOCIAL_NEWS_SWEEP_TIME', '03:20')))
     ->withoutOverlapping()
     ->onOneServer();
+
+try {
+    if (Schema::hasTable('workspaces') && Schema::hasTable('review_focuses')) {
+        DB::table('workspaces')
+            ->where('status', 'active')
+            ->where('workspace_key', '<>', 'social_security')
+            ->orderBy('workspace_key')
+            ->get(['id', 'workspace_key'])
+            ->each(function ($workspace) use ($scheduleCountryMonitor, $workspaceCrawlerSetting, $workspaceTimeList): void {
+                $workspaceId = (int) $workspace->id;
+                $workspaceKey = (string) $workspace->workspace_key;
+                $focuses = DB::table('review_focuses')
+                    ->where('workspace_id', $workspaceId)
+                    ->where('is_enabled', true)
+                    ->orderBy('sort_order')
+                    ->orderBy('label')
+                    ->pluck('focus_key')
+                    ->map(fn ($focus) => trim((string) $focus))
+                    ->filter()
+                    ->values();
+
+                if ($focuses->isEmpty()) {
+                    return;
+                }
+
+                $slots = $workspaceTimeList($workspaceId, 'workspace_monitor_slots', ['04:50']);
+                $region = (string) $workspaceCrawlerSetting($workspaceId, 'scheduled_region_scope', 'africa_asia_caribbean_latin_america_north_america_europe');
+                $maxResults = (int) $workspaceCrawlerSetting($workspaceId, 'scheduled_max_results', config('country_intelligence.scheduled_max_results', config('country_intelligence.default_max_results', 3)));
+
+                foreach ($slots as $slotIndex => $runTime) {
+                    $focuses->each(function (string $focus, int $focusIndex) use ($scheduleCountryMonitor, $workspaceId, $workspaceKey, $slots, $slotIndex, $runTime, $region, $maxResults): void {
+                        $staggeredRunTime = Carbon::createFromFormat('H:i', $runTime)
+                            ->addMinutes($focusIndex * 5)
+                            ->format('H:i');
+
+                        $scheduleCountryMonitor($staggeredRunTime, [
+                            'cycle' => 1,
+                            'region' => $region,
+                            'slot' => $slotIndex,
+                            'slots_per_day' => count($slots),
+                            'max' => $maxResults,
+                            'focus' => $focus,
+                            'workspace_id' => $workspaceId,
+                        ], 'sls-workspace-' . Str::slug($workspaceKey) . '-' . Str::slug($focus) . '-' . $slotIndex);
+                    });
+                }
+            });
+    }
+} catch (\Throwable) {
+    // Scheduler boot must remain resilient while workspace migrations are in flight.
+}
 
 Schedule::call(function () use ($crawlerSetting) {
     app(TenderDocumentProcessor::class)->process((int) $crawlerSetting('tender_document_process_limit', env('SLS_TENDER_DOCUMENT_PROCESS_LIMIT', 20)));
