@@ -119,6 +119,13 @@ class SlsSettings
                 'value_type' => 'string',
                 'default' => implode(',', config('sls.products.order', ['SSAS', 'HRMS', 'ERMS', 'EBPC'])),
             ],
+            'products.focus_map' => [
+                'group' => 'Products',
+                'label' => 'Product review focus map',
+                'description' => 'One product-to-review-focus mapping per line, such as SSAS=social_security.',
+                'value_type' => 'text',
+                'default' => "SSAS=social_security\nHRMS=hrms_tenders\nERMS=erms_tenders\nEBPC=ebpc_tenders",
+            ],
         ];
     }
 
