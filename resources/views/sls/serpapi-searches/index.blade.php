@@ -16,6 +16,7 @@
         .serp-form .span-12 { grid-column: span 12; }
         .serp-form textarea { min-height: 96px; }
         .serp-form textarea.keyword-additions { min-height: 84px; }
+        .serp-form textarea.compact-list { min-height: 72px; }
         .serp-keyword-select { min-height: 240px; width: 100%; min-width: 0; }
         .serp-country-select { width: 100%; min-width: 0; }
         .serp-country-count { display: block; margin-top: 3px; }
@@ -207,11 +208,9 @@
                             </label>
                             <label class="span-3">Focus
                                 <select name="focus">
-                                    <option value="social_security">SSAS / social security</option>
-                                    <option value="hrms_tenders">HRMS</option>
-                                    <option value="erms_tenders">ERMS</option>
-                                    <option value="ebpc_tenders">EBPC</option>
-                                    <option value="sector_tenders">Sector tender</option>
+                                    @foreach (($focuses ?? []) as $focusKey => $focusConfig)
+                                        <option value="{{ $focusKey }}">{{ $focusConfig['label'] ?? $focusKey }}</option>
+                                    @endforeach
                                 </select>
                             </label>
                             <label class="span-3">Default results
@@ -222,6 +221,18 @@
                             </label>
                             <label class="span-12">Keywords
                                 <textarea name="keywords_text">{{ old('keywords_text') }}</textarea>
+                            </label>
+                            <label class="span-6">Required result terms
+                                <textarea class="compact-list" name="required_terms_text" placeholder="tender&#10;rfp&#10;expression of interest">{{ old('required_terms_text', \App\Support\SerpApiSearchConfig::lines(\App\Support\SerpApiSearchConfig::defaultRequiredTerms())) }}</textarea>
+                            </label>
+                            <label class="span-6">Blocked domains
+                                <textarea class="compact-list" name="blocked_domains_text" placeholder="vendor.com&#10;softwareadvice.">{{ old('blocked_domains_text', \App\Support\SerpApiSearchConfig::lines(\App\Support\SerpApiSearchConfig::defaultBlockedDomains())) }}</textarea>
+                            </label>
+                            <label class="span-6">Blocked page/path terms
+                                <textarea class="compact-list" name="blocked_path_terms_text" placeholder="/keywords/&#10;/keyword/">{{ old('blocked_path_terms_text', \App\Support\SerpApiSearchConfig::lines(\App\Support\SerpApiSearchConfig::defaultBlockedPathTerms())) }}</textarea>
+                            </label>
+                            <label class="span-6">Vendor/marketing terms
+                                <textarea class="compact-list" name="vendor_terms_text" placeholder="pricing&#10;free trial&#10;book a demo">{{ old('vendor_terms_text', \App\Support\SerpApiSearchConfig::lines(\App\Support\SerpApiSearchConfig::defaultVendorTerms())) }}</textarea>
                             </label>
                             <div class="span-12 check-row">
                                 <label><input type="checkbox" name="is_enabled" value="1" checked> Enabled</label>
@@ -245,22 +256,55 @@
                                 <th>Focus</th>
                                 <th>Query</th>
                                 <th>Keywords</th>
-                                <th>Default results</th>
-                                <th>Status</th>
+                                <th>Filters</th>
+                                <th>Settings</th>
+                                <th>Action</th>
                             </tr>
                         </thead>
                         <tbody>
                             @forelse ($templates as $template)
+                                @php($formId = 'serp-template-form-' . $template->id)
+                                @php($templateFilters = \App\Support\SerpApiSearchConfig::filterParameters($template))
                                 <tr>
-                                    <td>{{ $template->name }}</td>
-                                    <td>{{ $template->focus }}</td>
-                                    <td><code>{{ $template->query_template }}</code></td>
-                                    <td>{{ collect($template->keywords ?? [])->take(5)->implode(', ') }}</td>
-                                    <td>{{ $template->results_per_country }}</td>
-                                    <td><span class="pill {{ $template->is_enabled ? 'good' : 'warn' }}">{{ $template->is_enabled ? 'enabled' : 'disabled' }}</span></td>
+                                    <td>
+                                        <form id="{{ $formId }}" method="post" action="{{ route('sls.serpapiSearches.templates.update', $template) }}">
+                                            @csrf
+                                        </form>
+                                        <input form="{{ $formId }}" name="name" value="{{ $template->name }}" required>
+                                    </td>
+                                    <td>
+                                        <select form="{{ $formId }}" name="focus">
+                                            @foreach (($focuses ?? []) as $focusKey => $focusConfig)
+                                                <option value="{{ $focusKey }}" @selected($template->focus === $focusKey)>{{ $focusConfig['label'] ?? $focusKey }}</option>
+                                            @endforeach
+                                        </select>
+                                    </td>
+                                    <td><textarea form="{{ $formId }}" name="query_template" rows="4" required>{{ $template->query_template }}</textarea></td>
+                                    <td><textarea form="{{ $formId }}" name="keywords_text" rows="8">{{ \App\Support\SerpApiSearchConfig::lines($template->keywords ?? []) }}</textarea></td>
+                                    <td>
+                                        <label>Required
+                                            <textarea form="{{ $formId }}" class="compact-list" name="required_terms_text">{{ \App\Support\SerpApiSearchConfig::lines($templateFilters['required_terms'] ?? []) }}</textarea>
+                                        </label>
+                                        <label>Blocked domains
+                                            <textarea form="{{ $formId }}" class="compact-list" name="blocked_domains_text">{{ \App\Support\SerpApiSearchConfig::lines($templateFilters['blocked_domains'] ?? []) }}</textarea>
+                                        </label>
+                                        <label>Blocked paths
+                                            <textarea form="{{ $formId }}" class="compact-list" name="blocked_path_terms_text">{{ \App\Support\SerpApiSearchConfig::lines($templateFilters['blocked_path_terms'] ?? []) }}</textarea>
+                                        </label>
+                                        <label>Vendor terms
+                                            <textarea form="{{ $formId }}" class="compact-list" name="vendor_terms_text">{{ \App\Support\SerpApiSearchConfig::lines($templateFilters['vendor_terms'] ?? []) }}</textarea>
+                                        </label>
+                                    </td>
+                                    <td>
+                                        <label>Default results
+                                            <input form="{{ $formId }}" type="number" name="results_per_country" min="1" max="20" value="{{ $template->results_per_country }}">
+                                        </label>
+                                        <label class="check-row"><input form="{{ $formId }}" type="checkbox" name="is_enabled" value="1" @checked($template->is_enabled)> Enabled</label>
+                                    </td>
+                                    <td><button form="{{ $formId }}" class="button secondary" type="submit">Save</button></td>
                                 </tr>
                             @empty
-                                <tr><td colspan="6" class="muted">No saved search templates yet.</td></tr>
+                                <tr><td colspan="7" class="muted">No saved search templates yet.</td></tr>
                             @endforelse
                         </tbody>
                     </table>

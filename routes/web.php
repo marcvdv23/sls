@@ -71,6 +71,7 @@ use App\Support\CountryUpdateDedupeRules;
 use App\Support\CountryUpdateNoiseRules;
 use App\Support\PriorityOpportunityConfig;
 use App\Support\ReviewFocuses;
+use App\Support\SerpApiSearchConfig;
 use App\Support\SlsSettings;
 use App\Support\SocialSecurityAdminNameCleaner;
 use App\Support\TitleLanguage;
@@ -2101,42 +2102,6 @@ $startOperationRun = function (SlsOperationRun $run): void {
 };
 
 $serpApiSearchState = function () {
-    $defaultSerpApiKeywords = [
-        'payroll software',
-        'social security administration software',
-        'pension administration software',
-        'contributions management software',
-        'benefit claims administration software',
-        'position budgeting software',
-        'recruitment software',
-        'applicant tracking software',
-        'time attendance software',
-        'scheduling software',
-        'rostering software',
-        'leave management software',
-        'HRMS',
-        'HRIS',
-        'human resources management software',
-        'HCM',
-        'human capital management software',
-        'benefits administration software',
-        'talent management software',
-        'career planning software',
-        'competency management software',
-        'succession planning software',
-        'grants management software',
-        'disciplinary actions management software',
-        'health & safety management software',
-        'parking space management software',
-        'office space management software',
-        'employee ID card management software',
-        'global payroll software',
-        'pensioner payroll software',
-        'onboarding management software',
-        'offboarding management software',
-        'employee self-service portal software',
-    ];
-
     try {
         $templatesTableReady = Schema::hasTable('serpapi_search_templates');
     } catch (Throwable $exception) {
@@ -2159,16 +2124,8 @@ $serpApiSearchState = function () {
     }
 
     try {
-        if (SerpApiSearchTemplate::query()->count() === 0) {
-            SerpApiSearchTemplate::query()->create([
-                'name' => 'HR, payroll, and HCM software tenders',
-                'focus' => 'hrms_tenders',
-                'query_template' => '"{country}" ({keywords}) ("request for proposals" OR RFP OR tender OR "invitation to bid" OR "expression of interest" OR EOI OR RFI) -pricing -demo -"free trial" -"book a demo"',
-                'keywords' => $defaultSerpApiKeywords,
-                'results_per_country' => 10,
-                'is_enabled' => true,
-            ]);
-        }
+        SerpApiSearchConfig::seedDefaultTemplate();
+        $defaultSerpApiKeywords = SerpApiSearchConfig::predefinedKeywords();
 
         $countries = Country::query()
             ->whereNotNull('iso_code')
@@ -2220,6 +2177,7 @@ $serpApiSearchState = function () {
                 'pt' => 'Portuguese',
                 'ar' => 'Arabic',
             ],
+            'focuses' => ReviewFocuses::all(),
             'defaultKeywords' => $defaultSerpApiKeywords,
             'defaultKeywordText' => implode("\n", $defaultSerpApiKeywords),
             'monthlyStats' => $monthlyStats,
@@ -2249,31 +2207,45 @@ Route::get('/sls/serpapi-searches', function () use ($serpApiSearchState) {
     return $serpApiSearchState();
 })->name('sls.serpapiSearches.index');
 
-Route::post('/sls/serpapi-searches/templates', function (Request $request) {
+$saveSerpApiTemplate = function (Request $request, ?SerpApiSearchTemplate $template = null) {
+    $template ??= new SerpApiSearchTemplate();
+
     $data = $request->validate([
         'name' => ['required', 'string', 'max:180'],
         'focus' => ['required', 'string', 'max:80'],
         'query_template' => ['required', 'string', 'max:2000'],
-        'keywords_text' => ['nullable', 'string', 'max:5000'],
+        'keywords_text' => ['nullable', 'string', 'max:10000'],
+        'required_terms_text' => ['nullable', 'string', 'max:10000'],
+        'blocked_domains_text' => ['nullable', 'string', 'max:10000'],
+        'blocked_path_terms_text' => ['nullable', 'string', 'max:10000'],
+        'vendor_terms_text' => ['nullable', 'string', 'max:10000'],
         'results_per_country' => ['required', 'integer', 'min:1', 'max:20'],
         'is_enabled' => ['nullable', 'boolean'],
     ]);
 
-    SerpApiSearchTemplate::query()->create([
+    $template->fill([
         'name' => $data['name'],
         'focus' => $data['focus'],
         'query_template' => $data['query_template'],
-        'keywords' => collect(preg_split('/\r\n|\r|\n/', (string) ($data['keywords_text'] ?? '')))
-            ->map(fn ($line) => trim((string) $line))
-            ->filter()
-            ->values()
-            ->all(),
+        'keywords' => SerpApiSearchConfig::termsFromText($data['keywords_text'] ?? ''),
+        'required_terms' => SerpApiSearchConfig::termsFromText($data['required_terms_text'] ?? ''),
+        'blocked_domains' => SerpApiSearchConfig::termsFromText($data['blocked_domains_text'] ?? ''),
+        'blocked_path_terms' => SerpApiSearchConfig::termsFromText($data['blocked_path_terms_text'] ?? ''),
+        'vendor_terms' => SerpApiSearchConfig::termsFromText($data['vendor_terms_text'] ?? ''),
         'results_per_country' => (int) $data['results_per_country'],
         'is_enabled' => (bool) ($data['is_enabled'] ?? true),
-    ]);
+    ])->save();
 
     return redirect()->route('sls.serpapiSearches.index')->with('status', 'SerpAPI search template saved.');
+};
+
+Route::post('/sls/serpapi-searches/templates', function (Request $request) use ($saveSerpApiTemplate) {
+    return $saveSerpApiTemplate($request);
 })->name('sls.serpapiSearches.templates.store');
+
+Route::post('/sls/serpapi-searches/templates/{template}', function (Request $request, SerpApiSearchTemplate $template) use ($saveSerpApiTemplate) {
+    return $saveSerpApiTemplate($request, $template);
+})->name('sls.serpapiSearches.templates.update');
 
 Route::post('/sls/serpapi-searches/run', function (Request $request) use ($startOperationRun) {
     $data = $request->validate([
@@ -2351,6 +2323,7 @@ Route::post('/sls/serpapi-searches/run', function (Request $request) use ($start
         'focus' => $template?->focus ?: 'social_security',
         'query_template' => trim((string) ($data['custom_query_template'] ?? '')) ?: ($template?->query_template ?: '"{country}" ({keywords}) ("request for proposals" OR RFP OR tender OR "invitation to bid" OR "expression of interest" OR EOI OR RFI) -pricing -demo -"free trial" -"book a demo"'),
         'keywords' => $keywords !== [] ? $keywords : $templateKeywords,
+        'filters' => SerpApiSearchConfig::filterParameters($template),
         'predefined_keywords' => $predefinedKeywords->all(),
         'custom_keywords' => $customKeywords->all(),
         'countries' => $countries,

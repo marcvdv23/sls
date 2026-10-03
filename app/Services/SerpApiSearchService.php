@@ -6,6 +6,7 @@ use App\Models\Country;
 use App\Models\CountryUpdate;
 use App\Models\CrawlerSetting;
 use App\Support\CountryUpdateDedupeRules;
+use App\Support\SerpApiSearchConfig;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -35,6 +36,7 @@ class SerpApiSearchService
         $dryRun = (bool) ($parameters['dry_run'] ?? true);
         $capture = (bool) ($parameters['capture'] ?? true);
         $focus = (string) ($parameters['focus'] ?? 'social_security');
+        $filterConfig = (array) ($parameters['filters'] ?? []);
         $keywordSearchMode = (string) ($parameters['keyword_search_mode'] ?? 'grouped');
         $keywordGroups = $keywords->isEmpty()
             ? collect([[]])
@@ -85,7 +87,7 @@ class SerpApiSearchService
                     $title = trim((string) ($result['title'] ?? ''));
                     $sourceName = trim((string) ($result['source'] ?? parse_url($sourceUrl, PHP_URL_HOST) ?: 'SerpAPI result'));
                     $snippet = trim((string) ($result['snippet'] ?? ''));
-                    $resultFilter = $this->tenderResultFilter($title, $snippet, $sourceUrl, $keywordGroup, $country);
+                    $resultFilter = $this->tenderResultFilter($title, $snippet, $sourceUrl, $keywordGroup, $country, $filterConfig);
 
                     if (! $resultFilter['keep']) {
                         $summary['filtered_out']++;
@@ -248,7 +250,7 @@ class SerpApiSearchService
      * @param array<int, string> $keywords
      * @return array{keep: bool, reason: string}
      */
-    private function tenderResultFilter(string $title, string $snippet, string $sourceUrl, array $keywords, Country $country): array
+    private function tenderResultFilter(string $title, string $snippet, string $sourceUrl, array $keywords, Country $country, array $filterConfig = []): array
     {
         $haystack = Str::lower($title . ' ' . $snippet . ' ' . $sourceUrl);
         $host = Str::lower((string) parse_url($sourceUrl, PHP_URL_HOST));
@@ -257,46 +259,13 @@ class SerpApiSearchService
         $countryIso = Str::lower((string) $country->iso_code);
         $countrySlug = Str::slug((string) $country->name);
 
-        $blockedDomains = [
-            'adp.com',
-            'apple.com',
-            'bluebisonsoftware.com',
-            'capterra.',
-            'darwinbox.com',
-            'employmenthero.com',
-            'facebook.com',
-            'flaxem.com',
-            'focussoftnet.com',
-            'hibob.com',
-            'instagram.com',
-            'g2.com',
-            'getapp.',
-            'lattice.com',
-            'leverx.com',
-            'linkedin.com',
-            'paylocity.com',
-            'softwareadvice.',
-            'sourceforge.',
-            'selecthub.',
-            'trustradius.',
-            'saasworthy.',
-            'softwaresuggest.',
-            'ramco.com',
-            'reddit.com',
-            'rsmus.com',
-            'peoplemanagingpeople.',
-            'triblockhr.com',
-            'techradar.',
-            'forbes.com',
-            'workzoom.com',
-            'youtube.com',
-        ];
+        $blockedDomains = $this->filterList($filterConfig, 'blocked_domains', SerpApiSearchConfig::defaultBlockedDomains());
 
         if (Str::contains($host, $blockedDomains)) {
             return ['keep' => false, 'reason' => 'vendor directory or software review domain'];
         }
 
-        if (Str::contains($path, ['/keywords/', '/keyword/'])
+        if (Str::contains($path, $this->filterList($filterConfig, 'blocked_path_terms', SerpApiSearchConfig::defaultBlockedPathTerms()))
             || preg_match('/\blatest\b.*\btenders?\b.*\b20\d{2}\b/i', $title)
             || Str::contains($haystack, ['government & private tenders', 'online active and archive database', 'sourced directly from reliable government portals'])) {
             return ['keep' => false, 'reason' => 'tender listing or keyword index page'];
@@ -315,31 +284,7 @@ class SerpApiSearchService
             }
         }
 
-        $procurementSignals = [
-            'tender',
-            'rfp',
-            'rfi',
-            'rfq',
-            'eoi',
-            'request for proposal',
-            'request for proposals',
-            'request for information',
-            'request for quotation',
-            'expression of interest',
-            'invitation to bid',
-            'invitation for bid',
-            'invitation for bids',
-            'invitation to tender',
-            'bid notice',
-            'bidding document',
-            'bidding documents',
-            'procurement notice',
-            'contract notice',
-            'solicitation',
-            'terms of reference',
-            'consulting services',
-            'notice inviting',
-        ];
+        $procurementSignals = $this->filterList($filterConfig, 'required_terms', SerpApiSearchConfig::defaultRequiredTerms());
 
         if (! Str::contains($haystack, $procurementSignals)) {
             return ['keep' => false, 'reason' => 'missing tender/RFP intent'];
@@ -361,31 +306,24 @@ class SerpApiSearchService
             return ['keep' => false, 'reason' => 'missing selected product keyword'];
         }
 
-        $vendorSignals = [
-            'pricing',
-            'free trial',
-            'book a demo',
-            'request a demo',
-            'schedule a demo',
-            'features',
-            'compare',
-            'alternatives',
-            'reviews',
-            'best ',
-            'top ',
-            'buyer guide',
-            'case study',
-            'what is ',
-            'our software',
-            'software solution for',
-            'software solutions for',
-        ];
+        $vendorSignals = $this->filterList($filterConfig, 'vendor_terms', SerpApiSearchConfig::defaultVendorTerms());
 
         if (Str::contains($haystack, $vendorSignals) && ! Str::contains($haystack, ['tender', 'rfp', 'rfi', 'rfq', 'eoi'])) {
             return ['keep' => false, 'reason' => 'vendor marketing page'];
         }
 
         return ['keep' => true, 'reason' => 'matched tender/RFP intent'];
+    }
+
+    private function filterList(array $filterConfig, string $key, array $default): array
+    {
+        $items = collect((array) ($filterConfig[$key] ?? []))
+            ->map(fn ($item) => trim((string) $item))
+            ->filter()
+            ->values()
+            ->all();
+
+        return $items !== [] ? $items : $default;
     }
 
     private function captureCountryUpdate(Country $country, string $focus, string $title, string $sourceName, string $sourceUrl, string $snippet, ?string $publicationDate): array

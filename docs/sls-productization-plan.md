@@ -60,8 +60,8 @@ Objective: make the current deployment generic and configurable while still runn
 - [x] Replace hardcoded dashboard product cards with configured products/services.
 - [x] Make Review Desk focus/category labels, terms, and strong signals configurable.
 - [x] Make priority opportunity fields and status categories configurable.
-- [ ] Move default SerpAPI keywords into editable system configuration.
-- [ ] Make SerpAPI query templates reusable and rerunnable from the UI.
+- [x] Move default SerpAPI keywords into editable system configuration.
+- [x] Make SerpAPI query templates, result filters, and reruns configurable from the UI.
 - [ ] Add or improve crawler/search profile admin screens so sources, schedules, keywords, and targets are clear.
 - [ ] Preserve the current 2interact social security setup as seeded/default configuration.
 
@@ -140,11 +140,11 @@ Initial review categories:
 
 ## Next Immediate Coding Pass
 
-1. Move SerpAPI keywords and query templates into editable workspace configuration.
-2. Add rerun support for saved SerpAPI searches.
-3. Add promotion flow from SerpAPI result to Review Desk/opportunity.
-4. Add or improve crawler/search profile admin screens so sources, schedules, keywords, and targets are clear.
-5. Start workspace scoping only after the single-workspace configuration screens are stable.
+1. Add or improve crawler/search profile admin screens so sources, schedules, keywords, and targets are clear.
+2. Start workspace scoping only after the single-workspace configuration screens are stable.
+3. Add workspace ownership to SerpAPI templates and operation runs.
+4. Add workspace ownership to crawler settings and source definitions.
+5. Add a workspace selector after the first workspace-scoped tables are in place.
 
 ## Open Decisions
 
