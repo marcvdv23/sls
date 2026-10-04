@@ -61,6 +61,14 @@
             gap: 12px;
             align-items: center;
         }
+        .map-explain {
+            color: var(--text-secondary);
+            font-size: .84rem;
+            line-height: 1.4;
+            margin-top: 6px;
+            max-width: 880px;
+        }
+        .map-explain strong { color: var(--text-primary); }
         .scope-stats {
             display: flex;
             flex-wrap: wrap;
@@ -216,6 +224,9 @@
                             <span class="stat"><strong>{{ $monitoredCount }}</strong> monitored</span>
                             <span class="stat"><strong>{{ $updateCount }}</strong> updates</span>
                         </div>
+                        <p class="map-explain">
+                            This map shows where the selected intelligence focus is monitored and where it has current reviewable activity. Pale dots are monitored countries without a current clickable item. Colored dots indicate the latest non-dropped, focus-matching story or tender for that country.
+                        </p>
                     </div>
                     <div class="region-actions" style="margin-top:0;">
                         @foreach ($regionLinks as $regionKey => $regionLabel)

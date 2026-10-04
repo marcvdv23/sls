@@ -25,6 +25,8 @@
         .backup-path { color:var(--text-secondary); font-family:"JetBrains Mono", monospace; font-size:.78rem; overflow-wrap:anywhere; }
         .map-panel { padding:0; overflow:hidden; }
         .map-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 14px; border-bottom:1px solid var(--border-subtle); }
+        .map-explain { color:var(--text-secondary); font-size:.84rem; line-height:1.4; margin:.35rem 0 0; max-width:980px; }
+        .map-explain strong { color:var(--text-primary); }
         #dashboard-world-map { width:100%; min-height:430px; }
         .leaflet-container { font:inherit; background:#eef5f8; }
         .leaflet-popup-content { max-width:min(340px, calc(100vw - 48px)); }
@@ -202,6 +204,9 @@
                 <div>
                     <p class="eyebrow">World Intelligence Map</p>
                     <h2>{{ $dashboardMapHeading }}</h2>
+                    <p class="map-explain">
+                        This is a country coverage and current-item map. Pale dots are monitored countries with no current clickable item. Colored dots appear only when SLS has a non-dropped, recent, focus-matching story or tender for that country; those dots open the latest item for quick review.
+                    </p>
                 </div>
                 <div class="toolbar">
                     <span class="pill">{{ $dashboardMapMonitoredCount }} monitored</span>
