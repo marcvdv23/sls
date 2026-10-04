@@ -1029,8 +1029,20 @@ Route::get('/sls', function () use ($orderedProducts, $allMapCountries, $relevan
         return null;
     };
     $inferIntelligenceFocus = fn (CountryUpdate $update): ?string => CountryUpdateClassifier::inferFocus($update);
-    $monitorHealth = function (string|array $focus, string $label, string $region = 'all') {
+    $dashboardMonitorStaleMinutes = function (): int {
+        try {
+            $value = Schema::hasTable('crawler_settings')
+                ? WorkspaceContext::settingValue('crawler_settings', 'dashboard_monitor_stale_minutes')
+                : null;
+
+            return max(1, (int) (filled($value) ? $value : 30));
+        } catch (Throwable) {
+            return 30;
+        }
+    };
+    $monitorHealth = function (string|array $focus, string $label, string $region = 'all') use ($dashboardMonitorStaleMinutes) {
         $focuses = is_array($focus) ? $focus : [$focus];
+        $staleMinutes = $dashboardMonitorStaleMinutes();
         $latestRun = CountryMonitorRun::query()
             ->with('country')
             ->whereIn('focus', $focuses)
@@ -1043,7 +1055,7 @@ Route::get('/sls', function () use ($orderedProducts, $allMapCountries, $relevan
 
         return [
             'focus' => implode(',', $focuses),
-            'healthy' => $minutesSinceRun !== null && $minutesSinceRun <= 30,
+            'healthy' => $minutesSinceRun !== null && $minutesSinceRun <= $staleMinutes,
             'items_found' => $latestRun?->items_found,
             'label' => $label,
             'last_country' => $latestRun?->country?->name,
@@ -1051,6 +1063,7 @@ Route::get('/sls', function () use ($orderedProducts, $allMapCountries, $relevan
             'last_run_at' => $latestRun?->finished_at,
             'minutes_since_last_run' => $minutesSinceRun,
             'region' => $region,
+            'stale_minutes' => $staleMinutes,
         ];
     };
     $publishedWindowDays = 120;
@@ -8973,6 +8986,12 @@ $crawlerSettingDefinitions = fn (): array => [
         'value_type' => 'integer',
         'default' => (string) env('SLS_WORKER_STALE_MINUTES', 45),
     ],
+    'dashboard_monitor_stale_minutes' => [
+        'label' => 'Dashboard monitor stale threshold minutes',
+        'description' => 'Minutes without a completed run before dashboard monitor cards show Needs attention.',
+        'value_type' => 'integer',
+        'default' => (string) env('SLS_DASHBOARD_MONITOR_STALE_MINUTES', 30),
+    ],
     'serpapi_key' => [
         'label' => 'SerpAPI key',
         'description' => 'API key used by source discovery and indexed-search discovery crawlers.',
@@ -9070,6 +9089,7 @@ $crawlerSettingGroups = fn (): array => [
             'crawler_contact_clean_limit',
             'crawler_contact_resolve_limit',
             'worker_stale_minutes',
+            'dashboard_monitor_stale_minutes',
         ],
     ],
     'serpapi' => [

@@ -125,7 +125,7 @@
                         @endif
                     </p>
                     <div class="toolbar" style="margin-top:10px;">
-                        <span class="pill {{ $monitorHealth['healthy'] ? 'good' : 'bad' }}">{{ $monitorHealth['healthy'] ? 'Healthy' : 'No run in 30+ minutes' }}</span>
+                        <span class="pill {{ $monitorHealth['healthy'] ? 'good' : 'bad' }}">{{ $monitorHealth['healthy'] ? 'Healthy' : 'No run in ' . $monitorHealth['stale_minutes'] . '+ minutes' }}</span>
                         @if ($monitorHealth['last_run_at'])
                             <span class="pill">Last run {{ $monitorHealth['last_run_at']->copy()->timezone($austinTz)->format('Y-m-d H:i') }} Austin</span>
                         @endif
