@@ -1507,6 +1507,7 @@ class CountryIntelligenceMonitor
     {
         $countryName = (string) ($countryConfig['name'] ?? 'the selected country');
         $sourceName = trim($sourceName) ?: 'the original source';
+        $focusLabel = ReviewFocuses::get($focus)['label'] ?? 'country intelligence';
         $themes = $this->matchedThemes($matchText, $focus);
         $themeText = $themes->isNotEmpty()
             ? ' Matched themes: ' . $themes->take(5)->implode(', ') . '.'
@@ -1528,6 +1529,10 @@ class CountryIntelligenceMonitor
             return 'Potential budgeting, budget planning, budget control, IFMIS, or public financial management technology tender for ' . $countryName . ' from ' . $sourceName . '.' . $themeText . ' The original notice or article is kept as the source link and may be in the local language.';
         }
 
+        if ($focus !== 'social_security') {
+            return 'Potential ' . Str::lower($focusLabel) . ' update for ' . $countryName . ' from ' . $sourceName . '.' . $themeText . ' The original notice or article is kept as the source link and may be in the local language.';
+        }
+
         return 'Potential social security, pensions, labour, or related procurement update for ' . $countryName . ' from ' . $sourceName . '.' . $themeText . ' The original notice or article is kept as the source link and may be in the local language.';
     }
 
@@ -1546,8 +1551,8 @@ class CountryIntelligenceMonitor
                 ->values();
         }
 
-        $themeMap = $focus === 'sector_tenders'
-            ? [
+        if ($focus === 'sector_tenders') {
+            $themeMap = [
                 'telecom' => ['telecom', 'telecommunications', 'mobile network', 'broadband', 'fiber optic', 'fibre optic', 'اتصالات', '电信', 'โทรคมนาคม'],
                 'oil and gas' => ['oil and gas', 'oil & gas', 'petroleum', 'natural gas', 'lng', 'pipeline', 'نفط', 'غاز', '石油', '天然气'],
                 'postal services' => ['postal', 'post office', 'mail service', 'خدمات بريدية', '邮政'],
@@ -1556,12 +1561,20 @@ class CountryIntelligenceMonitor
                 'mining' => ['mining', 'minerals', 'mineral resources', 'تعدين', '采矿'],
                 'banking and finance' => ['banking', 'financial services', 'central bank', 'treasury', 'bank', 'مصارف', 'بنوك', '金融', '银行'],
                 'tender/procurement' => ['tender', 'procurement', 'rfp', 'request for proposal', 'bid', 'مناقصة', 'مشتريات', '招标', '采购'],
-            ]
-            : [
+            ];
+        } elseif ($focus === 'social_security') {
+            $themeMap = [
                 'tender/procurement' => ['tender', 'procurement', 'rfp', 'request for proposal', 'bid', 'مناقصة', 'مشتريات'],
                 'social security/pensions' => ['social security', 'pension', 'provident fund', 'التأمينات الاجتماعية', 'التقاعد'],
                 'HRMS/payroll' => ['hrms', 'payroll', 'hcm', 'human resource', 'الموارد البشرية', 'الرواتب'],
             ];
+        } else {
+            $focusConfig = ReviewFocuses::get($focus) ?? [];
+            $themeMap = collect($focusConfig['terms'] ?? [])
+                ->merge($focusConfig['strong_signals'] ?? [])
+                ->mapWithKeys(fn (string $term) => [$term => [$term]])
+                ->all();
+        }
 
         return collect($themeMap)
             ->filter(fn (array $signals) => Str::contains($text, $signals))
@@ -1641,6 +1654,7 @@ class CountryIntelligenceMonitor
 
         if ($focus !== 'social_security') {
             return $this->hasConfiguredFocusSignal($text, $focus)
+                && $this->hasWorkspaceRequiredRelevanceSignal($text)
                 && (float) ($item['relevance_score'] ?? 0) >= 2.0;
         }
 
@@ -1669,6 +1683,30 @@ class CountryIntelligenceMonitor
         }
 
         return $terms->contains(fn (string $term) => $term !== '' && Str::contains($text, $term));
+    }
+
+    private function hasWorkspaceRequiredRelevanceSignal(string $text): bool
+    {
+        $requiredTerms = $this->crawlerSettingList('workspace_required_relevance_terms');
+
+        if ($requiredTerms === []) {
+            return true;
+        }
+
+        return collect($requiredTerms)->contains(fn (string $term) => $term !== '' && Str::contains($text, $term));
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function crawlerSettingList(string $key, string $default = ''): array
+    {
+        return collect(preg_split('/[\r\n,]+/', (string) $this->crawlerSetting($key, $default)))
+            ->map(fn ($value) => Str::of((string) $value)->trim()->lower()->toString())
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
     }
 
     private function itemPublicationIsFreshEnough(array $item, string $focus): bool

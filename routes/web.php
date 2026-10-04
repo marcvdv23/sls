@@ -4205,10 +4205,19 @@ Route::get('/sls/intelligence/intake-log', function (Request $request) {
         if (Str::contains($source, ['iadb.org', 'idbdocs'])) {
             return 'IDB procurement monitor';
         }
-        if (CountryUpdateClassifier::isTender($update)) {
-            return 'Tender monitor';
+
+        $focus = CountryUpdateClassifier::inferFocus($update);
+        $focusLabel = $focus ? (ReviewFocuses::get($focus)['label'] ?? null) : null;
+
+        if ($focusLabel) {
+            return $focusLabel . ' monitor';
         }
-        return 'Social Security and Pension News monitor';
+
+        if (CountryUpdateClassifier::isTender($update)) {
+            return SlsSettings::get('workspace.opportunity_monitor_label', 'Tender monitor');
+        }
+
+        return SlsSettings::get('workspace.intelligence_monitor_label', 'Country intelligence monitor');
     };
 
     $updates = CountryUpdate::query()
@@ -8850,6 +8859,12 @@ $crawlerSettingDefinitions = fn (): array => [
         'value_type' => 'integer',
         'default' => (string) config('country_intelligence.news_recent_publication_days', 90),
     ],
+    'workspace_required_relevance_terms' => [
+        'label' => 'Workspace required relevance terms',
+        'description' => 'Optional comma- or line-separated domain terms. When set, non-legacy workspace crawlers only keep items that include at least one of these terms.',
+        'value_type' => 'text',
+        'default' => '',
+    ],
     'news_aggregator_queries_per_country' => [
         'label' => 'News aggregator queries per country',
         'description' => 'Maximum Google/Bing News RSS query patterns tried for each country during social-security news crawls.',
@@ -9103,6 +9118,7 @@ $crawlerSettingGroups = fn (): array => [
             'scheduled_max_results',
             'max_queries_per_country',
             'news_recent_publication_days',
+            'workspace_required_relevance_terms',
             'news_aggregator_queries_per_country',
             'news_aggregator_results_per_query',
             'social_security_daily_slots',
