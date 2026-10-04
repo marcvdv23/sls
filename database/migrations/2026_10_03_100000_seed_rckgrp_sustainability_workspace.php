@@ -323,6 +323,8 @@ return new class extends Migration
             ['serpapi_results_per_country', '10', 'integer', 'SerpAPI results per country', 'Default result count for rckgrp sustainability searches.'],
             ['crawler_default_focus', 'consulting_opportunity', 'string', 'Default crawler focus', 'Default Review Desk focus used for sustainability crawler captures.'],
             ['scheduled_country_iso_scope', 'DZ,AO,BJ,BW,BF,BI,CV,CM,CF,TD,KM,CG,CI,CD,DJ,EG,GQ,ER,SZ,ET,GA,GM,GH,GN,GW,KE,LS,LR,LY,MG,MW,ML,MR,MU,MA,MZ,NA,NE,NG,RW,SN,SC,SL,SO,ZA,SS,ST,SD,TZ,TG,TN,UG,ZM,ZW,GB,NL', 'string', 'Scheduled country ISO scope', 'Countries covered by scheduled rckgrp sustainability crawlers.'],
+            ['workspace_monitor_slots', '00:00,02:00,04:00,06:00,08:00,10:00,12:00,14:00,16:00,18:00,20:00,22:00', 'csv_times', 'Workspace monitor run times', 'Frequent rckgrp workspace crawler run times.'],
+            ['workspace_monitor_batch_size', '8', 'integer', 'Workspace monitor countries per run', 'Countries checked per scheduled rckgrp workspace focus run.'],
             ['target_regions', 'Africa,Middle East,Asia,Latin America,Caribbean,Europe', 'string', 'Target regions', 'Default regions for rckgrp sustainability searches.'],
             ['target_languages', 'en,fr,pt,es,ar', 'string', 'Target languages', 'Default language groups for rckgrp sustainability searches.'],
         ];

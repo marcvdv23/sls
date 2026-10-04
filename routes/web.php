@@ -2233,7 +2233,9 @@ Route::post('/sls/intelligence/monitors/{monitor}/run-now', function (string $mo
     }
 
     $config = $monitorConfigs[$monitor];
-    $maxResults = (int) config('country_intelligence.scheduled_max_results', config('country_intelligence.default_max_results', 3));
+    $maxResults = (int) (Schema::hasTable('crawler_settings')
+        ? (WorkspaceContext::settingValue('crawler_settings', 'scheduled_max_results') ?: config('country_intelligence.scheduled_max_results', config('country_intelligence.default_max_results', 3)))
+        : config('country_intelligence.scheduled_max_results', config('country_intelligence.default_max_results', 3)));
     $focuses = collect($config['focuses'] ?? [])
         ->map(fn ($focus) => trim((string) $focus))
         ->filter()
@@ -8788,6 +8790,18 @@ $crawlerSettingDefinitions = fn (): array => [
         'value_type' => 'string',
         'default' => '',
     ],
+    'workspace_monitor_slots' => [
+        'label' => 'Workspace monitor run times',
+        'description' => 'Comma-separated HH:MM times for scheduled workspace crawlers. Each focus is staggered from each slot.',
+        'value_type' => 'csv_times',
+        'default' => '04:50',
+    ],
+    'workspace_monitor_batch_size' => [
+        'label' => 'Workspace monitor countries per run',
+        'description' => 'Number of countries checked per scheduled workspace focus run.',
+        'value_type' => 'integer',
+        'default' => '1',
+    ],
     'verify_ssl' => [
         'label' => 'Verify source SSL certificates',
         'description' => 'Use true in production unless a source/API requires relaxed certificate checks.',
@@ -9081,6 +9095,8 @@ $crawlerSettingGroups = fn (): array => [
         'keys' => [
             'scheduled_region_scope',
             'scheduled_country_iso_scope',
+            'workspace_monitor_slots',
+            'workspace_monitor_batch_size',
             'gdelt_endpoint',
             'gdelt_timespan',
             'default_max_results',

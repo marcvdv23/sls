@@ -2633,7 +2633,7 @@ try {
             ->where('workspace_key', '<>', 'social_security')
             ->orderBy('workspace_key')
             ->get(['id', 'workspace_key'])
-            ->each(function ($workspace) use ($scheduleCountryMonitor, $workspaceCrawlerSetting, $workspaceTimeList): void {
+            ->each(function ($workspace) use ($scheduleCountryMonitor, $workspaceCrawlerSetting, $workspaceCsvList, $workspaceTimeList): void {
                 $workspaceId = (int) $workspace->id;
                 $workspaceKey = (string) $workspace->workspace_key;
                 $focuses = DB::table('review_focuses')
@@ -2656,15 +2656,16 @@ try {
                     ? 'all'
                     : (string) $workspaceCrawlerSetting($workspaceId, 'scheduled_region_scope', 'africa_asia_caribbean_latin_america_north_america_europe');
                 $maxResults = (int) $workspaceCrawlerSetting($workspaceId, 'scheduled_max_results', config('country_intelligence.scheduled_max_results', config('country_intelligence.default_max_results', 3)));
+                $cycleSize = max(1, (int) $workspaceCrawlerSetting($workspaceId, 'workspace_monitor_batch_size', 1));
 
                 foreach ($slots as $slotIndex => $runTime) {
-                    $focuses->each(function (string $focus, int $focusIndex) use ($scheduleCountryMonitor, $workspaceId, $workspaceKey, $slots, $slotIndex, $runTime, $region, $countryKeys, $maxResults): void {
+                    $focuses->each(function (string $focus, int $focusIndex) use ($scheduleCountryMonitor, $workspaceId, $workspaceKey, $slots, $slotIndex, $runTime, $region, $countryKeys, $cycleSize, $maxResults): void {
                         $staggeredRunTime = Carbon::createFromFormat('H:i', $runTime)
                             ->addMinutes($focusIndex * 5)
                             ->format('H:i');
 
                         $scheduleCountryMonitor($staggeredRunTime, [
-                            'cycle' => 1,
+                            'cycle' => $cycleSize,
                             'region' => $region,
                             'slot' => $slotIndex,
                             'slots_per_day' => count($slots),
