@@ -188,6 +188,15 @@ $workspaceMonitorConfigs = function (): array {
     $focusKeys = $focuses->keys()->filter()->values();
     $defaultFocus = ReviewFocuses::defaultKey();
     $allRegion = 'africa_asia_caribbean_latin_america_north_america_europe';
+    $scheduledCountryKeys = collect(explode(',', (string) (Schema::hasTable('crawler_settings') ? WorkspaceContext::settingValue('crawler_settings', 'scheduled_country_iso_scope') : '')))
+        ->map(fn (string $key) => Str::upper(trim($key)))
+        ->filter()
+        ->unique()
+        ->values()
+        ->all();
+    $configuredRegion = $scheduledCountryKeys !== []
+        ? 'all'
+        : (string) (Schema::hasTable('crawler_settings') ? (WorkspaceContext::settingValue('crawler_settings', 'scheduled_region_scope') ?: $allRegion) : $allRegion);
 
     if ($workspaceKey === 'sustainability_consulting' || Str::contains(Str::lower($domainLabel), ['sustainability', 'climate', 'environment'])) {
         return [
@@ -198,7 +207,8 @@ $workspaceMonitorConfigs = function (): array {
                     ->values()
                     ->all() ?: [$defaultFocus],
                 'review_focus' => $defaultFocus,
-                'region' => $allRegion,
+                'region' => $configuredRegion,
+                'country_keys' => $scheduledCountryKeys,
             ],
             'sustainability-tenders' => [
                 'label' => 'Sustainability Tender/RFP Monitor',
@@ -207,7 +217,8 @@ $workspaceMonitorConfigs = function (): array {
                     ->values()
                     ->all() ?: [$defaultFocus],
                 'review_focus' => $focusKeys->first(fn (string $focus) => Str::contains($focus, ['tender', 'rfp'])) ?: $defaultFocus,
-                'region' => $allRegion,
+                'region' => $configuredRegion,
+                'country_keys' => $scheduledCountryKeys,
             ],
         ];
     }
@@ -225,13 +236,15 @@ $workspaceMonitorConfigs = function (): array {
                     ->values()
                     ->all() ?: [$defaultFocus],
                 'review_focus' => $defaultFocus,
-                'region' => $allRegion,
+                'region' => $configuredRegion,
+                'country_keys' => $scheduledCountryKeys,
             ],
             'workspace-opportunities' => [
                 'label' => $domainLabel . ' Opportunities',
                 'focuses' => $opportunityFocuses->all() ?: [$defaultFocus],
                 'review_focus' => $opportunityFocuses->first() ?: $defaultFocus,
-                'region' => $allRegion,
+                'region' => $configuredRegion,
+                'country_keys' => $scheduledCountryKeys,
             ],
         ];
     }
@@ -2248,6 +2261,7 @@ Route::post('/sls/intelligence/monitors/{monitor}/run-now', function (string $mo
             'label' => $config['label'],
             'focuses' => $focuses,
             'region' => $config['region'] ?? 'all',
+            'country_keys' => $config['country_keys'] ?? [],
             'max_results' => max(1, min(10, $maxResults)),
             'cycle_size' => 1,
             'dry_run' => false,
@@ -8740,6 +8754,12 @@ $crawlerSettingDefinitions = fn (): array => [
         'value_type' => 'string',
         'default' => 'africa_asia_caribbean_latin_america_north_america_europe',
     ],
+    'scheduled_country_iso_scope' => [
+        'label' => 'Scheduled country ISO scope',
+        'description' => 'Optional comma-separated ISO country codes for scheduled workspace crawlers. When set, this overrides the scheduled region scope.',
+        'value_type' => 'string',
+        'default' => '',
+    ],
     'verify_ssl' => [
         'label' => 'Verify source SSL certificates',
         'description' => 'Use true in production unless a source/API requires relaxed certificate checks.',
@@ -9031,6 +9051,8 @@ $crawlerSettingGroups = fn (): array => [
         'title' => 'News and general intelligence',
         'description' => 'Controls indexed news searches, source-specific RSS/news checks, result limits, and freshness filtering.',
         'keys' => [
+            'scheduled_region_scope',
+            'scheduled_country_iso_scope',
             'gdelt_endpoint',
             'gdelt_timespan',
             'default_max_results',

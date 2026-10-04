@@ -303,9 +303,16 @@ Artisan::command('sls:run-operation {operation_run_id}', function (BankDomainGue
         $errors = 0;
 
         try {
+            $countryKeys = collect($parameters['country_keys'] ?? [])
+                ->map(fn ($key) => Str::upper(trim((string) $key)))
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+
             foreach ($focuses as $focus) {
                 $results = $countryMonitor->run(
-                    countryKeys: [],
+                    countryKeys: $countryKeys,
                     maxResults: max(1, min(10, (int) ($parameters['max_results'] ?? 3))),
                     dryRun: (bool) ($parameters['dry_run'] ?? false),
                     cycleSize: max(1, (int) ($parameters['cycle_size'] ?? 1)),
@@ -2424,6 +2431,15 @@ $workspaceTimeList = function (?int $workspaceId, string $key, array $default) u
         ->all();
 };
 
+$workspaceCsvList = function (?int $workspaceId, string $key, array $default = []) use ($workspaceCrawlerSetting): array {
+    return collect(explode(',', (string) $workspaceCrawlerSetting($workspaceId, $key, implode(',', $default))))
+        ->map(fn (string $value) => Str::upper(trim($value)))
+        ->filter()
+        ->unique()
+        ->values()
+        ->all();
+};
+
 $socialSecurityWorkspaceId = $workspaceIdForKey('social_security');
 $dailySlots = $crawlerTimeList('social_security_daily_slots', config('country_intelligence.daily_slots', ['06:15']));
 $scheduledMaxResults = (int) $crawlerSetting('scheduled_max_results', config('country_intelligence.scheduled_max_results', config('country_intelligence.default_max_results')));
@@ -2435,7 +2451,7 @@ $scheduleCountryMonitor = function (string $runTime, array $options, string $nam
         }
 
         app(CountryIntelligenceMonitor::class)->run(
-            countryKeys: [],
+            countryKeys: (array) ($options['country_keys'] ?? []),
             maxResults: (int) $options['max'],
             dryRun: false,
             cycleSize: $options['cycle'] ?? null,
@@ -2635,11 +2651,14 @@ try {
                 }
 
                 $slots = $workspaceTimeList($workspaceId, 'workspace_monitor_slots', ['04:50']);
-                $region = (string) $workspaceCrawlerSetting($workspaceId, 'scheduled_region_scope', 'africa_asia_caribbean_latin_america_north_america_europe');
+                $countryKeys = $workspaceCsvList($workspaceId, 'scheduled_country_iso_scope');
+                $region = $countryKeys !== []
+                    ? 'all'
+                    : (string) $workspaceCrawlerSetting($workspaceId, 'scheduled_region_scope', 'africa_asia_caribbean_latin_america_north_america_europe');
                 $maxResults = (int) $workspaceCrawlerSetting($workspaceId, 'scheduled_max_results', config('country_intelligence.scheduled_max_results', config('country_intelligence.default_max_results', 3)));
 
                 foreach ($slots as $slotIndex => $runTime) {
-                    $focuses->each(function (string $focus, int $focusIndex) use ($scheduleCountryMonitor, $workspaceId, $workspaceKey, $slots, $slotIndex, $runTime, $region, $maxResults): void {
+                    $focuses->each(function (string $focus, int $focusIndex) use ($scheduleCountryMonitor, $workspaceId, $workspaceKey, $slots, $slotIndex, $runTime, $region, $countryKeys, $maxResults): void {
                         $staggeredRunTime = Carbon::createFromFormat('H:i', $runTime)
                             ->addMinutes($focusIndex * 5)
                             ->format('H:i');
@@ -2651,6 +2670,7 @@ try {
                             'slots_per_day' => count($slots),
                             'max' => $maxResults,
                             'focus' => $focus,
+                            'country_keys' => $countryKeys,
                             'workspace_id' => $workspaceId,
                         ], 'sls-workspace-' . Str::slug($workspaceKey) . '-' . Str::slug($focus) . '-' . $slotIndex);
                     });

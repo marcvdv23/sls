@@ -319,6 +319,7 @@ return new class extends Migration
             ['news_recent_publication_days', '45', 'integer', 'Recent publication window', 'Maximum age in days for sustainability news and policy intelligence.'],
             ['serpapi_results_per_country', '10', 'integer', 'SerpAPI results per country', 'Default result count for rckgrp sustainability searches.'],
             ['crawler_default_focus', 'consulting_opportunity', 'string', 'Default crawler focus', 'Default Review Desk focus used for sustainability crawler captures.'],
+            ['scheduled_country_iso_scope', 'DZ,AO,BJ,BW,BF,BI,CV,CM,CF,TD,KM,CG,CI,CD,DJ,EG,GQ,ER,SZ,ET,GA,GM,GH,GN,GW,KE,LS,LR,LY,MG,MW,ML,MR,MU,MA,MZ,NA,NE,NG,RW,SN,SL,SO,ZA,SS,SD,TZ,TG,TN,UG,ZM,ZW,GB,NL', 'string', 'Scheduled country ISO scope', 'Countries covered by scheduled rckgrp sustainability crawlers.'],
             ['target_regions', 'Africa,Middle East,Asia,Latin America,Caribbean,Europe', 'string', 'Target regions', 'Default regions for rckgrp sustainability searches.'],
             ['target_languages', 'en,fr,pt,es,ar', 'string', 'Target languages', 'Default language groups for rckgrp sustainability searches.'],
         ];
