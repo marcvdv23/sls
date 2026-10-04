@@ -22,12 +22,64 @@
         .settings-section-header { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
         .settings-section-header h2 { margin: 0; }
         .settings-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-        .setting-card { border: 1px solid var(--border-subtle); border-radius: 8px; padding: 12px; display: grid; gap: 9px; background: var(--bg-secondary); }
+        .setting-card { border: 1px solid var(--border-subtle); border-radius: 8px; padding: 12px; display: grid; gap: 9px; background: var(--bg-secondary); position: relative; }
         .setting-card label { color: var(--text-primary); font-weight: 800; }
         .setting-card input, .setting-card select, .setting-card textarea { width: 100%; }
         .setting-card textarea { min-height: 76px; resize: vertical; }
         .setting-card .meta { display: grid; gap: 5px; color: var(--text-secondary); font-size: 13px; line-height: 1.4; }
+        .setting-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+        .setting-title label { min-width: 0; overflow-wrap: anywhere; }
         .setting-card .key { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; color: var(--text-muted); overflow-wrap: anywhere; }
+        .setting-help { position: relative; display: inline-flex; flex: 0 0 auto; }
+        .setting-help-button {
+            width: 22px;
+            height: 22px;
+            border: 1px solid #bfdbfe;
+            border-radius: 999px;
+            background: #eff6ff;
+            color: #1d4ed8;
+            align-items: center;
+            display: inline-flex;
+            justify-content: center;
+            font-size: 13px;
+            font-weight: 900;
+            line-height: 1;
+            padding: 0;
+            cursor: help;
+        }
+        .setting-help-button:focus { outline: 2px solid #2563eb; outline-offset: 2px; }
+        .setting-help-popover {
+            background: #0f172a;
+            border-radius: 8px;
+            bottom: calc(100% + 8px);
+            box-shadow: 0 14px 35px rgba(15, 23, 42, .22);
+            color: #fff;
+            display: none;
+            font-size: 13px;
+            font-weight: 500;
+            left: 50%;
+            line-height: 1.45;
+            max-width: min(360px, 80vw);
+            min-width: 260px;
+            padding: 10px 12px;
+            position: absolute;
+            transform: translateX(-50%);
+            z-index: 30;
+        }
+        .setting-help-popover::after {
+            border: 7px solid transparent;
+            border-top-color: #0f172a;
+            content: "";
+            left: 50%;
+            position: absolute;
+            top: 100%;
+            transform: translateX(-50%);
+        }
+        .setting-help:hover .setting-help-popover,
+        .setting-help:focus-within .setting-help-popover { display: block; }
+        .setting-help-popover strong { display: block; font-size: 12px; letter-spacing: .04em; margin-bottom: 4px; text-transform: uppercase; color: #bfdbfe; }
+        .setting-help-popover code { background: rgba(255, 255, 255, .12); border-radius: 4px; color: #fff; padding: 1px 4px; }
+        .setting-type { color: var(--text-muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
         .recent-runs table { min-width: 760px; }
         .status-pill { border-radius: 999px; display: inline-flex; padding: 4px 8px; font-size: 12px; font-weight: 800; background: #e5edff; color: #1d4ed8; }
         .status-pill.completed { background: #d1fae5; color: #047857; }
@@ -97,11 +149,35 @@
                             @php($value = old('settings.' . $key, $setting?->setting_value ?? $definition['default']))
                             @php($inputId = 'setting-' . $key)
 
-                            <div class="setting-card">
+                            @php($helpId = $inputId . '-help')
+                            @php($typeLabel = str_replace('_', ' ', (string) $definition['value_type']))
+                            @php($exampleText = match ($definition['value_type']) {
+                                'boolean' => 'Use true or false.',
+                                'integer' => 'Use a whole number. Zero usually disables or removes the limit when the setting allows it.',
+                                'time' => 'Use server-time HH:MM, for example 04:50.',
+                                'csv_times' => 'Use comma-separated server-time HH:MM values, for example 02:35,03:05.',
+                                'secret' => 'Stored as a setting value. Treat it like a credential.',
+                                'text' => 'Use one value per line or comma-separated values when the description says it accepts a list.',
+                                default => 'Use the configured text value for this crawler setting.',
+                            })
+
+                            <div class="setting-card" aria-describedby="{{ $helpId }}">
                                 <div class="meta">
-                                    <label for="{{ $inputId }}">{{ $definition['label'] }}</label>
-                                    <span>{{ $definition['description'] }}</span>
+                                    <div class="setting-title">
+                                        <label for="{{ $inputId }}">{{ $definition['label'] }}</label>
+                                        <span class="setting-help">
+                                            <button class="setting-help-button" type="button" aria-label="Explain {{ $definition['label'] }}" aria-describedby="{{ $helpId }}">?</button>
+                                            <span class="setting-help-popover" id="{{ $helpId }}" role="tooltip">
+                                                <strong>Purpose</strong>
+                                                {{ $definition['description'] }}
+                                                <br><br>
+                                                <strong>Meaning</strong>
+                                                Type: {{ $typeLabel }}. {{ $exampleText }}
+                                            </span>
+                                        </span>
+                                    </div>
                                     <span class="key">{{ $key }}</span>
+                                    <span class="setting-type">{{ $typeLabel }}</span>
                                 </div>
 
                                 @if ($definition['value_type'] === 'boolean')
