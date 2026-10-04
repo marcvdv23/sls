@@ -2341,8 +2341,8 @@ $intelligenceCrawlerReviewableItemsByFocus = static function (array $focusKeys):
         ->where('review_status', '!=', 'rejected')
         ->whereNotNull('retrieved_at')
         ->where('retrieved_at', '>=', $reviewDeskCurrentStart)
-        ->latest('retrieved_at')
         ->latest('publication_date')
+        ->latest('retrieved_at')
         ->limit(5000)
         ->get()
         ->map(function (CountryUpdate $update) {
@@ -4147,8 +4147,8 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
         ->when($activeStatusFilter !== 'rejected', fn ($updates) => $updates->filter(fn (CountryUpdate $update) => ! CountryUpdateNoiseRules::isStaticReferenceUrl((string) $update->source_url)))
         ->unique(fn (CountryUpdate $update) => CountryUpdateDedupeRules::reviewDuplicateKey($update))
         ->sortBy([
-            fn (CountryUpdate $update) => -1 * ($update->retrieved_at?->timestamp ?? 0),
             fn (CountryUpdate $update) => -1 * ($update->publication_date?->timestamp ?? 0),
+            fn (CountryUpdate $update) => -1 * ($update->retrieved_at?->timestamp ?? 0),
             fn (CountryUpdate $update) => match (true) {
                 $hasTenderSignal($update) && $update->inferred_focus === 'social_security' => 0,
                 $hasTenderSignal($update) && $update->inferred_focus === 'hrms_tenders' => 1,

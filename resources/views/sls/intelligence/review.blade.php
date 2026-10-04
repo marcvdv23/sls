@@ -210,7 +210,7 @@
                 <p class="eyebrow">Captured Items</p>
                 <h2>{{ $countrySearchQuery !== '' ? 'Review Desk items for country search' : 'All tenders, RFPs, and intelligence items found' }}</h2>
                 <p class="muted">
-                    Showing {{ $updates->firstItem() ?? 0 }}-{{ $updates->lastItem() ?? 0 }} of {{ $totalMatchingUpdates }} matching items, ordered by retrieval date first.
+                    Showing {{ $updates->firstItem() ?? 0 }}-{{ $updates->lastItem() ?? 0 }} of {{ $totalMatchingUpdates }} matching items, ordered by publication date first.
                     Use filters or Country Search to narrow the list further.
                 </p>
                 <p class="muted">
