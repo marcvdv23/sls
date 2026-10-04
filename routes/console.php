@@ -2450,7 +2450,7 @@ $scheduleCountryMonitor = function (string $runTime, array $options, string $nam
             WorkspaceContext::forceWorkspace((int) $options['workspace_id']);
         }
 
-        app(CountryIntelligenceMonitor::class)->run(
+        $results = app(CountryIntelligenceMonitor::class)->run(
             countryKeys: (array) ($options['country_keys'] ?? []),
             maxResults: (int) $options['max'],
             dryRun: false,
@@ -2460,6 +2460,19 @@ $scheduleCountryMonitor = function (string $runTime, array $options, string $nam
             focus: $options['focus'] ?? 'social_security',
             region: $options['region'] ?? null,
         );
+
+        if ($results === []) {
+            logger()->warning('Scheduled country monitor selected no countries.', [
+                'name' => $options['name'] ?? null,
+                'workspace_id' => $options['workspace_id'] ?? null,
+                'focus' => $options['focus'] ?? null,
+                'region' => $options['region'] ?? null,
+                'country_keys' => $options['country_keys'] ?? [],
+                'cycle' => $options['cycle'] ?? null,
+                'slot' => $options['slot'] ?? null,
+                'slots_per_day' => $options['slots_per_day'] ?? null,
+            ]);
+        }
     })
         ->name($name)
         ->dailyAt($runTime)
@@ -2653,7 +2666,7 @@ try {
                 $slots = $workspaceTimeList($workspaceId, 'workspace_monitor_slots', ['04:50']);
                 $countryKeys = $workspaceCsvList($workspaceId, 'scheduled_country_iso_scope');
                 $region = $countryKeys !== []
-                    ? 'all'
+                    ? null
                     : (string) $workspaceCrawlerSetting($workspaceId, 'scheduled_region_scope', 'africa_asia_caribbean_latin_america_north_america_europe');
                 $maxResults = (int) $workspaceCrawlerSetting($workspaceId, 'scheduled_max_results', config('country_intelligence.scheduled_max_results', config('country_intelligence.default_max_results', 3)));
                 $cycleSize = max(1, (int) $workspaceCrawlerSetting($workspaceId, 'workspace_monitor_batch_size', 1));
@@ -2673,6 +2686,7 @@ try {
                             'focus' => $focus,
                             'country_keys' => $countryKeys,
                             'workspace_id' => $workspaceId,
+                            'name' => 'sls-workspace-' . Str::slug($workspaceKey) . '-' . Str::slug($focus) . '-' . $slotIndex,
                         ], 'sls-workspace-' . Str::slug($workspaceKey) . '-' . Str::slug($focus) . '-' . $slotIndex);
                     });
                 }

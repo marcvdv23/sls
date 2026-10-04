@@ -139,6 +139,14 @@ class CountryIntelligenceMonitor
 
         if ($region !== null && trim($region) !== '') {
             $wantedRegion = Str::lower(trim($region));
+            if (in_array($wantedRegion, ['all', '*', 'any'], true)) {
+                $wantedRegion = '';
+            }
+
+            if ($wantedRegion === '') {
+                return $this->filterCountriesByKeys($configured, $countryKeys);
+            }
+
             $wantedRegions = match ($wantedRegion) {
                 'africa_asia', 'asia_africa', 'africa+asia', 'africa,asia' => ['africa', 'asia'],
                 'north_america', 'north-america', 'north america' => ['north america'],
@@ -152,8 +160,13 @@ class CountryIntelligenceMonitor
             $configured = $configured->filter(fn (array $countryConfig) => in_array(Str::lower((string) ($countryConfig['region'] ?? '')), $wantedRegions, true));
         }
 
+        return $this->filterCountriesByKeys($configured, $countryKeys);
+    }
+
+    private function filterCountriesByKeys(Collection $countries, array $countryKeys): Collection
+    {
         if ($countryKeys === []) {
-            return $configured;
+            return $countries;
         }
 
         $wanted = collect($countryKeys)
@@ -161,7 +174,7 @@ class CountryIntelligenceMonitor
             ->filter()
             ->values();
 
-        return $configured->filter(function (array $countryConfig, string $isoCode) use ($wanted) {
+        return $countries->filter(function (array $countryConfig, string $isoCode) use ($wanted) {
             $aliases = collect([
                 strtolower($isoCode),
                 strtolower($countryConfig['iso_code'] ?? ''),
