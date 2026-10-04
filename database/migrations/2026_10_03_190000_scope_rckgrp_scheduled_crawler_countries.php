@@ -81,8 +81,8 @@ return new class extends Migration
             'KM', 'CG', 'CI', 'CD', 'DJ', 'EG', 'GQ', 'ER', 'SZ', 'ET',
             'GA', 'GM', 'GH', 'GN', 'GW', 'KE', 'LS', 'LR', 'LY', 'MG',
             'MW', 'ML', 'MR', 'MU', 'MA', 'MZ', 'NA', 'NE', 'NG', 'RW',
-            'SN', 'SL', 'SO', 'ZA', 'SS', 'SD', 'TZ', 'TG', 'TN', 'UG',
-            'ZM', 'ZW', 'GB', 'NL',
+            'SN', 'SC', 'SL', 'SO', 'ZA', 'SS', 'ST', 'SD', 'TZ', 'TG',
+            'TN', 'UG', 'ZM', 'ZW', 'GB', 'NL',
         ];
     }
 };
