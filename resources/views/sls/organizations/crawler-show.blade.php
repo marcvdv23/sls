@@ -1,7 +1,7 @@
 @extends('sls.layouts.app')
 
-@section('title', $crawler->name . ' - Crawler Logs')
-@section('eyebrow', 'Crawler Registry')
+@section('title', $crawler->name . ' - Organization Discovery')
+@section('eyebrow', 'Organization Discovery')
 @section('page_title', $crawler->name)
 
 @section('topbar_actions')
@@ -116,9 +116,10 @@
 
         <section class="panel stack">
             <div>
-                <p class="eyebrow">Crawler Definition</p>
+                <p class="eyebrow">Organization crawler definition</p>
                 <h2>Selected crawler: {{ $crawlerTypes[$crawler->crawler_type] ?? $crawler->crawler_type }}</h2>
                 <p class="muted">{{ $crawler->description ?: 'No description captured.' }}</p>
+                <p class="muted"><strong>Note:</strong> this is an account/database-building crawler. It discovers or enriches organizations, websites, procurement pages, leadership pages, and public contacts. It is separate from the country-intelligence crawlers that feed Review Desk sustainability/tender/news items.</p>
             </div>
             <div class="crawler-picker">
                 <label>Switch crawler

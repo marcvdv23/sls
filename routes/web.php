@@ -2267,6 +2267,154 @@ Route::post('/sls/intelligence/monitors/{monitor}/run-now', function (string $mo
     return back()->with('status', $config['label'] . ' queued as operation #' . $run->id . '. It will continue in the background without holding the browser open.');
 })->name('sls.intelligence.monitors.runNow');
 
+$intelligenceCrawlerSourceMatches = static function (IntelligenceSource $source, string $focus): bool {
+    $sourceFocus = trim((string) $source->focus);
+
+    return $sourceFocus === ''
+        || $sourceFocus === 'both'
+        || $sourceFocus === $focus
+        || ($sourceFocus === 'news' && ! str_contains($focus, 'tender'))
+        || ($sourceFocus === 'tenders' && str_contains($focus, 'tender'));
+};
+
+$intelligenceCrawlerItemsByFocus = static function (array $focusKeys, int $days = 30): \Illuminate\Support\Collection {
+    if ($focusKeys === []) {
+        return collect();
+    }
+
+    return CountryUpdate::query()
+        ->with('country:id,name,iso_code')
+        ->whereNotNull('retrieved_at')
+        ->where('retrieved_at', '>=', now()->subDays($days))
+        ->latest('retrieved_at')
+        ->limit(2000)
+        ->get()
+        ->map(function (CountryUpdate $update) {
+            $update->inferred_focus = CountryUpdateClassifier::inferFocus($update);
+
+            return $update;
+        })
+        ->filter(fn (CountryUpdate $update) => in_array((string) $update->inferred_focus, $focusKeys, true))
+        ->groupBy(fn (CountryUpdate $update) => (string) $update->inferred_focus);
+};
+
+Route::get('/sls/intelligence/crawlers', function () use ($intelligenceCrawlerSourceMatches, $intelligenceCrawlerItemsByFocus) {
+    abort_if(! ReviewFocuses::tableReady(), 503, 'Review categories need to be migrated before intelligence crawlers can be shown.');
+
+    ReviewFocuses::seedDefaults();
+
+    $focuses = ReviewFocus::query()
+        ->orderBy('sort_order')
+        ->orderBy('label')
+        ->get();
+    $focusKeys = $focuses->pluck('focus_key')->all();
+    $itemsByFocus = $intelligenceCrawlerItemsByFocus($focusKeys, 30);
+
+    $runsByFocus = CountryMonitorRun::query()
+        ->with('country:id,name,iso_code')
+        ->whereIn('focus', $focusKeys)
+        ->where('started_at', '>=', now()->subDays(7))
+        ->latest('started_at')
+        ->get()
+        ->groupBy('focus');
+
+    $sources = IntelligenceSource::query()
+        ->orderBy('country_iso')
+        ->orderBy('name')
+        ->get();
+
+    $sourceCountsByFocus = collect($focusKeys)
+        ->mapWithKeys(fn (string $focus) => [
+            $focus => $sources->filter(fn (IntelligenceSource $source) => $intelligenceCrawlerSourceMatches($source, $focus))->count(),
+        ]);
+
+    $scheduledCountries = collect(explode(',', (string) (Schema::hasTable('crawler_settings') ? WorkspaceContext::settingValue('crawler_settings', 'scheduled_country_iso_scope') : '')))
+        ->map(fn ($value) => trim((string) $value))
+        ->filter()
+        ->values();
+
+    return view('sls.intelligence.crawlers.index', [
+        'focuses' => $focuses,
+        'runsByFocus' => $runsByFocus,
+        'itemsByFocus' => $itemsByFocus,
+        'sourceCountsByFocus' => $sourceCountsByFocus,
+        'scheduledCountries' => $scheduledCountries,
+        'workspaceSlots' => (string) (Schema::hasTable('crawler_settings') ? (WorkspaceContext::settingValue('crawler_settings', 'workspace_monitor_slots') ?: '') : ''),
+        'workspaceBatchSize' => (string) (Schema::hasTable('crawler_settings') ? (WorkspaceContext::settingValue('crawler_settings', 'workspace_monitor_batch_size') ?: '') : ''),
+    ]);
+})->name('sls.intelligence.crawlers.index');
+
+Route::get('/sls/intelligence/crawlers/{focusKey}', function (string $focusKey) use ($intelligenceCrawlerSourceMatches, $intelligenceCrawlerItemsByFocus) {
+    abort_if(! ReviewFocuses::tableReady(), 503, 'Review categories need to be migrated before intelligence crawlers can be shown.');
+
+    ReviewFocuses::seedDefaults();
+
+    $focus = ReviewFocus::query()
+        ->where('focus_key', $focusKey)
+        ->firstOrFail();
+    $itemsByFocus = $intelligenceCrawlerItemsByFocus([$focus->focus_key], 60);
+    $recentItems = $itemsByFocus->get($focus->focus_key, collect())->take(120);
+    $sources = IntelligenceSource::query()
+        ->orderByRaw('country_iso IS NULL')
+        ->orderBy('country_iso')
+        ->orderBy('source_class')
+        ->orderBy('name')
+        ->get()
+        ->filter(fn (IntelligenceSource $source) => $intelligenceCrawlerSourceMatches($source, $focus->focus_key))
+        ->values();
+    $runs = CountryMonitorRun::query()
+        ->with('country:id,name,iso_code')
+        ->where('focus', $focus->focus_key)
+        ->latest('started_at')
+        ->limit(120)
+        ->get();
+
+    return view('sls.intelligence.crawlers.show', [
+        'focus' => $focus,
+        'sources' => $sources,
+        'runs' => $runs,
+        'recentItems' => $recentItems,
+        'lineValue' => fn ($value) => is_array($value) ? implode("\n", $value) : (string) $value,
+    ]);
+})->name('sls.intelligence.crawlers.show');
+
+Route::post('/sls/intelligence/crawlers/{focus}/settings', function (Request $request, ReviewFocus $focus) {
+    $parseLines = fn (?string $value): array => collect(preg_split('/\R/', (string) $value))
+        ->map(fn ($line) => trim((string) $line))
+        ->filter()
+        ->unique()
+        ->values()
+        ->all();
+
+    $data = $request->validate([
+        'label' => ['required', 'string', 'max:120'],
+        'description' => ['nullable', 'string', 'max:2000'],
+        'terms' => ['nullable', 'string', 'max:10000'],
+        'strong_signals' => ['nullable', 'string', 'max:10000'],
+        'sort_order' => ['nullable', 'integer', 'min:0', 'max:10000'],
+        'is_enabled' => ['nullable', 'boolean'],
+        'is_default' => ['nullable', 'boolean'],
+    ]);
+
+    if ($request->boolean('is_default')) {
+        ReviewFocus::query()->whereKeyNot($focus->id)->update(['is_default' => false]);
+    }
+
+    $focus->forceFill([
+        'label' => $data['label'],
+        'description' => $data['description'] ?? null,
+        'terms' => $parseLines($data['terms'] ?? null),
+        'strong_signals' => $parseLines($data['strong_signals'] ?? null),
+        'sort_order' => (int) ($data['sort_order'] ?? 100),
+        'is_enabled' => $request->boolean('is_enabled'),
+        'is_default' => $request->boolean('is_default'),
+    ])->save();
+
+    ReviewFocuses::flush();
+
+    return back()->with('status', $focus->label . ' crawler settings saved.');
+})->name('sls.intelligence.crawlers.update');
+
 $serpApiSearchState = function () {
     try {
         $templatesTableReady = Schema::hasTable('serpapi_search_templates');

@@ -135,6 +135,23 @@ class CountryUpdateClassifier
             return 'sector_tenders';
         }
 
+        foreach (ReviewFocuses::all() as $focusKey => $focus) {
+            if (in_array($focusKey, ['social_security', 'hrms_tenders', 'erms_tenders', 'ebpc_tenders', 'sector_tenders'], true)) {
+                continue;
+            }
+
+            $terms = collect($focus['terms'] ?? [])
+                ->merge($focus['strong_signals'] ?? [])
+                ->map(fn ($term) => Str::lower(trim((string) $term)))
+                ->filter()
+                ->unique()
+                ->values();
+
+            if ($terms->contains(fn (string $term) => $term !== '' && Str::contains($text, $term))) {
+                return $focusKey;
+            }
+        }
+
         return null;
     }
 
