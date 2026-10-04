@@ -6,7 +6,7 @@
 
 @section('topbar_actions')
     <a class="button secondary" href="{{ route('sls.intelligence.crawlers.index') }}">All intelligence crawlers</a>
-    <a class="button secondary" href="{{ route('sls.intelligence.review', ['focus' => $focus->focus_key, 'region' => 'all']) }}">Review results</a>
+    <a class="button secondary" href="{{ route('sls.intelligence.review', ['focus' => $focus->focus_key, 'region' => 'all', 'retrieved' => 'current', 'status' => 'all']) }}">Review results</a>
     <a class="button secondary" href="{{ route('sls.intelligence.sources', ['focus' => $focus->focus_key]) }}">Sources</a>
 @endsection
 
@@ -21,6 +21,7 @@
         .inline-checks label { align-items:center; display:inline-flex; flex-direction:row; gap:7px; }
         .crawler-kpis { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:10px; }
         .crawler-kpis strong { display:block; font-size:22px; line-height:1.1; }
+        .crawler-note { border:1px solid var(--border-subtle); border-radius:8px; color:var(--text-secondary); font-size:13px; padding:10px; background:var(--bg-secondary); }
         .source-table { min-width:1120px; }
         .runs-table { min-width:920px; }
         .items-table { min-width:1250px; }
@@ -42,11 +43,14 @@
                 <p class="focus-key">{{ $focus->focus_key }}</p>
                 <p class="muted">{{ $focus->description ?: 'This crawler does not have a description yet.' }}</p>
             </div>
+            <div class="crawler-note">
+                <strong>Counts:</strong> items found by recent runs are operational telemetry. Reviewable now is the count that should appear in the Review Desk after current intake, dropped/rejected, static-reference, relevance, and duplicate filters.
+            </div>
             <div class="crawler-kpis">
                 <div class="panel stat"><strong>{{ number_format($runs->count()) }}</strong><span class="muted">recent runs</span></div>
                 <div class="panel stat"><strong>{{ number_format((int) $runs->sum('items_found')) }}</strong><span class="muted">items found by recent runs</span></div>
-                <div class="panel stat"><strong>{{ number_format($sources->count()) }}</strong><span class="muted">matching sources</span></div>
-                <div class="panel stat"><strong>{{ number_format($recentItems->count()) }}</strong><span class="muted">captured items in 60 days</span></div>
+                <div class="panel stat"><strong>{{ number_format($sources->count()) }}</strong><span class="muted">eligible sources</span></div>
+                <div class="panel stat"><strong>{{ number_format($reviewableItems->count()) }}</strong><span class="muted">reviewable now</span></div>
             </div>
         </section>
 
@@ -121,7 +125,7 @@
             <div>
                 <p class="eyebrow">Configured sources</p>
                 <h2>Where this crawler can look</h2>
-                <p class="muted">Sources match this crawler when their focus is this key, both, news for non-tender crawlers, or tenders for tender crawlers.</p>
+                <p class="muted">Sources match this crawler when their focus is this key, both, news for non-tender crawlers, or tenders for tender crawlers. Shared sources can therefore appear under more than one crawler.</p>
             </div>
             <div class="table-wrap">
                 <table class="source-table">
@@ -157,7 +161,7 @@
             <div>
                 <p class="eyebrow">Recent captured results</p>
                 <h2>What this crawler has produced</h2>
-                <p class="muted">This list is inferred from captured item text and the current terms, so it helps spot noisy terms quickly.</p>
+                <p class="muted">This audit list is inferred from captured item text and the current terms, before the full Review Desk filters are applied, so it helps spot noisy terms quickly.</p>
             </div>
             <div class="table-wrap">
                 <table class="items-table">

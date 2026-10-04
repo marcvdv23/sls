@@ -2298,7 +2298,34 @@ $intelligenceCrawlerItemsByFocus = static function (array $focusKeys, int $days 
         ->groupBy(fn (CountryUpdate $update) => (string) $update->inferred_focus);
 };
 
-Route::get('/sls/intelligence/crawlers', function () use ($intelligenceCrawlerSourceMatches, $intelligenceCrawlerItemsByFocus) {
+$intelligenceCrawlerReviewableItemsByFocus = static function (array $focusKeys): \Illuminate\Support\Collection {
+    if ($focusKeys === []) {
+        return collect();
+    }
+
+    $reviewDeskCurrentStart = Carbon::parse('2026-06-01')->startOfDay();
+
+    return CountryUpdate::query()
+        ->with('country:id,name,iso_code')
+        ->where('review_status', '!=', 'rejected')
+        ->whereNotNull('retrieved_at')
+        ->where('retrieved_at', '>=', $reviewDeskCurrentStart)
+        ->latest('retrieved_at')
+        ->latest('publication_date')
+        ->limit(5000)
+        ->get()
+        ->map(function (CountryUpdate $update) {
+            $update->inferred_focus = CountryUpdateClassifier::inferFocus($update);
+
+            return $update;
+        })
+        ->filter(fn (CountryUpdate $update) => in_array((string) $update->inferred_focus, $focusKeys, true))
+        ->filter(fn (CountryUpdate $update) => ! CountryUpdateNoiseRules::isStaticReferenceUrl((string) $update->source_url))
+        ->unique(fn (CountryUpdate $update) => CountryUpdateDedupeRules::reviewDuplicateKey($update))
+        ->groupBy(fn (CountryUpdate $update) => (string) $update->inferred_focus);
+};
+
+Route::get('/sls/intelligence/crawlers', function () use ($intelligenceCrawlerSourceMatches, $intelligenceCrawlerItemsByFocus, $intelligenceCrawlerReviewableItemsByFocus) {
     abort_if(! ReviewFocuses::tableReady(), 503, 'Review categories need to be migrated before intelligence crawlers can be shown.');
 
     ReviewFocuses::seedDefaults();
@@ -2309,6 +2336,7 @@ Route::get('/sls/intelligence/crawlers', function () use ($intelligenceCrawlerSo
         ->get();
     $focusKeys = $focuses->pluck('focus_key')->all();
     $itemsByFocus = $intelligenceCrawlerItemsByFocus($focusKeys, 30);
+    $reviewableItemsByFocus = $intelligenceCrawlerReviewableItemsByFocus($focusKeys);
 
     $runsByFocus = CountryMonitorRun::query()
         ->with('country:id,name,iso_code')
@@ -2337,6 +2365,7 @@ Route::get('/sls/intelligence/crawlers', function () use ($intelligenceCrawlerSo
         'focuses' => $focuses,
         'runsByFocus' => $runsByFocus,
         'itemsByFocus' => $itemsByFocus,
+        'reviewableItemsByFocus' => $reviewableItemsByFocus,
         'sourceCountsByFocus' => $sourceCountsByFocus,
         'scheduledCountries' => $scheduledCountries,
         'workspaceSlots' => (string) (Schema::hasTable('crawler_settings') ? (WorkspaceContext::settingValue('crawler_settings', 'workspace_monitor_slots') ?: '') : ''),
@@ -2344,7 +2373,7 @@ Route::get('/sls/intelligence/crawlers', function () use ($intelligenceCrawlerSo
     ]);
 })->name('sls.intelligence.crawlers.index');
 
-Route::get('/sls/intelligence/crawlers/{focusKey}', function (string $focusKey) use ($intelligenceCrawlerSourceMatches, $intelligenceCrawlerItemsByFocus) {
+Route::get('/sls/intelligence/crawlers/{focusKey}', function (string $focusKey) use ($intelligenceCrawlerSourceMatches, $intelligenceCrawlerItemsByFocus, $intelligenceCrawlerReviewableItemsByFocus) {
     abort_if(! ReviewFocuses::tableReady(), 503, 'Review categories need to be migrated before intelligence crawlers can be shown.');
 
     ReviewFocuses::seedDefaults();
@@ -2353,7 +2382,9 @@ Route::get('/sls/intelligence/crawlers/{focusKey}', function (string $focusKey) 
         ->where('focus_key', $focusKey)
         ->firstOrFail();
     $itemsByFocus = $intelligenceCrawlerItemsByFocus([$focus->focus_key], 60);
+    $reviewableItemsByFocus = $intelligenceCrawlerReviewableItemsByFocus([$focus->focus_key]);
     $recentItems = $itemsByFocus->get($focus->focus_key, collect())->take(120);
+    $reviewableItems = $reviewableItemsByFocus->get($focus->focus_key, collect());
     $sources = IntelligenceSource::query()
         ->orderByRaw('country_iso IS NULL')
         ->orderBy('country_iso')
@@ -2374,6 +2405,7 @@ Route::get('/sls/intelligence/crawlers/{focusKey}', function (string $focusKey) 
         'sources' => $sources,
         'runs' => $runs,
         'recentItems' => $recentItems,
+        'reviewableItems' => $reviewableItems,
         'lineValue' => fn ($value) => is_array($value) ? implode("\n", $value) : (string) $value,
     ]);
 })->name('sls.intelligence.crawlers.show');

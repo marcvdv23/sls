@@ -23,6 +23,7 @@
         .crawler-metrics { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:8px; }
         .crawler-metrics div { border:1px solid var(--border-subtle); border-radius:8px; padding:8px; background:var(--bg-secondary); }
         .crawler-metrics strong { display:block; font-size:20px; line-height:1.1; }
+        .crawler-note { border:1px solid var(--border-subtle); border-radius:8px; color:var(--text-secondary); font-size:13px; padding:10px; background:var(--bg-secondary); }
         .term-list { display:flex; flex-wrap:wrap; gap:6px; }
         .term-list span { background:#e5edff; border-radius:999px; color:#1d4ed8; font-size:12px; font-weight:800; padding:4px 8px; }
         .crawler-card-actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
@@ -43,6 +44,9 @@
                 <h2>What SLS is crawling for in this workspace</h2>
                 <p class="muted">Each card is one country-intelligence crawler/focus. It combines the Review Desk category, matching terms, configured sources, scheduled monitor runs, and captured results.</p>
             </div>
+            <div class="crawler-note">
+                <strong>How to read the numbers:</strong> run counts and new items are operational telemetry from crawler runs. Reviewable now is the Review Desk count after current intake, dropped/rejected, static-reference, relevance, and duplicate filters. Eligible sources include shared sources that can serve more than one crawler.
+            </div>
             <div class="crawler-context">
                 <div class="panel stat"><strong>{{ $focuses->count() }}</strong><span class="muted">configured crawlers</span></div>
                 <div class="panel stat"><strong>{{ $scheduledCountries->count() ?: 'Region' }}</strong><span class="muted">{{ $scheduledCountries->count() ? 'scheduled country ISO codes' : 'using region scope' }}</span></div>
@@ -59,6 +63,7 @@
                     $runs = $runsByFocus->get($focus->focus_key, collect());
                     $latestRun = $runs->first();
                     $items = $itemsByFocus->get($focus->focus_key, collect());
+                    $reviewableItems = $reviewableItemsByFocus->get($focus->focus_key, collect());
                     $terms = collect($focus->terms ?? [])->merge($focus->strong_signals ?? [])->filter()->take(8);
                 @endphp
                 <article class="panel crawler-card">
@@ -75,9 +80,9 @@
 
                     <div class="crawler-metrics">
                         <div><strong>{{ number_format($runs->count()) }}</strong><span class="muted">runs in 7 days</span></div>
-                        <div><strong>{{ number_format((int) $runs->sum('items_found')) }}</strong><span class="muted">items found</span></div>
-                        <div><strong>{{ number_format((int) ($sourceCountsByFocus[$focus->focus_key] ?? 0)) }}</strong><span class="muted">matching sources</span></div>
-                        <div><strong>{{ number_format($items->count()) }}</strong><span class="muted">captured in 30 days</span></div>
+                        <div><strong>{{ number_format((int) $runs->sum('items_found')) }}</strong><span class="muted">new items in runs</span></div>
+                        <div><strong>{{ number_format((int) ($sourceCountsByFocus[$focus->focus_key] ?? 0)) }}</strong><span class="muted">eligible sources</span></div>
+                        <div><strong>{{ number_format($reviewableItems->count()) }}</strong><span class="muted">reviewable now</span></div>
                     </div>
 
                     <div>
@@ -95,7 +100,10 @@
 
                     <div class="crawler-card-actions">
                         <a class="button" href="{{ route('sls.intelligence.crawlers.show', $focus->focus_key) }}">Open crawler</a>
-                        <a class="button secondary" href="{{ route('sls.intelligence.review', ['focus' => $focus->focus_key, 'region' => 'all']) }}">Review results</a>
+                        <a class="button secondary" href="{{ route('sls.intelligence.review', ['focus' => $focus->focus_key, 'region' => 'all', 'retrieved' => 'current', 'status' => 'all']) }}">Review results</a>
+                        @if ($items->count() !== $reviewableItems->count())
+                            <span class="muted">{{ number_format($items->count()) }} captured in 30 days before Review Desk filters.</span>
+                        @endif
                     </div>
                 </article>
             @empty
