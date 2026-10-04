@@ -3,8 +3,6 @@
     <head>
         @php
             $slsPlatformName = \App\Support\SlsSettings::get('platform.name', config('sls.platform.name', 'SLS'));
-            $slsEntityName = \App\Support\SlsSettings::get('entity.display_name', config('sls.entity.display_name', config('sls.entity.name', 'SLS')));
-            $slsWorkspaceName = \App\Support\SlsSettings::get('workspace.name', config('sls.workspace.name', 'Sales'));
         @endphp
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -99,7 +97,7 @@
         <main class="login-panel">
             <img class="login-logo" src="{{ asset('sls-logo.png') }}?v={{ filemtime(public_path('sls-logo.png')) }}" alt="SLS">
             <h1 class="login-title">Sign in to {{ $slsPlatformName }}</h1>
-            <p class="login-copy">Use your {{ $slsEntityName }} account to access {{ $slsWorkspaceName }}, CRM, intelligence, and setup tools.</p>
+            <p class="login-copy">Use your account to access your authorized CRM, intelligence, and workspace tools.</p>
 
             @if ($errors->any())
                 <div class="login-error">{{ $errors->first() }}</div>
