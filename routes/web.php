@@ -1410,9 +1410,20 @@ Route::get('/sls', function () use ($orderedProducts, $allMapCountries, $relevan
         'workspace.excluded_source_classes',
         $currentWorkspaceKey === 'social_security' ? '' : 'social_security_admin'
     );
+    $workspaceSourceCountryScope = collect(explode(',', (string) (Schema::hasTable('crawler_settings') ? WorkspaceContext::settingValue('crawler_settings', 'scheduled_country_iso_scope') : '')))
+        ->map(fn ($iso) => Str::upper(trim((string) $iso)))
+        ->filter()
+        ->unique()
+        ->values();
     $workspaceSourceQuery = IntelligenceSource::query()
         ->when($workspaceSourceClasses->isNotEmpty(), fn ($query) => $query->whereIn('source_class', $workspaceSourceClasses->all()))
-        ->when($workspaceExcludedSourceClasses->isNotEmpty(), fn ($query) => $query->whereNotIn('source_class', $workspaceExcludedSourceClasses->all()));
+        ->when($workspaceExcludedSourceClasses->isNotEmpty(), fn ($query) => $query->whereNotIn('source_class', $workspaceExcludedSourceClasses->all()))
+        ->when($currentWorkspaceKey !== 'social_security', fn ($query) => $query->where('source_class', '<>', 'social_security_admin'))
+        ->when($workspaceSourceCountryScope->isNotEmpty(), fn ($query) => $query->where(function ($inner) use ($workspaceSourceCountryScope) {
+            $inner
+                ->whereNull('country_iso')
+                ->orWhereIn(DB::raw('UPPER(country_iso)'), $workspaceSourceCountryScope->all());
+        }));
     $workspaceSourceClassCounts = (clone $workspaceSourceQuery)
         ->get()
         ->groupBy(fn (IntelligenceSource $source) => $source->source_class ?: 'source')
@@ -8113,6 +8124,12 @@ Route::get('/sls/intelligence/sources', function (Request $request) use ($allMap
     $queueFilter = Str::of((string) $request->query('queue', 'all'))->lower()->toString();
     $showSourceTenderCounts = $request->boolean('source_counts', false);
     $mapCountries = $allMapCountries();
+    $currentWorkspaceKey = (string) (WorkspaceContext::current()?->workspace_key ?: SlsSettings::get('workspace.key', 'social_security'));
+    $workspaceSourceCountryScope = collect(explode(',', (string) (Schema::hasTable('crawler_settings') ? WorkspaceContext::settingValue('crawler_settings', 'scheduled_country_iso_scope') : '')))
+        ->map(fn ($iso) => Str::upper(trim((string) $iso)))
+        ->filter()
+        ->unique()
+        ->values();
     $austinTz = 'America/Chicago';
     $sourceNextRunMap = function ($scheduledCountries, array $slots, int $cycleSize): array {
         $countries = collect($scheduledCountries)->sortBy('iso')->keyBy('iso');
@@ -8230,6 +8247,12 @@ Route::get('/sls/intelligence/sources', function (Request $request) use ($allMap
             ->values();
     }
 
+    if ($currentWorkspaceKey !== 'social_security' && $workspaceSourceCountryScope->isNotEmpty()) {
+        $mapCountries = $mapCountries
+            ->filter(fn (array $country) => $workspaceSourceCountryScope->contains(Str::upper((string) $country['iso'])))
+            ->values();
+    }
+
     $latestRunsByCountryIso = CountryMonitorRun::query()
         ->with('country')
         ->whereNotNull('country_id')
@@ -8304,6 +8327,12 @@ Route::get('/sls/intelligence/sources', function (Request $request) use ($allMap
         ? IntelligenceSource::query()
             ->when(in_array($region, ['africa', 'caribbean', 'asia', 'latin_america', 'north_america', 'europe'], true), fn ($query) => $query->where(function ($regionQuery) use ($region) {
                 $regionQuery->whereNull('country_iso')->orWhere('region', Str::title(str_replace('_', ' ', $region)));
+            }))
+            ->when($currentWorkspaceKey !== 'social_security', fn ($query) => $query->where('source_class', '<>', 'social_security_admin'))
+            ->when($currentWorkspaceKey !== 'social_security' && $workspaceSourceCountryScope->isNotEmpty(), fn ($query) => $query->where(function ($scopeQuery) use ($workspaceSourceCountryScope) {
+                $scopeQuery
+                    ->whereNull('country_iso')
+                    ->orWhereIn(DB::raw('UPPER(country_iso)'), $workspaceSourceCountryScope->all());
             }))
             ->orderByRaw("country_iso IS NULL DESC")
             ->orderBy('region')
@@ -8435,10 +8464,17 @@ Route::get('/sls/intelligence/sources', function (Request $request) use ($allMap
     return view('sls.intelligence.sources', [
         'rows' => $rows,
         'region' => $region,
-        'completeCount' => $rows->filter(fn (array $row) => $row['has_social_security_admin'] && $row['has_ministry'] && $row['has_tender'] && $row['has_media'])->count(),
+        'completeCount' => $currentWorkspaceKey === 'social_security'
+            ? $rows->filter(fn (array $row) => $row['has_social_security_admin'] && $row['has_ministry'] && $row['has_tender'] && $row['has_media'])->count()
+            : $rows->filter(fn (array $row) => $row['has_ministry'] && $row['has_tender'])->count(),
         'managedSources' => $managedSources,
         'allManagedSources' => $allManagedSources,
-        'countriesForSourceForm' => $allMapCountries()->sortBy('name')->values(),
+        'countriesForSourceForm' => $currentWorkspaceKey !== 'social_security' && $workspaceSourceCountryScope->isNotEmpty()
+            ? $allMapCountries()
+                ->filter(fn (array $country) => $workspaceSourceCountryScope->contains(Str::upper((string) $country['iso'])))
+                ->sortBy('name')
+                ->values()
+            : $allMapCountries()->sortBy('name')->values(),
         'filters' => [
             'status' => $statusFilter,
             'source_class' => $sourceClassFilter,
@@ -8471,9 +8507,9 @@ Route::get('/sls/intelligence/sources', function (Request $request) use ($allMap
             'policy_source' => 'Policy / regulatory source',
             'local_media' => 'Local media / business news',
             'news_aggregator' => 'News aggregator',
-            'social_security_admin' => 'Social security administration',
             'oil_gas_company' => 'Oil & gas company / procurement',
         ])
+            ->when($currentWorkspaceKey === 'social_security', fn ($options) => $options->put('social_security_admin', 'Social security administration'))
             ->merge($allManagedSources
                 ->pluck('source_class')
                 ->filter()
@@ -8522,6 +8558,21 @@ Route::post('/sls/intelligence/sources', function (Request $request) {
     }
 
     $data['country_iso'] = filled($data['country_iso'] ?? null) ? strtoupper((string) $data['country_iso']) : null;
+    $currentWorkspaceKey = (string) (WorkspaceContext::current()?->workspace_key ?: SlsSettings::get('workspace.key', 'social_security'));
+    $workspaceSourceCountryScope = collect(explode(',', (string) (Schema::hasTable('crawler_settings') ? WorkspaceContext::settingValue('crawler_settings', 'scheduled_country_iso_scope') : '')))
+        ->map(fn ($iso) => strtoupper(trim((string) $iso)))
+        ->filter()
+        ->unique()
+        ->values();
+
+    if ($currentWorkspaceKey !== 'social_security' && $data['source_class'] === 'social_security_admin') {
+        return back()->withErrors(['source_class' => 'Social security administration sources are only available in the social-security workspace.'])->withInput();
+    }
+
+    if ($currentWorkspaceKey !== 'social_security' && filled($data['country_iso']) && $workspaceSourceCountryScope->isNotEmpty() && ! $workspaceSourceCountryScope->contains($data['country_iso'])) {
+        return back()->withErrors(['country_iso' => 'This country is outside the current workspace source scope.'])->withInput();
+    }
+
     $data['procurement_portal_type'] = $data['procurement_portal_type'] ?? 'not_applicable';
     $data['registration_status'] = $data['registration_status'] ?? 'unknown';
     $data['is_enabled'] = true;
