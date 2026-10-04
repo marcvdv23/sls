@@ -391,6 +391,7 @@ class CountryIntelligenceMonitor
             ->where('country_iso', $iso)
             ->get()
             ->map(fn (IntelligenceSource $source) => $this->intelligenceSourceToCrawlerSource($source))
+            ->filter(fn (array $source) => $this->sourceAllowedForWorkspace($source))
             ->filter(fn (array $source) => filled($source['domain'] ?? null) || filled($source['url'] ?? null))
             ->values();
     }
@@ -407,6 +408,7 @@ class CountryIntelligenceMonitor
             ->whereIn('source_class', ['donor_tender_portal', 'central_tender_portal', 'news_aggregator'])
             ->get()
             ->map(fn (IntelligenceSource $source) => $this->intelligenceSourceToCrawlerSource($source))
+            ->filter(fn (array $source) => $this->sourceAllowedForWorkspace($source))
             ->filter(fn (array $source) => filled($source['domain'] ?? null) || filled($source['url'] ?? null))
             ->values();
     }
@@ -458,6 +460,10 @@ class CountryIntelligenceMonitor
 
     private function sourceMatchesFocus(array $source, string $focus): bool
     {
+        if (! $this->sourceAllowedForWorkspace($source)) {
+            return false;
+        }
+
         $sourceFocus = (string) ($source['focus'] ?? 'both');
         $workspaceFocusAliases = $this->slsSettingList('workspace.source_focus_aliases');
         $legacyFocusKeys = $this->slsSettingList('workspace.legacy_focus_keys');
@@ -470,6 +476,32 @@ class CountryIntelligenceMonitor
             || ($sourceFocus === 'news' && ! str_contains($focus, 'tender'))
             || ($sourceFocus === 'tenders' && $isLegacyFocus)
             || ($sourceFocus === 'tenders' && str_contains($focus, 'tender'));
+    }
+
+    private function sourceAllowedForWorkspace(array $source): bool
+    {
+        $sourceClass = Str::of((string) ($source['source_class'] ?? ''))->trim()->lower()->toString();
+        $includedClasses = $this->slsSettingList('workspace.source_classes');
+        $excludedClasses = $this->slsSettingList(
+            'workspace.excluded_source_classes',
+            $this->currentWorkspaceKey() === 'social_security' ? '' : 'social_security_admin'
+        );
+
+        if ($sourceClass !== '' && in_array($sourceClass, $excludedClasses, true)) {
+            return false;
+        }
+
+        if ($this->currentWorkspaceKey() !== 'social_security' && $sourceClass === 'social_security_admin') {
+            return false;
+        }
+
+        return $includedClasses === []
+            || ($sourceClass !== '' && in_array($sourceClass, $includedClasses, true));
+    }
+
+    private function currentWorkspaceKey(): string
+    {
+        return (string) (WorkspaceContext::current()?->workspace_key ?: SlsSettings::get('workspace.key', 'social_security'));
     }
 
     /**
@@ -685,6 +717,7 @@ class CountryIntelligenceMonitor
                     ->where('source_class', 'news_aggregator')
                     ->get()
                     ->map(fn (IntelligenceSource $source) => $this->intelligenceSourceToCrawlerSource($source))
+                    ->filter(fn (array $source) => $this->sourceAllowedForWorkspace($source))
             );
         }
 

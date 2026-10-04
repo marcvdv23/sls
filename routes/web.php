@@ -2267,7 +2267,38 @@ Route::post('/sls/intelligence/monitors/{monitor}/run-now', function (string $mo
     return back()->with('status', $config['label'] . ' queued as operation #' . $run->id . '. It will continue in the background without holding the browser open.');
 })->name('sls.intelligence.monitors.runNow');
 
-$intelligenceCrawlerSourceMatches = static function (IntelligenceSource $source, string $focus): bool {
+$intelligenceCrawlerSourceAllowedForWorkspace = static function (IntelligenceSource $source): bool {
+    $sourceClass = Str::of((string) $source->source_class)->trim()->lower()->toString();
+    $currentWorkspaceKey = (string) (WorkspaceContext::current()?->workspace_key ?: SlsSettings::get('workspace.key', 'social_security'));
+    $settingList = static fn (string $key, string $default = '') => collect(preg_split('/[\r\n,]+/', (string) SlsSettings::get($key, $default)))
+        ->map(fn ($value) => Str::of((string) $value)->trim()->lower()->toString())
+        ->filter()
+        ->unique()
+        ->values()
+        ->all();
+    $includedClasses = $settingList('workspace.source_classes');
+    $excludedClasses = $settingList(
+        'workspace.excluded_source_classes',
+        $currentWorkspaceKey === 'social_security' ? '' : 'social_security_admin'
+    );
+
+    if ($sourceClass !== '' && in_array($sourceClass, $excludedClasses, true)) {
+        return false;
+    }
+
+    if ($currentWorkspaceKey !== 'social_security' && $sourceClass === 'social_security_admin') {
+        return false;
+    }
+
+    return $includedClasses === []
+        || ($sourceClass !== '' && in_array($sourceClass, $includedClasses, true));
+};
+
+$intelligenceCrawlerSourceMatches = static function (IntelligenceSource $source, string $focus) use ($intelligenceCrawlerSourceAllowedForWorkspace): bool {
+    if (! $intelligenceCrawlerSourceAllowedForWorkspace($source)) {
+        return false;
+    }
+
     $sourceFocus = trim((string) $source->focus);
 
     return $sourceFocus === ''
