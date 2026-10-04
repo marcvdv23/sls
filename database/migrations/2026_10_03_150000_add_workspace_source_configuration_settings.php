@@ -55,13 +55,13 @@ return new class extends Migration
                         'workspace.source_classes' => $sustainabilitySourceClasses,
                         'workspace.excluded_source_classes' => 'social_security_admin',
                         'workspace.source_focus_aliases' => 'sustainability,climate,environment,environmental,esg',
-                        'workspace.legacy_focus_keys' => $defaultLegacyFocuses,
+                        'workspace.legacy_focus_keys' => '',
                     ],
                     default => [
                         'workspace.source_classes' => $genericSourceClasses,
                         'workspace.excluded_source_classes' => 'social_security_admin',
                         'workspace.source_focus_aliases' => str_replace('_', ',', $workspaceKey),
-                        'workspace.legacy_focus_keys' => $defaultLegacyFocuses,
+                        'workspace.legacy_focus_keys' => '',
                     ],
                 };
 

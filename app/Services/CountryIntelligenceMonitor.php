@@ -447,7 +447,7 @@ class CountryIntelligenceMonitor
     {
         $sourceFocus = (string) ($source['focus'] ?? 'both');
         $workspaceFocusAliases = $this->slsSettingList('workspace.source_focus_aliases');
-        $legacyFocusKeys = $this->slsSettingList('workspace.legacy_focus_keys', 'social_security,hrms_tenders,erms_tenders,ebpc_tenders,sector_tenders');
+        $legacyFocusKeys = $this->slsSettingList('workspace.legacy_focus_keys');
         $isLegacyFocus = in_array($focus, $legacyFocusKeys, true);
 
         return $sourceFocus === 'both'

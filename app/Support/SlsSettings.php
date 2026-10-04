@@ -98,6 +98,27 @@ class SlsSettings
                 'value_type' => 'string',
                 'default' => config('sls.workspace.review_label', 'Review Desk'),
             ],
+            'workspace.intelligence_monitor_label' => [
+                'group' => 'Workspace',
+                'label' => 'Intelligence monitor label',
+                'description' => 'Dashboard label for the broad workspace intelligence monitor.',
+                'value_type' => 'string',
+                'default' => '',
+            ],
+            'workspace.opportunity_monitor_label' => [
+                'group' => 'Workspace',
+                'label' => 'Opportunity monitor label',
+                'description' => 'Dashboard label for the workspace opportunity/tender monitor.',
+                'value_type' => 'string',
+                'default' => '',
+            ],
+            'workspace.monitoring_focuses' => [
+                'group' => 'Workspace',
+                'label' => 'Monitoring focus descriptions',
+                'description' => 'One dashboard source-coverage focus per line. Leave blank to derive this from review focuses and source classes.',
+                'value_type' => 'text',
+                'default' => '',
+            ],
             'workspace.source_classes' => [
                 'group' => 'Workspace Sources',
                 'label' => 'Included source classes',
@@ -124,7 +145,7 @@ class SlsSettings
                 'label' => 'Legacy tender focus keys',
                 'description' => 'Comma-separated legacy focus keys that should still accept generic tender sources.',
                 'value_type' => 'text',
-                'default' => 'social_security,hrms_tenders,erms_tenders,ebpc_tenders,sector_tenders',
+                'default' => '',
             ],
             'products.default_code' => [
                 'group' => 'Products',

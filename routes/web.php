@@ -198,39 +198,16 @@ $workspaceMonitorConfigs = function (): array {
         ? 'all'
         : (string) (Schema::hasTable('crawler_settings') ? (WorkspaceContext::settingValue('crawler_settings', 'scheduled_region_scope') ?: $allRegion) : $allRegion);
 
-    if ($workspaceKey === 'sustainability_consulting' || Str::contains(Str::lower($domainLabel), ['sustainability', 'climate', 'environment'])) {
-        return [
-            'sustainability-intelligence' => [
-                'label' => 'Sustainability and Climate Intelligence',
-                'focuses' => $focusKeys
-                    ->filter(fn (string $focus) => ! Str::contains($focus, ['tender', 'rfp']))
-                    ->values()
-                    ->all() ?: [$defaultFocus],
-                'review_focus' => $defaultFocus,
-                'region' => $configuredRegion,
-                'country_keys' => $scheduledCountryKeys,
-            ],
-            'sustainability-tenders' => [
-                'label' => 'Sustainability Tender/RFP Monitor',
-                'focuses' => $focusKeys
-                    ->filter(fn (string $focus) => Str::contains($focus, ['tender', 'rfp', 'donor', 'opportunity']))
-                    ->values()
-                    ->all() ?: [$defaultFocus],
-                'review_focus' => $focusKeys->first(fn (string $focus) => Str::contains($focus, ['tender', 'rfp'])) ?: $defaultFocus,
-                'region' => $configuredRegion,
-                'country_keys' => $scheduledCountryKeys,
-            ],
-        ];
-    }
-
     if ($defaultFocus !== 'social_security') {
         $opportunityFocuses = $focusKeys
             ->filter(fn (string $focus) => Str::contains($focus, ['tender', 'rfp', 'procurement', 'donor', 'opportunity']))
             ->values();
+        $intelligenceLabel = trim((string) SlsSettings::get('workspace.intelligence_monitor_label', '')) ?: $domainLabel . ' Intelligence';
+        $opportunityLabel = trim((string) SlsSettings::get('workspace.opportunity_monitor_label', '')) ?: $domainLabel . ' Opportunities';
 
         return [
             'workspace-intelligence' => [
-                'label' => $domainLabel . ' Intelligence',
+                'label' => $intelligenceLabel,
                 'focuses' => $focusKeys
                     ->reject(fn (string $focus) => $opportunityFocuses->contains($focus))
                     ->values()
@@ -240,7 +217,7 @@ $workspaceMonitorConfigs = function (): array {
                 'country_keys' => $scheduledCountryKeys,
             ],
             'workspace-opportunities' => [
-                'label' => $domainLabel . ' Opportunities',
+                'label' => $opportunityLabel,
                 'focuses' => $opportunityFocuses->all() ?: [$defaultFocus],
                 'review_focus' => $opportunityFocuses->first() ?: $defaultFocus,
                 'region' => $configuredRegion,
@@ -1436,21 +1413,21 @@ Route::get('/sls', function () use ($orderedProducts, $allMapCountries, $relevan
         ->orderBy('name')
         ->limit(80)
         ->get();
-    $workspaceMonitoringFocuses = $currentWorkspaceKey === 'sustainability_consulting'
-        ? [
-            'Donor and development-bank project pipelines',
-            'RFP, RFI, EOI, tender, and procurement portals',
-            'Environmental, climate, and sustainability policy announcements',
-            'Climate finance funds, facilities, and grant windows',
-            'ESG regulation, carbon markets, and national climate plans',
-            'Relevant sustainability media and implementing-partner signals',
-        ]
-        : [
-            'Official agency and ministry sources',
-            'Procurement and tender portals',
-            'Local and regional media',
-            'Donor and multilateral project pipelines',
-        ];
+    $configuredMonitoringFocuses = collect(preg_split('/[\r\n]+/', (string) SlsSettings::get('workspace.monitoring_focuses', '')))
+        ->map(fn ($focus) => trim((string) $focus))
+        ->filter()
+        ->unique()
+        ->values();
+    $workspaceMonitoringFocuses = $configuredMonitoringFocuses->isNotEmpty()
+        ? $configuredMonitoringFocuses->all()
+        : collect(ReviewFocuses::all())
+            ->map(fn (array $focus, string $key) => $focus['label'] ?? Str::of($key)->replace('_', ' ')->title()->toString())
+            ->merge($workspaceSourceClasses->map(fn (string $sourceClass) => Str::of($sourceClass)->replace('_', ' ')->title()->toString()))
+            ->filter()
+            ->unique()
+            ->take(8)
+            ->values()
+            ->all();
     $regionSlug = fn (string $region) => match (Str::lower($region)) {
         'latin america' => 'latin_america',
         default => Str::of($region)->lower()->replace(' ', '_')->toString(),
