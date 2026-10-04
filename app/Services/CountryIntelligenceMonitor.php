@@ -80,8 +80,8 @@ class CountryIntelligenceMonitor
             $candidateItems = $candidateItems->merge($this->searchGdelt($query, max(6, min($maxResults, 12))));
         }
 
-        if ($focus === 'social_security') {
-            $candidateItems = $candidateItems->merge($this->searchNewsAggregators($countryConfig, max(8, min($maxResults, 20))));
+        if ($this->shouldSearchNewsAggregators($focus)) {
+            $candidateItems = $candidateItems->merge($this->searchNewsAggregators($countryConfig, $focus, max(8, min($maxResults, 20))));
         }
 
         $candidateItems = $candidateItems->merge($this->searchWorldBankProcurement($countryConfig, $focus, max(5, $maxResults)));
@@ -633,7 +633,7 @@ class CountryIntelligenceMonitor
         return collect();
     }
 
-    private function searchNewsAggregators(array $countryConfig, int $maxRecords): Collection
+    private function searchNewsAggregators(array $countryConfig, string $focus, int $maxRecords): Collection
     {
         $sources = $this->newsAggregatorSources();
 
@@ -650,7 +650,7 @@ class CountryIntelligenceMonitor
             config('country_intelligence.news_aggregator_results_per_query', 10)
         );
 
-        $queries = $this->newsAggregatorQueries($countryConfig)
+        $queries = $this->newsAggregatorQueries($countryConfig, $focus)
             ->take(max(1, $queryLimit));
 
         return $queries
@@ -681,7 +681,7 @@ class CountryIntelligenceMonitor
             ->values();
     }
 
-    private function newsAggregatorQueries(array $countryConfig): Collection
+    private function newsAggregatorQueries(array $countryConfig, string $focus): Collection
     {
         $names = collect($countryConfig['search_names'] ?? [$countryConfig['name']])
             ->prepend((string) ($countryConfig['name'] ?? ''))
@@ -692,22 +692,30 @@ class CountryIntelligenceMonitor
             ->take(3)
             ->values();
 
-        $terms = collect([
-            'social security',
-            'pension',
-            'pensions',
-            'pension reform',
-            'pension payments',
-            'social protection',
-            'national insurance',
-            'provident fund',
-            'retirement benefits',
-            'contribution',
-        ])
-            ->merge($this->localizedFocusTerms($countryConfig, 'social_security')->take(8))
+        $focusConfig = ReviewFocuses::get($focus) ?? [];
+        $terms = collect($focusConfig['terms'] ?? [])
+            ->merge($focusConfig['strong_signals'] ?? [])
+            ->merge($this->databaseKeywordTerms($focus, ['en']))
+            ->merge($this->localizedFocusTerms($countryConfig, $focus))
             ->filter()
             ->unique()
+            ->take(14)
             ->values();
+
+        if ($terms->isEmpty() && $focus === 'social_security') {
+            $terms = collect([
+                'social security',
+                'pension',
+                'pensions',
+                'pension reform',
+                'pension payments',
+                'social protection',
+                'national insurance',
+                'provident fund',
+                'retirement benefits',
+                'contribution',
+            ]);
+        }
 
         return $names
             ->flatMap(fn (string $name) => $terms->map(fn (string $term) => '"' . $name . '" "' . $term . '"'))
@@ -1618,8 +1626,36 @@ class CountryIntelligenceMonitor
                 && $item['relevance_score'] >= 2.5;
         }
 
+        if ($focus !== 'social_security') {
+            return $this->hasConfiguredFocusSignal($text, $focus)
+                && (float) ($item['relevance_score'] ?? 0) >= 2.0;
+        }
+
         return $this->hasSocialSecuritySubjectSignal($text)
             && $item['relevance_score'] >= 2.0;
+    }
+
+    private function shouldSearchNewsAggregators(string $focus): bool
+    {
+        return ! in_array($focus, ['hrms_tenders', 'erms_tenders', 'ebpc_tenders', 'sector_tenders'], true);
+    }
+
+    private function hasConfiguredFocusSignal(string $text, string $focus): bool
+    {
+        $focusConfig = ReviewFocuses::get($focus) ?? [];
+        $terms = collect($focusConfig['terms'] ?? [])
+            ->merge($focusConfig['strong_signals'] ?? [])
+            ->merge($this->databaseKeywordTerms($focus, ['en']))
+            ->map(fn ($term) => Str::lower(trim((string) $term)))
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($terms->isEmpty()) {
+            return false;
+        }
+
+        return $terms->contains(fn (string $term) => $term !== '' && Str::contains($text, $term));
     }
 
     private function itemPublicationIsFreshEnough(array $item, string $focus): bool
