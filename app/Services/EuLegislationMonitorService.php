@@ -354,13 +354,34 @@ class EuLegislationMonitorService
     private function isLegislationItem(array $item): bool
     {
         $text = Str::lower((string) ($item['raw_match_text'] ?? ''));
+        $hasOfficialLawSignal = filled($item['celex'] ?? null) && Str::contains($text, [
+            'regulation',
+            'directive',
+            'decision',
+            'official journal',
+        ]);
+
+        if (! $hasOfficialLawSignal) {
+            return false;
+        }
 
         if (ReviewFocuses::has('legislation')) {
             $focus = ReviewFocuses::get('legislation') ?? [];
+            $genericLawTerms = [
+                'celex',
+                'decision',
+                'directive',
+                'eur-lex',
+                'legislation',
+                'official journal',
+                'official journal of the european union',
+                'regulation',
+            ];
             $terms = collect($focus['terms'] ?? [])
                 ->merge($focus['strong_signals'] ?? [])
                 ->map(fn ($term) => Str::lower(trim((string) $term)))
                 ->filter()
+                ->reject(fn (string $term) => in_array($term, $genericLawTerms, true))
                 ->unique();
 
             if ($terms->isNotEmpty() && $terms->contains(fn (string $term) => Str::contains($text, $term))) {
@@ -368,7 +389,23 @@ class EuLegislationMonitorService
             }
         }
 
-        return filled($item['celex'] ?? null) && Str::contains($text, ['regulation', 'directive', 'decision', 'official journal']);
+        return Str::contains($text, [
+            'biodiversity',
+            'carbon',
+            'circular economy',
+            'climate',
+            'due diligence',
+            'emission',
+            'energy',
+            'environment',
+            'esg',
+            'greenhouse',
+            'pollution',
+            'renewable',
+            'sustainability',
+            'waste',
+            'water',
+        ]);
     }
 
     private function isNonEnglishOnlyCorrigendum(array $item): bool
