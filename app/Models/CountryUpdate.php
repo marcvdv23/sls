@@ -78,6 +78,11 @@ class CountryUpdate extends Model
         return $this->belongsTo(CountryTopic::class, 'country_topic_id');
     }
 
+    public function sourceDocument()
+    {
+        return $this->belongsTo(SourceDocument::class);
+    }
+
     public function opportunities()
     {
         return $this->hasMany(CountryUpdateOpportunity::class);

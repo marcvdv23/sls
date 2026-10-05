@@ -170,12 +170,14 @@ class EuLegislationMonitorService
                 })
                 ->first();
 
+            $htmlText = $this->retrieveLegalText($sourceUrl);
+            $displayTitle = $this->displayTitleFor($item, $htmlText);
             $summary = $this->summaryFor($item);
             $payload = [
                 'country_id' => $country->id,
                 'country_topic_id' => $topic->id,
-                'title' => Str::limit((string) $item['title'], 500, ''),
-                'title_english' => Str::limit((string) $item['title'], 500, ''),
+                'title' => Str::limit($displayTitle, 500, ''),
+                'title_english' => Str::limit($displayTitle, 500, ''),
                 'title_original' => Str::limit((string) $item['title'], 500, ''),
                 'source_name' => Str::limit((string) $item['source_name'], 255, ''),
                 'source_url' => $sourceUrl,
@@ -198,18 +200,26 @@ class EuLegislationMonitorService
             }
 
             if (blank($update->source_document_id)) {
-                $document = $this->storeSourceDocument($country, $item, $includePdf);
+                $document = $this->storeSourceDocument($country, $item, $includePdf, $htmlText, $displayTitle);
                 $update->forceFill(['source_document_id' => $document->id])->save();
+            } elseif ($update->sourceDocument) {
+                $update->sourceDocument->forceFill([
+                    'title' => $displayTitle,
+                    'source_url' => $sourceUrl,
+                    'source_date' => $item['publication_date'] ?? null,
+                    'retrieved_at' => now(),
+                ])->save();
             }
 
             return $update;
         });
     }
 
-    private function storeSourceDocument(Country $country, array $item, bool $includePdf): SourceDocument
+    private function storeSourceDocument(Country $country, array $item, bool $includePdf, ?string $htmlText = null, ?string $displayTitle = null): SourceDocument
     {
         $celex = (string) ($item['celex'] ?? '');
-        $htmlText = $this->retrieveLegalText((string) ($item['source_url'] ?? ''));
+        $htmlText ??= $this->retrieveLegalText((string) ($item['source_url'] ?? ''));
+        $displayTitle ??= $this->displayTitleFor($item, $htmlText);
         $pdfPath = null;
         $pdfUrl = (string) ($item['pdf_url'] ?? '');
 
@@ -226,7 +236,7 @@ class EuLegislationMonitorService
         $document = SourceDocument::query()->updateOrCreate(
             ['source_url' => (string) $item['source_url']],
             [
-                'title' => (string) $item['title'],
+                'title' => $displayTitle,
                 'source_type' => 'law',
                 'intake_category' => 'legislation',
                 'intake_action' => 'review',
@@ -362,6 +372,59 @@ class EuLegislationMonitorService
         ]);
 
         return implode(' ', $parts);
+    }
+
+    private function displayTitleFor(array $item, string $htmlText = ''): string
+    {
+        $legalTitle = $this->extractLegalTitle($htmlText);
+
+        if ($legalTitle !== '') {
+            return $legalTitle;
+        }
+
+        $summary = $this->plainText((string) ($item['summary'] ?? ''));
+        if ($summary !== '' && ! $this->isIdentifierOnlyTitle($summary)) {
+            return Str::limit($summary, 500, '');
+        }
+
+        $title = trim((string) ($item['title'] ?? ''));
+        if ($title !== '' && ! $this->isIdentifierOnlyTitle($title)) {
+            return $title;
+        }
+
+        return filled($item['celex'] ?? null)
+            ? 'EUR-Lex legislation ' . $item['celex']
+            : 'EUR-Lex legislation item';
+    }
+
+    private function extractLegalTitle(string $text): string
+    {
+        $text = $this->plainText($text);
+
+        if ($text === '') {
+            return '';
+        }
+
+        $patterns = [
+            '/(Corrigendum to [^.]{20,500}?(?:Regulation|Directive|Decision)[^.]{20,500}?)(?= THE EUROPEAN| HAS ADOPTED|$)/iu',
+            '/((?:Commission\s+)?(?:Delegated\s+|Implementing\s+)?(?:Regulation|Directive|Decision)\s+\(EU\)[^.]{20,500}?)(?= THE EUROPEAN| HAS ADOPTED|$)/iu',
+            '/((?:Regulation|Directive|Decision)\s+\(EU\)[^.]{20,500}?)(?= THE EUROPEAN| HAS ADOPTED|$)/iu',
+        ];
+
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $text, $matches) === 1) {
+                return Str::limit(Str::squish(trim($matches[1])), 500, '');
+            }
+        }
+
+        return '';
+    }
+
+    private function isIdentifierOnlyTitle(string $value): bool
+    {
+        $value = trim($value);
+
+        return $value === '' || preg_match('/^(?:CELEX:)?[0-9A-Z]+(?:\([0-9A-Z]+\))?$/i', $value) === 1;
     }
 
     private function relevanceScore(string $text): float
