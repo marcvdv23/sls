@@ -265,8 +265,29 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <?php if ($updates->count() > 0): ?>
-                        <?php foreach ($updates as $update): ?>
+                        <?php
+                            $reviewRows = collect($updates->items())
+                                ->sort(function ($left, $right) {
+                                    $leftPublished = $left->publication_date?->timestamp ?? 0;
+                                    $rightPublished = $right->publication_date?->timestamp ?? 0;
+
+                                    if ($leftPublished !== $rightPublished) {
+                                        return $rightPublished <=> $leftPublished;
+                                    }
+
+                                    $leftRetrieved = $left->retrieved_at?->timestamp ?? 0;
+                                    $rightRetrieved = $right->retrieved_at?->timestamp ?? 0;
+
+                                    if ($leftRetrieved !== $rightRetrieved) {
+                                        return $rightRetrieved <=> $leftRetrieved;
+                                    }
+
+                                    return ((int) $right->id) <=> ((int) $left->id);
+                                })
+                                ->values();
+                        ?>
+                        <?php if ($reviewRows->count() > 0): ?>
+                        <?php foreach ($reviewRows as $update): ?>
                             <?php
                                 $serialNumber = str_pad((string) $update->id, 5, '0', STR_PAD_LEFT);
                                 $englishTitle = trim((string) $update->title_english);
