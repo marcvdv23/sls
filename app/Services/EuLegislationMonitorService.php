@@ -204,7 +204,7 @@ class EuLegislationMonitorService
                 $update->forceFill(['source_document_id' => $document->id])->save();
             } elseif ($update->sourceDocument) {
                 $update->sourceDocument->forceFill([
-                    'title' => $displayTitle,
+                    'title' => Str::limit($displayTitle, 250, ''),
                     'source_url' => $sourceUrl,
                     'source_date' => $item['publication_date'] ?? null,
                     'retrieved_at' => now(),
@@ -236,7 +236,7 @@ class EuLegislationMonitorService
         $document = SourceDocument::query()->updateOrCreate(
             ['source_url' => (string) $item['source_url']],
             [
-                'title' => $displayTitle,
+                'title' => Str::limit($displayTitle, 250, ''),
                 'source_type' => 'law',
                 'intake_category' => 'legislation',
                 'intake_action' => 'review',
