@@ -45,7 +45,9 @@ class EurLexWebServiceClient
             ->withBody($this->soapEnvelope($expertQuery, $page, $pageSize, $language, $excludeAllConsleg, $limitToLatestConsleg, $username, $password), 'application/soap+xml; charset=utf-8')
             ->post($endpointUrl);
 
-        $response->throw();
+        if (! $response->successful()) {
+            $this->throwWebserviceError($response->status(), $response->body());
+        }
 
         return $this->parseSearchResponse($response->body());
     }
@@ -161,9 +163,56 @@ XML,
         ];
     }
 
+    private function throwWebserviceError(int $status, string $xml): never
+    {
+        $fault = $this->faultText($xml);
+
+        if ($fault !== '') {
+            throw new RuntimeException('EUR-Lex webservice fault: ' . Str::limit($fault, 1000));
+        }
+
+        throw new RuntimeException(
+            'EUR-Lex webservice returned HTTP ' . $status . ': ' . Str::limit($this->squish($xml), 1000)
+        );
+    }
+
+    private function faultText(string $xml): string
+    {
+        $document = new DOMDocument();
+
+        try {
+            $loaded = $document->loadXML($xml, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING);
+        } catch (Throwable) {
+            $loaded = false;
+        }
+
+        if (! $loaded) {
+            return '';
+        }
+
+        $xpath = new DOMXPath($document);
+        $fault = $this->firstNodeText($xpath, 'Fault');
+
+        if ($fault === '') {
+            return '';
+        }
+
+        $details = collect([
+            $this->firstNodeText($xpath, 'Text'),
+            $this->firstNodeText($xpath, 'faultstring'),
+            $this->firstNodeText($xpath, 'message'),
+        ])
+            ->filter()
+            ->unique()
+            ->implode(' ');
+
+        return $details !== '' ? $details : $fault;
+    }
+
     private function firstNodeText(DOMXPath $xpath, string $localName, ?DOMElement $context = null): string
     {
-        $nodes = $xpath->query('.//*[local-name()="' . $localName . '"]', $context);
+        $expression = ($context ? './/' : '//') . '*[local-name()="' . $localName . '"]';
+        $nodes = $xpath->query($expression, $context);
         $node = $nodes && $nodes->length > 0 ? $nodes->item(0) : null;
 
         return $node ? $this->squish($node->textContent) : '';
