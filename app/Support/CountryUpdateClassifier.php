@@ -135,28 +135,12 @@ class CountryUpdateClassifier
             return 'sector_tenders';
         }
 
-        if (ReviewFocuses::has('legislation')) {
-            $hasLegislationSource = Str::contains($text, [
-                '[legislation]',
-                'celex:',
-                'eur-lex',
-                'official journal of the european union',
-            ]);
-            $hasLegislationType = Str::contains($text, [
-                'legislation',
-                'regulation',
-                'directive',
-                'decision',
-                'official journal',
-            ]);
-
-            if ($hasLegislationSource && $hasLegislationType) {
-                return 'legislation';
-            }
+        if (self::isOfficialLegislation($text)) {
+            return 'legislation';
         }
 
         foreach (ReviewFocuses::all() as $focusKey => $focus) {
-            if (in_array($focusKey, ['social_security', 'hrms_tenders', 'erms_tenders', 'ebpc_tenders', 'sector_tenders'], true)) {
+            if (in_array($focusKey, ['social_security', 'hrms_tenders', 'erms_tenders', 'ebpc_tenders', 'sector_tenders', 'legislation'], true)) {
                 continue;
             }
 
@@ -173,6 +157,29 @@ class CountryUpdateClassifier
         }
 
         return null;
+    }
+
+    private static function isOfficialLegislation(string $text): bool
+    {
+        if (! ReviewFocuses::has('legislation')) {
+            return false;
+        }
+
+        $hasLegislationSource = Str::contains($text, [
+            '[legislation]',
+            'celex:',
+            'eur-lex',
+            'official journal of the european union',
+        ]);
+        $hasLegislationType = Str::contains($text, [
+            'legislation',
+            'regulation',
+            'directive',
+            'decision',
+            'official journal',
+        ]);
+
+        return $hasLegislationSource && $hasLegislationType;
     }
 
     public static function isTender(CountryUpdate $update): bool
