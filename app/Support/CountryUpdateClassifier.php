@@ -166,7 +166,6 @@ class CountryUpdateClassifier
         }
 
         $hasLegislationSource = Str::contains($text, [
-            '[legislation]',
             'celex:',
             'eur-lex',
             'official journal of the european union',
