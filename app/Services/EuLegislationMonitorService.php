@@ -155,12 +155,18 @@ class EuLegislationMonitorService
 
             $update = CountryUpdate::query()
                 ->where('country_id', $country->id)
-                ->where(function ($query) use ($sourceUrl, $fingerprint) {
+                ->where(function ($query) use ($item, $sourceUrl, $fingerprint) {
                     $query->where('source_url', $sourceUrl);
 
                     if ($fingerprint !== null) {
                         $query->orWhere('source_fingerprint', $fingerprint);
                     }
+
+                    $query->orWhere(function ($titleQuery) use ($item) {
+                        $titleQuery
+                            ->where('source_name', (string) $item['source_name'])
+                            ->where('title', Str::limit((string) $item['title'], 500, ''));
+                    });
                 })
                 ->first();
 
@@ -389,7 +395,7 @@ class EuLegislationMonitorService
 
     private function extractCelex(string $value): ?string
     {
-        return preg_match('/CELEX:([0-9A-Z]+)/i', $value, $matches) === 1
+        return preg_match('/CELEX:([0-9A-Z]+(?:\([0-9A-Z]+\))?)/i', $value, $matches) === 1
             ? strtoupper($matches[1])
             : null;
     }
