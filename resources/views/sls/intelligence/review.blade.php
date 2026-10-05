@@ -2,7 +2,7 @@
 
 @section('title', 'Country Intelligence Review')
 @section('eyebrow', 'Country Intelligence')
-@section('page_title', 'Tenders and Research Status')
+@section('page_title', ($focus ?? 'all') === 'legislation' ? 'Legislation Review' : 'Tenders and Research Status')
 
 @section('topbar_actions')
     <a class="button" href="{{ route('sls.intelligence.stories.create') }}">Add story</a>
@@ -92,6 +92,7 @@
 
 @section('content')
     @php($austinTz = 'America/Chicago')
+    @php($isLegislationView = $focus === 'legislation')
 
     <div class="stack">
         <section class="review-summary">
@@ -140,6 +141,16 @@
                 <a class="button {{ $retrievedFilter === 'all' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', array_filter($baseFilterQuery + ['retrieved' => 'all'])) }}">All backlog</a>
             </div>
         </section>
+
+        @if ($isLegislationView)
+            <section class="panel stack">
+                <div>
+                    <p class="eyebrow">Legislation Monitor</p>
+                    <h2>EU legislation captured from official sources</h2>
+                    <p class="muted">This view shows enacted or final-stage legislation captured from EUR-Lex. SLS stores the official source link, archives the PDF when available, and indexes the retrieved legal text so it can be searched from the knowledge tools.</p>
+                </div>
+            </section>
+        @endif
 
         <section id="country-search" class="panel stack">
             <div>
@@ -208,7 +219,13 @@
         <section class="panel stack">
             <div>
                 <p class="eyebrow">Captured Items</p>
-                <h2>{{ $countrySearchQuery !== '' ? 'Review Desk items for country search' : 'All tenders, RFPs, and intelligence items found' }}</h2>
+                <h2>
+                    @if ($isLegislationView)
+                        {{ $countrySearchQuery !== '' ? 'Legislation items for country search' : 'Legislation items found' }}
+                    @else
+                        {{ $countrySearchQuery !== '' ? 'Review Desk items for country search' : 'All tenders, RFPs, and intelligence items found' }}
+                    @endif
+                </h2>
                 <p class="muted">
                     Showing {{ $updates->firstItem() ?? 0 }}-{{ $updates->lastItem() ?? 0 }} of {{ $totalMatchingUpdates }} matching items, ordered by publication date first.
                     Use filters or Country Search to narrow the list further.
@@ -298,9 +315,12 @@
                                     : ($originalTitle !== '' && ! \App\Support\TitleLanguage::looksNonEnglish($originalTitle) ? $originalTitle : 'Translation pending');
                                 $needsTranslation = $displayEnglishTitle === 'Translation pending';
                                 $summaryText = (string) $update->summary;
-                                $evidenceLabel = str_contains($summaryText, '[Aggregator lead - verify at official source]')
+                                $isLegislationRow = $update->inferred_focus === 'legislation';
+                                $evidenceLabel = $isLegislationRow
+                                    ? 'Official law source'
+                                    : (str_contains($summaryText, '[Aggregator lead - verify at official source]')
                                     ? 'Aggregator lead'
-                                    : (str_contains($summaryText, '[Official tender source]') ? 'Official source' : 'Needs verification');
+                                    : (str_contains($summaryText, '[Official tender source]') ? 'Official source' : 'Needs verification'));
                                 $evidenceClass = $evidenceLabel === 'Official source' ? 'good' : ($evidenceLabel === 'Aggregator lead' ? 'warn' : 'bad');
                                 $defaultOpportunityProductId = ($focusProductMap ?? [])[$update->inferred_focus] ?? null;
                                 $defaultOpportunityProduct = $defaultOpportunityProductId
@@ -419,7 +439,12 @@
                                     </form>
                                 </td>
                                 <td>{{ $update->source_name ?: 'Unknown source' }}</td>
-                                <td><span class="pill {{ $evidenceClass }}">{{ $evidenceLabel }}</span></td>
+                                <td>
+                                    <span class="pill {{ $isLegislationRow ? 'good' : $evidenceClass }}">{{ $evidenceLabel }}</span>
+                                    @if ($isLegislationRow && $update->source_document_id)
+                                        <p style="margin-top:4px;"><a href="{{ route('sls.knowledge.show', $update->source_document_id) }}">Indexed law text</a></p>
+                                    @endif
+                                </td>
                                 <td>{{ $update->publication_date?->toDateString() ?: 'Not captured' }}</td>
                                 <td>{{ $update->retrieved_at?->copy()->timezone($austinTz)->format('Y-m-d H:i') ?: 'Not captured' }}</td>
                                 <td>{{ $update->relevance_score }}</td>

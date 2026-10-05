@@ -135,6 +135,26 @@ class CountryUpdateClassifier
             return 'sector_tenders';
         }
 
+        if (ReviewFocuses::has('legislation')) {
+            $hasLegislationSource = Str::contains($text, [
+                '[legislation]',
+                'celex:',
+                'eur-lex',
+                'official journal of the european union',
+            ]);
+            $hasLegislationType = Str::contains($text, [
+                'legislation',
+                'regulation',
+                'directive',
+                'decision',
+                'official journal',
+            ]);
+
+            if ($hasLegislationSource && $hasLegislationType) {
+                return 'legislation';
+            }
+        }
+
         foreach (ReviewFocuses::all() as $focusKey => $focus) {
             if (in_array($focusKey, ['social_security', 'hrms_tenders', 'erms_tenders', 'ebpc_tenders', 'sector_tenders'], true)) {
                 continue;
