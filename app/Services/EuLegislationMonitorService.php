@@ -323,7 +323,7 @@ class EuLegislationMonitorService
                 'country_id' => $country->id,
                 'chunk_title' => $chunkTitle,
                 'chunk_text' => $chunkText,
-                'citation_label' => $document->title . ', EUR-Lex',
+                'citation_label' => Str::limit($document->title . ', EUR-Lex', 250, ''),
                 ...$classification,
                 'approval_status' => 'unreviewed',
             ]);
@@ -370,12 +370,15 @@ class EuLegislationMonitorService
             $genericLawTerms = [
                 'celex',
                 'decision',
+                'decision (eu)',
                 'directive',
+                'directive (eu)',
                 'eur-lex',
                 'legislation',
                 'official journal',
                 'official journal of the european union',
                 'regulation',
+                'regulation (eu)',
             ];
             $terms = collect($focus['terms'] ?? [])
                 ->merge($focus['strong_signals'] ?? [])
