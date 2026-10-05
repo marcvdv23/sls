@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\Artisan;
 use App\Services\BankDomainGuessService;
 use App\Services\CountryIntelligenceMonitor;
 use App\Services\DemoMediaIngestionService;
+use App\Services\EuLegislationMonitorService;
 use App\Services\KnowledgeChunkClassifier;
 use App\Services\IntelligenceSourceCheckerService;
 use App\Services\IloSocialProtectionProjectDiscoveryService;
@@ -536,6 +537,52 @@ Artisan::command('sls:cleanup-serpapi-search-runs {--days=31 : Delete SerpAPI ru
 
     return 0;
 })->purpose('Discard old SerpAPI search triage history after the retention period');
+
+Artisan::command('sls:eu-legislation-monitor {--workspace=sustainability_consulting : Workspace key to run in} {--max=25 : Maximum feed items to inspect} {--days=45 : Maximum publication age in days} {--no-pdf : Do not archive official PDFs} {--dry-run : Inspect without saving}', function (EuLegislationMonitorService $monitor) {
+    $workspaceKey = trim((string) $this->option('workspace'));
+
+    if ($workspaceKey !== '' && Schema::hasTable('workspaces')) {
+        $workspaceId = DB::table('workspaces')
+            ->where('workspace_key', $workspaceKey)
+            ->where('status', 'active')
+            ->value('id');
+
+        if (! $workspaceId) {
+            $this->error('Workspace not found or inactive: ' . $workspaceKey);
+
+            return 1;
+        }
+
+        WorkspaceContext::forceWorkspace((int) $workspaceId);
+    }
+
+    $result = $monitor->run(
+        maxItems: max(1, min(100, (int) $this->option('max'))),
+        dryRun: (bool) $this->option('dry-run'),
+        recentDays: max(1, (int) $this->option('days')),
+        includePdf: ! (bool) $this->option('no-pdf'),
+    );
+
+    $this->info('EU legislation monitor completed.');
+    $this->line('Sources checked: ' . implode(', ', $result['sources_checked']));
+    $this->line('Items matched: ' . $result['items_found']);
+    $this->line('Items stored/updated: ' . $result['stored_count']);
+
+    foreach (array_slice($result['items'], 0, 20) as $item) {
+        $this->line(sprintf(
+            '- %s | %s | %s',
+            $item['publication_date'] ?? 'no date',
+            $item['celex'] ?? 'no CELEX',
+            $item['title'] ?? 'Untitled'
+        ));
+    }
+
+    foreach (array_slice($result['errors'], 0, 10) as $error) {
+        $this->warn($error);
+    }
+
+    return ($result['errors'] ?? []) === [] ? 0 : 1;
+})->purpose('Capture EU Official Journal legislation from EUR-Lex into Review Desk and searchable law documents');
 
 Artisan::command('sls:crawler-discovery-pilot {crawler_id} {--country= : Optional country name or ISO code} {--organizations=10 : Number of organizations} {--calls=10 : Maximum SerpAPI calls} {--results=5 : Results per query} {--batch-id= : Existing market_crawler_runs batch row to update} {--organization-ids= : Comma-separated staged organization IDs}', function (UniversityMarketCrawlerService $service) {
     $crawler = MarketCrawler::query()->findOrFail((int) $this->argument('crawler_id'));
@@ -2480,6 +2527,25 @@ $scheduleCountryMonitor = function (string $runTime, array $options, string $nam
         ->onOneServer();
 };
 
+$scheduleEuLegislationMonitor = function (string $runTime, array $options, string $name): void {
+    Schedule::call(function () use ($options) {
+        if (filled($options['workspace_id'] ?? null)) {
+            WorkspaceContext::forceWorkspace((int) $options['workspace_id']);
+        }
+
+        app(EuLegislationMonitorService::class)->run(
+            maxItems: (int) ($options['max'] ?? 25),
+            dryRun: false,
+            recentDays: (int) ($options['days'] ?? 45),
+            includePdf: (bool) ($options['include_pdf'] ?? true),
+        );
+    })
+        ->name($name)
+        ->dailyAt($runTime)
+        ->withoutOverlapping()
+        ->onOneServer();
+};
+
 foreach ($dailySlots as $slotIndex => $runTime) {
     $scheduleCountryMonitor($runTime, [
         'cycle' => (int) $crawlerSetting('daily_batch_size', config('country_intelligence.daily_batch_size')),
@@ -2652,6 +2718,10 @@ try {
                 $focuses = DB::table('review_focuses')
                     ->where('workspace_id', $workspaceId)
                     ->where('is_enabled', true)
+                    ->where(function ($query) {
+                        $query->whereNull('metadata')
+                            ->orWhere('metadata', 'not like', '%"monitor_driver":"eu_legislation"%');
+                    })
                     ->orderBy('sort_order')
                     ->orderBy('label')
                     ->pluck('focus_key')
@@ -2689,6 +2759,39 @@ try {
                             'name' => 'sls-workspace-' . Str::slug($workspaceKey) . '-' . Str::slug($focus) . '-' . $slotIndex,
                         ], 'sls-workspace-' . Str::slug($workspaceKey) . '-' . Str::slug($focus) . '-' . $slotIndex);
                     });
+                }
+            });
+
+        DB::table('workspaces')
+            ->where('status', 'active')
+            ->orderBy('workspace_key')
+            ->get(['id', 'workspace_key'])
+            ->each(function ($workspace) use ($scheduleEuLegislationMonitor, $workspaceCrawlerSetting, $workspaceTimeList): void {
+                $workspaceId = (int) $workspace->id;
+                $workspaceKey = (string) $workspace->workspace_key;
+                $hasEuLegislationMonitor = DB::table('review_focuses')
+                    ->where('workspace_id', $workspaceId)
+                    ->where('focus_key', 'legislation')
+                    ->where('is_enabled', true)
+                    ->where('metadata', 'like', '%"monitor_driver":"eu_legislation"%')
+                    ->exists();
+
+                if (! $hasEuLegislationMonitor) {
+                    return;
+                }
+
+                $slots = $workspaceTimeList($workspaceId, 'legislation_monitor_slots', ['05:20']);
+                $maxItems = max(1, (int) $workspaceCrawlerSetting($workspaceId, 'legislation_max_items', 25));
+                $recentDays = max(1, (int) $workspaceCrawlerSetting($workspaceId, 'legislation_recent_publication_days', 45));
+                $includePdf = filter_var($workspaceCrawlerSetting($workspaceId, 'legislation_include_pdf', 'true'), FILTER_VALIDATE_BOOL);
+
+                foreach ($slots as $slotIndex => $runTime) {
+                    $scheduleEuLegislationMonitor($runTime, [
+                        'workspace_id' => $workspaceId,
+                        'max' => $maxItems,
+                        'days' => $recentDays,
+                        'include_pdf' => $includePdf,
+                    ], 'sls-workspace-' . Str::slug($workspaceKey) . '-eu-legislation-' . $slotIndex);
                 }
             });
     }
