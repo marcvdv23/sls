@@ -584,6 +584,90 @@ Artisan::command('sls:eu-legislation-monitor {--workspace=sustainability_consult
     return ($result['errors'] ?? []) === [] ? 0 : 1;
 })->purpose('Capture EU Official Journal legislation from EUR-Lex into Review Desk and searchable law documents');
 
+Artisan::command('sls:eurlex-backfill {--workspace=sustainability_consulting : Workspace key to run in} {--from= : Start date YYYY-MM-DD} {--to= : End date YYYY-MM-DD} {--years=5 : Lookback years when --from is omitted} {--page-size= : EUR-Lex results per page} {--pages= : Maximum pages to request} {--terms= : Comma-separated query terms, otherwise legislation focus terms are used} {--query= : Raw EUR-Lex expert query override} {--endpoint= : EUR-Lex SOAP endpoint override} {--no-pdf : Do not archive official PDFs} {--dry-run : Inspect without saving}', function (EuLegislationMonitorService $monitor) {
+    $workspaceKey = trim((string) $this->option('workspace'));
+
+    if ($workspaceKey !== '' && Schema::hasTable('workspaces')) {
+        $workspaceId = DB::table('workspaces')
+            ->where('workspace_key', $workspaceKey)
+            ->where('status', 'active')
+            ->value('id');
+
+        if (! $workspaceId) {
+            $this->error('Workspace not found or inactive: ' . $workspaceKey);
+
+            return 1;
+        }
+
+        WorkspaceContext::forceWorkspace((int) $workspaceId);
+    }
+
+    $setting = function (string $key, mixed $default = null): mixed {
+        try {
+            if (! Schema::hasTable('crawler_settings')) {
+                return $default;
+            }
+
+            $value = WorkspaceContext::settingValue('crawler_settings', $key);
+
+            return filled($value) ? $value : $default;
+        } catch (\Throwable) {
+            return $default;
+        }
+    };
+
+    $to = filled($this->option('to'))
+        ? Carbon::parse((string) $this->option('to'))->endOfDay()
+        : now()->endOfDay();
+    $from = filled($this->option('from'))
+        ? Carbon::parse((string) $this->option('from'))->startOfDay()
+        : $to->copy()->subYears(max(1, (int) $this->option('years')))->startOfDay();
+    $terms = collect(explode(',', (string) ($this->option('terms') ?: $setting('eurlex_backfill_query_terms', ''))))
+        ->map(fn (string $term) => trim($term))
+        ->filter()
+        ->values()
+        ->all();
+
+    $result = $monitor->runWebserviceBackfill(
+        fromDate: $from->toDateString(),
+        toDate: $to->toDateString(),
+        pageSize: max(1, min(1000, (int) ($this->option('page-size') ?: $setting('eurlex_backfill_page_size', 25)))),
+        maxPages: max(1, (int) ($this->option('pages') ?: $setting('eurlex_backfill_max_pages_per_run', 2))),
+        dryRun: (bool) $this->option('dry-run'),
+        includePdf: ! (bool) $this->option('no-pdf'),
+        language: (string) $setting('eurlex_backfill_language', 'en'),
+        expertQuery: filled($this->option('query')) ? (string) $this->option('query') : null,
+        queryTerms: $terms,
+        endpointUrl: filled($this->option('endpoint')) ? (string) $this->option('endpoint') : (string) $setting('eurlex_webservice_endpoint_url', env('EURLEX_WEBSERVICE_ENDPOINT', 'https://eur-lex.europa.eu/EURLexWebService')),
+    );
+
+    $this->info('EUR-Lex webservice backfill completed.');
+    $this->line('Date window: ' . $result['from_date'] . ' -> ' . $result['to_date']);
+    $this->line('Total hits reported: ' . $result['total_hits']);
+    $this->line('Items matched after SLS filtering: ' . $result['items_found']);
+    $this->line('Items stored/updated: ' . $result['stored_count']);
+    $this->line('Expert query: ' . $result['expert_query']);
+
+    foreach (array_slice($result['pages'], 0, 20) as $page) {
+        $this->line(sprintf('Page %s | %s hit(s) | total %s', $page['page'] ?? '?', $page['num_hits'] ?? 0, $page['total_hits'] ?? 0));
+    }
+
+    foreach (array_slice($result['items'], 0, 20) as $item) {
+        $this->line(sprintf(
+            '- %s | %s | %s',
+            $item['publication_date'] ?? 'no date',
+            $item['celex'] ?? 'no CELEX',
+            $item['title'] ?? 'Untitled'
+        ));
+    }
+
+    foreach (array_slice($result['errors'], 0, 10) as $error) {
+        $this->warn($error);
+    }
+
+    return ($result['errors'] ?? []) === [] ? 0 : 1;
+})->purpose('Backfill EU legislation from EUR-Lex webservice into Review Desk and searchable law documents');
+
 Artisan::command('sls:crawler-discovery-pilot {crawler_id} {--country= : Optional country name or ISO code} {--organizations=10 : Number of organizations} {--calls=10 : Maximum SerpAPI calls} {--results=5 : Results per query} {--batch-id= : Existing market_crawler_runs batch row to update} {--organization-ids= : Comma-separated staged organization IDs}', function (UniversityMarketCrawlerService $service) {
     $crawler = MarketCrawler::query()->findOrFail((int) $this->argument('crawler_id'));
     $crawlerProfile = $service->profile($crawler);
@@ -2546,6 +2630,32 @@ $scheduleEuLegislationMonitor = function (string $runTime, array $options, strin
         ->onOneServer();
 };
 
+$scheduleEurLexBackfillMonitor = function (string $runTime, array $options, string $name): void {
+    Schedule::call(function () use ($options) {
+        if (filled($options['workspace_id'] ?? null)) {
+            WorkspaceContext::forceWorkspace((int) $options['workspace_id']);
+        }
+
+        $to = now()->endOfDay();
+        $from = $to->copy()->subDays(max(1, (int) ($options['delta_days'] ?? 14)))->startOfDay();
+
+        app(EuLegislationMonitorService::class)->runWebserviceBackfill(
+            fromDate: $from->toDateString(),
+            toDate: $to->toDateString(),
+            pageSize: max(1, min(1000, (int) ($options['page_size'] ?? 25))),
+            maxPages: max(1, (int) ($options['pages'] ?? 1)),
+            dryRun: false,
+            includePdf: (bool) ($options['include_pdf'] ?? true),
+            language: (string) ($options['language'] ?? 'en'),
+            endpointUrl: (string) ($options['endpoint'] ?? env('EURLEX_WEBSERVICE_ENDPOINT', 'https://eur-lex.europa.eu/EURLexWebService')),
+        );
+    })
+        ->name($name)
+        ->dailyAt($runTime)
+        ->withoutOverlapping()
+        ->onOneServer();
+};
+
 foreach ($dailySlots as $slotIndex => $runTime) {
     $scheduleCountryMonitor($runTime, [
         'cycle' => (int) $crawlerSetting('daily_batch_size', config('country_intelligence.daily_batch_size')),
@@ -2766,7 +2876,7 @@ try {
             ->where('status', 'active')
             ->orderBy('workspace_key')
             ->get(['id', 'workspace_key'])
-            ->each(function ($workspace) use ($scheduleEuLegislationMonitor, $workspaceCrawlerSetting, $workspaceTimeList): void {
+            ->each(function ($workspace) use ($scheduleEuLegislationMonitor, $scheduleEurLexBackfillMonitor, $workspaceCrawlerSetting, $workspaceTimeList): void {
                 $workspaceId = (int) $workspace->id;
                 $workspaceKey = (string) $workspace->workspace_key;
                 $hasEuLegislationMonitor = DB::table('review_focuses')
@@ -2784,6 +2894,7 @@ try {
                 $maxItems = max(1, (int) $workspaceCrawlerSetting($workspaceId, 'legislation_max_items', 250));
                 $recentDays = max(1, (int) $workspaceCrawlerSetting($workspaceId, 'legislation_recent_publication_days', 1825));
                 $includePdf = filter_var($workspaceCrawlerSetting($workspaceId, 'legislation_include_pdf', 'true'), FILTER_VALIDATE_BOOL);
+                $webserviceEnabled = filter_var($workspaceCrawlerSetting($workspaceId, 'eurlex_backfill_enabled', 'false'), FILTER_VALIDATE_BOOL);
 
                 foreach ($slots as $slotIndex => $runTime) {
                     $scheduleEuLegislationMonitor($runTime, [
@@ -2792,6 +2903,23 @@ try {
                         'days' => $recentDays,
                         'include_pdf' => $includePdf,
                     ], 'sls-workspace-' . Str::slug($workspaceKey) . '-eu-legislation-' . $slotIndex);
+                }
+
+                if ($webserviceEnabled) {
+                    $webserviceSlots = $workspaceTimeList($workspaceId, 'eurlex_backfill_monitor_slots', ['05:45']);
+                    $endpoint = (string) $workspaceCrawlerSetting($workspaceId, 'eurlex_webservice_endpoint_url', env('EURLEX_WEBSERVICE_ENDPOINT', 'https://eur-lex.europa.eu/EURLexWebService'));
+
+                    foreach ($webserviceSlots as $slotIndex => $runTime) {
+                        $scheduleEurLexBackfillMonitor($runTime, [
+                            'workspace_id' => $workspaceId,
+                            'delta_days' => max(1, (int) $workspaceCrawlerSetting($workspaceId, 'eurlex_backfill_delta_days', 14)),
+                            'page_size' => max(1, min(1000, (int) $workspaceCrawlerSetting($workspaceId, 'eurlex_backfill_page_size', 25))),
+                            'pages' => max(1, (int) $workspaceCrawlerSetting($workspaceId, 'eurlex_backfill_max_pages_per_run', 1)),
+                            'include_pdf' => $includePdf,
+                            'language' => (string) $workspaceCrawlerSetting($workspaceId, 'eurlex_backfill_language', 'en'),
+                            'endpoint' => $endpoint,
+                        ], 'sls-workspace-' . Str::slug($workspaceKey) . '-eurlex-backfill-' . $slotIndex);
+                    }
                 }
             });
     }

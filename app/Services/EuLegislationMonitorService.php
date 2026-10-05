@@ -22,7 +22,10 @@ use Throwable;
 
 class EuLegislationMonitorService
 {
-    public function __construct(private KnowledgeChunkClassifier $classifier)
+    public function __construct(
+        private KnowledgeChunkClassifier $classifier,
+        private EurLexWebServiceClient $webServiceClient,
+    )
     {
     }
 
@@ -104,6 +107,114 @@ class EuLegislationMonitorService
         ];
     }
 
+    public function runWebserviceBackfill(
+        string $fromDate,
+        string $toDate,
+        int $pageSize = 25,
+        int $maxPages = 1,
+        bool $dryRun = false,
+        bool $includePdf = true,
+        string $language = 'en',
+        ?string $expertQuery = null,
+        array $queryTerms = [],
+        ?string $endpointUrl = null,
+        ?string $username = null,
+        ?string $password = null,
+    ): array {
+        $startedAt = now();
+        $country = $dryRun ? null : $this->ensureEuropeanUnionCountry();
+        $topic = $dryRun || ! $country ? null : $this->ensureTopic($country);
+        $from = Carbon::parse($fromDate)->startOfDay();
+        $to = Carbon::parse($toDate)->endOfDay();
+        $expertQuery ??= $this->backfillExpertQuery($from, $to, $queryTerms);
+        $items = collect();
+        $pages = [];
+        $errors = [];
+        $totalHits = 0;
+
+        for ($page = 1; $page <= max(1, $maxPages); $page++) {
+            try {
+                $result = $this->webServiceClient->search(
+                    expertQuery: $expertQuery,
+                    page: $page,
+                    pageSize: max(1, min(1000, $pageSize)),
+                    language: $language,
+                    excludeAllConsleg: true,
+                    limitToLatestConsleg: false,
+                    endpointUrl: $endpointUrl,
+                    username: $username,
+                    password: $password,
+                );
+            } catch (Throwable $exception) {
+                $errors[] = $exception->getMessage();
+                break;
+            }
+
+            $pages[] = [
+                'page' => $page,
+                'num_hits' => $result['num_hits'] ?? 0,
+                'total_hits' => $result['total_hits'] ?? 0,
+            ];
+            $totalHits = max($totalHits, (int) ($result['total_hits'] ?? 0));
+
+            $pageItems = collect($result['items'] ?? []);
+            if ($pageItems->isEmpty()) {
+                break;
+            }
+
+            $items = $items->merge($pageItems);
+
+            if ($totalHits > 0 && $items->count() >= $totalHits) {
+                break;
+            }
+        }
+
+        $nonEnglishItems = $items
+            ->filter(fn (array $item) => $this->isNonEnglishOnlyCorrigendum($item))
+            ->values();
+
+        if (! $dryRun && $country && $nonEnglishItems->isNotEmpty()) {
+            $this->rejectNonEnglishItems($country, $nonEnglishItems);
+        }
+
+        $items = $items
+            ->reject(fn (array $item) => $this->isNonEnglishOnlyCorrigendum($item))
+            ->filter(fn (array $item) => $this->isLegislationItem($item))
+            ->filter(fn (array $item) => blank($item['publication_date'] ?? null) || Carbon::parse($item['publication_date'])->betweenIncluded($from, $to))
+            ->unique(fn (array $item) => $item['celex'] ?: $item['source_url'])
+            ->sortByDesc(fn (array $item) => $item['publication_date'] ?? '')
+            ->values();
+
+        $stored = collect();
+
+        if (! $dryRun && $country && $topic) {
+            $stored = $items->map(fn (array $item) => $this->storeLegislationItem($country, $topic, $item, $includePdf));
+
+            CountryMonitorRun::query()->create([
+                'country_id' => $country->id,
+                'focus' => 'legislation',
+                'started_at' => $startedAt,
+                'finished_at' => now(),
+                'sources_checked' => array_filter([$endpointUrl ?: env('EURLEX_WEBSERVICE_ENDPOINT', 'https://eur-lex.europa.eu/EURLexWebService')]),
+                'items_found' => $stored->filter(fn (CountryUpdate $update) => $update->wasRecentlyCreated)->count(),
+                'status' => $errors === [] ? 'completed' : 'completed_with_errors',
+                'error_message' => $errors === [] ? null : implode("\n", array_slice($errors, 0, 5)),
+            ]);
+        }
+
+        return [
+            'expert_query' => $expertQuery,
+            'from_date' => $from->toDateString(),
+            'to_date' => $to->toDateString(),
+            'pages' => $pages,
+            'total_hits' => $totalHits,
+            'items_found' => $items->count(),
+            'stored_count' => $stored->count(),
+            'errors' => $errors,
+            'items' => $items->all(),
+        ];
+    }
+
     private function sources(): Collection
     {
         if (! Schema::hasTable('intelligence_sources')) {
@@ -116,6 +227,76 @@ class EuLegislationMonitorService
             ->whereIn('connector', ['eurlex_official_journal_l', 'eurlex_rss'])
             ->orderBy('name')
             ->get();
+    }
+
+    private function backfillExpertQuery(Carbon $from, Carbon $to, array $queryTerms = []): string
+    {
+        $genericLawTerms = [
+            'celex',
+            'decision',
+            'decision (eu)',
+            'directive',
+            'directive (eu)',
+            'eur-lex',
+            'legislation',
+            'official journal',
+            'official journal of the european union',
+            'regulation',
+            'regulation (eu)',
+        ];
+
+        if ($queryTerms === [] && ReviewFocuses::has('legislation')) {
+            $focus = ReviewFocuses::get('legislation') ?? [];
+            $queryTerms = collect($focus['terms'] ?? [])
+                ->merge($focus['strong_signals'] ?? [])
+                ->all();
+        }
+
+        $terms = collect($queryTerms ?: [
+            'environment',
+            'climate',
+            'sustainability',
+            'emissions',
+            'carbon',
+            'energy',
+            'waste',
+            'water',
+            'biodiversity',
+            'circular economy',
+            'due diligence',
+            'esg',
+        ])
+            ->map(fn ($term) => Str::lower(trim((string) $term)))
+            ->filter()
+            ->reject(fn (string $term) => in_array($term, $genericLawTerms, true))
+            ->unique()
+            ->values();
+
+        $textQuery = $terms
+            ->map(fn (string $term) => 'Text ~ ' . $this->expertQueryValue($term))
+            ->implode(' OR ');
+
+        $dateQuery = sprintf(
+            'DD >= %s AND DD <= %s',
+            $from->format('d/m/Y'),
+            $to->format('d/m/Y'),
+        );
+
+        $documentTypeQuery = '(DN = 3*R* OR DN = 3*L* OR DN = 3*D*)';
+
+        return trim(sprintf(
+            'SELECT DN,TI_DISPLAY,DD WHERE %s AND %s%s ORDER BY DD DESC',
+            $dateQuery,
+            $documentTypeQuery,
+            $textQuery !== '' ? ' AND (' . $textQuery . ')' : '',
+        ));
+    }
+
+    private function expertQueryValue(string $value): string
+    {
+        $value = trim(str_replace('"', ' ', $value));
+
+        return str_contains($value, ' ') ? '"' . $value . '"' : $value;
     }
 
     private function readFeed(IntelligenceSource $source, int $maxItems): Collection
