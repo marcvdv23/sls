@@ -313,7 +313,7 @@ class EuLegislationMonitorService
                 'name' => 'European Union',
                 'region' => 'Europe',
                 'default_language_code' => 'en',
-                'profile_status' => 'active',
+                'profile_status' => 'draft',
             ]
         );
     }
