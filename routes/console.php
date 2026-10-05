@@ -538,7 +538,7 @@ Artisan::command('sls:cleanup-serpapi-search-runs {--days=31 : Delete SerpAPI ru
     return 0;
 })->purpose('Discard old SerpAPI search triage history after the retention period');
 
-Artisan::command('sls:eu-legislation-monitor {--workspace=sustainability_consulting : Workspace key to run in} {--max=100 : Maximum feed items to inspect} {--days=120 : Maximum publication age in days} {--no-pdf : Do not archive official PDFs} {--dry-run : Inspect without saving}', function (EuLegislationMonitorService $monitor) {
+Artisan::command('sls:eu-legislation-monitor {--workspace=sustainability_consulting : Workspace key to run in} {--max=250 : Maximum feed items to inspect} {--days=1825 : Maximum publication age in days} {--no-pdf : Do not archive official PDFs} {--dry-run : Inspect without saving}', function (EuLegislationMonitorService $monitor) {
     $workspaceKey = trim((string) $this->option('workspace'));
 
     if ($workspaceKey !== '' && Schema::hasTable('workspaces')) {
@@ -2781,8 +2781,8 @@ try {
                 }
 
                 $slots = $workspaceTimeList($workspaceId, 'legislation_monitor_slots', ['05:20']);
-                $maxItems = max(1, (int) $workspaceCrawlerSetting($workspaceId, 'legislation_max_items', 100));
-                $recentDays = max(1, (int) $workspaceCrawlerSetting($workspaceId, 'legislation_recent_publication_days', 120));
+                $maxItems = max(1, (int) $workspaceCrawlerSetting($workspaceId, 'legislation_max_items', 250));
+                $recentDays = max(1, (int) $workspaceCrawlerSetting($workspaceId, 'legislation_recent_publication_days', 1825));
                 $includePdf = filter_var($workspaceCrawlerSetting($workspaceId, 'legislation_include_pdf', 'true'), FILTER_VALIDATE_BOOL);
 
                 foreach ($slots as $slotIndex => $runTime) {

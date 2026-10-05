@@ -98,8 +98,8 @@ return new class extends Migration
         if (Schema::hasTable('crawler_settings')) {
             foreach ([
                 ['legislation_monitor_slots', '05:20', 'csv_times', 'Legislation monitor run times', 'Daily run times for workspace legislation monitors.'],
-                ['legislation_recent_publication_days', '45', 'integer', 'Legislation recent publication window', 'Maximum age in days for newly captured legislation feed items.'],
-                ['legislation_max_items', '25', 'integer', 'Legislation feed item limit', 'Maximum legislation feed items to inspect per run.'],
+                ['legislation_recent_publication_days', '1825', 'integer', 'Legislation recent publication window', 'Maximum age in days for newly captured legislation feed items.'],
+                ['legislation_max_items', '250', 'integer', 'Legislation feed item limit', 'Maximum legislation feed items to inspect per run.'],
                 ['legislation_include_pdf', 'true', 'boolean', 'Store official legislation PDFs', 'When enabled, SLS archives the official EUR-Lex PDF when available and indexes the HTML text for search.'],
             ] as [$key, $value, $type, $label, $description]) {
                 DB::table('crawler_settings')->updateOrInsert(

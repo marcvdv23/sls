@@ -69,8 +69,8 @@ return new class extends Migration
         $now = now();
 
         foreach ([
-            'legislation_recent_publication_days' => '45',
-            'legislation_max_items' => '25',
+            'legislation_recent_publication_days' => '120',
+            'legislation_max_items' => '100',
         ] as $key => $value) {
             DB::table('crawler_settings')
                 ->where('workspace_id', $workspaceId)
