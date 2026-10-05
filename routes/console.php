@@ -538,7 +538,7 @@ Artisan::command('sls:cleanup-serpapi-search-runs {--days=31 : Delete SerpAPI ru
     return 0;
 })->purpose('Discard old SerpAPI search triage history after the retention period');
 
-Artisan::command('sls:eu-legislation-monitor {--workspace=sustainability_consulting : Workspace key to run in} {--max=250 : Maximum feed items to inspect} {--days=1825 : Maximum publication age in days} {--no-pdf : Do not archive official PDFs} {--dry-run : Inspect without saving}', function (EuLegislationMonitorService $monitor) {
+Artisan::command('sls:eu-legislation-monitor {--workspace=sustainability_consulting : Workspace key to run in} {--max=250 : Maximum feed items to inspect} {--days=1825 : Maximum publication age in days} {--save-documents : Retrieve, archive, and index full legal documents for matched items} {--no-pdf : Do not archive official PDFs when --save-documents is used} {--dry-run : Inspect without saving}', function (EuLegislationMonitorService $monitor) {
     $workspaceKey = trim((string) $this->option('workspace'));
 
     if ($workspaceKey !== '' && Schema::hasTable('workspaces')) {
@@ -561,12 +561,14 @@ Artisan::command('sls:eu-legislation-monitor {--workspace=sustainability_consult
         dryRun: (bool) $this->option('dry-run'),
         recentDays: max(1, (int) $this->option('days')),
         includePdf: ! (bool) $this->option('no-pdf'),
+        saveDocuments: (bool) $this->option('save-documents'),
     );
 
     $this->info('EU legislation monitor completed.');
     $this->line('Sources checked: ' . implode(', ', $result['sources_checked']));
     $this->line('Items matched: ' . $result['items_found']);
     $this->line('Items stored/updated: ' . $result['stored_count']);
+    $this->line('Document retrieval: ' . ((bool) $this->option('save-documents') ? 'enabled' : 'review links only'));
 
     foreach (array_slice($result['source_stats'] ?? [], 0, 20) as $sourceStat) {
         $this->line(sprintf(
@@ -593,7 +595,7 @@ Artisan::command('sls:eu-legislation-monitor {--workspace=sustainability_consult
     return ($result['errors'] ?? []) === [] ? 0 : 1;
 })->purpose('Capture EU Official Journal legislation from EUR-Lex into Review Desk and searchable law documents');
 
-Artisan::command('sls:eurlex-backfill {--workspace=sustainability_consulting : Workspace key to run in} {--from= : Start date YYYY-MM-DD} {--to= : End date YYYY-MM-DD} {--years=5 : Lookback years when --from is omitted} {--page-size= : EUR-Lex results per page} {--pages= : Maximum pages to request} {--terms= : Comma-separated query terms, otherwise legislation focus terms are used} {--query= : Raw EUR-Lex expert query override} {--endpoint= : EUR-Lex SOAP endpoint override} {--no-pdf : Do not archive official PDFs} {--dry-run : Inspect without saving}', function (EuLegislationMonitorService $monitor) {
+Artisan::command('sls:eurlex-backfill {--workspace=sustainability_consulting : Workspace key to run in} {--from= : Start date YYYY-MM-DD} {--to= : End date YYYY-MM-DD} {--years=5 : Lookback years when --from is omitted} {--page-size= : EUR-Lex results per page} {--pages= : Maximum pages to request} {--terms= : Comma-separated query terms, otherwise legislation focus terms are used} {--query= : Raw EUR-Lex expert query override} {--endpoint= : EUR-Lex SOAP endpoint override} {--save-documents : Retrieve, archive, and index full legal documents for matched items} {--no-pdf : Do not archive official PDFs when --save-documents is used} {--dry-run : Inspect without saving}', function (EuLegislationMonitorService $monitor) {
     $workspaceKey = trim((string) $this->option('workspace'));
 
     if ($workspaceKey !== '' && Schema::hasTable('workspaces')) {
@@ -644,6 +646,7 @@ Artisan::command('sls:eurlex-backfill {--workspace=sustainability_consulting : W
         maxPages: max(1, (int) ($this->option('pages') ?: $setting('eurlex_backfill_max_pages_per_run', 2))),
         dryRun: (bool) $this->option('dry-run'),
         includePdf: ! (bool) $this->option('no-pdf'),
+        saveDocuments: (bool) $this->option('save-documents'),
         language: (string) $setting('eurlex_backfill_language', 'en'),
         expertQuery: filled($this->option('query')) ? (string) $this->option('query') : null,
         queryTerms: $terms,
@@ -655,6 +658,7 @@ Artisan::command('sls:eurlex-backfill {--workspace=sustainability_consulting : W
     $this->line('Total hits reported: ' . $result['total_hits']);
     $this->line('Items matched after SLS filtering: ' . $result['items_found']);
     $this->line('Items stored/updated: ' . $result['stored_count']);
+    $this->line('Document retrieval: ' . ((bool) $this->option('save-documents') ? 'enabled' : 'review links only'));
     $this->line('Expert query: ' . $result['expert_query']);
 
     foreach (array_slice($result['pages'], 0, 20) as $page) {
@@ -2631,6 +2635,7 @@ $scheduleEuLegislationMonitor = function (string $runTime, array $options, strin
             dryRun: false,
             recentDays: (int) ($options['days'] ?? 45),
             includePdf: (bool) ($options['include_pdf'] ?? true),
+            saveDocuments: (bool) ($options['save_documents'] ?? false),
         );
     })
         ->name($name)
@@ -2655,6 +2660,7 @@ $scheduleEurLexBackfillMonitor = function (string $runTime, array $options, stri
             maxPages: max(1, (int) ($options['pages'] ?? 1)),
             dryRun: false,
             includePdf: (bool) ($options['include_pdf'] ?? true),
+            saveDocuments: (bool) ($options['save_documents'] ?? false),
             language: (string) ($options['language'] ?? 'en'),
             endpointUrl: (string) ($options['endpoint'] ?? env('EURLEX_WEBSERVICE_ENDPOINT', 'https://eur-lex.europa.eu/EURLexWebService')),
         );
@@ -2903,6 +2909,7 @@ try {
                 $maxItems = max(1, (int) $workspaceCrawlerSetting($workspaceId, 'legislation_max_items', 250));
                 $recentDays = max(1, (int) $workspaceCrawlerSetting($workspaceId, 'legislation_recent_publication_days', 1825));
                 $includePdf = filter_var($workspaceCrawlerSetting($workspaceId, 'legislation_include_pdf', 'true'), FILTER_VALIDATE_BOOL);
+                $saveDocuments = filter_var($workspaceCrawlerSetting($workspaceId, 'legislation_save_documents', 'false'), FILTER_VALIDATE_BOOL);
                 $webserviceEnabled = filter_var($workspaceCrawlerSetting($workspaceId, 'eurlex_backfill_enabled', 'false'), FILTER_VALIDATE_BOOL);
 
                 foreach ($slots as $slotIndex => $runTime) {
@@ -2911,6 +2918,7 @@ try {
                         'max' => $maxItems,
                         'days' => $recentDays,
                         'include_pdf' => $includePdf,
+                        'save_documents' => $saveDocuments,
                     ], 'sls-workspace-' . Str::slug($workspaceKey) . '-eu-legislation-' . $slotIndex);
                 }
 
@@ -2925,6 +2933,7 @@ try {
                             'page_size' => max(1, min(1000, (int) $workspaceCrawlerSetting($workspaceId, 'eurlex_backfill_page_size', 25))),
                             'pages' => max(1, (int) $workspaceCrawlerSetting($workspaceId, 'eurlex_backfill_max_pages_per_run', 1)),
                             'include_pdf' => $includePdf,
+                            'save_documents' => $saveDocuments,
                             'language' => (string) $workspaceCrawlerSetting($workspaceId, 'eurlex_backfill_language', 'en'),
                             'endpoint' => $endpoint,
                         ], 'sls-workspace-' . Str::slug($workspaceKey) . '-eurlex-backfill-' . $slotIndex);

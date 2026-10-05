@@ -29,7 +29,7 @@ class EuLegislationMonitorService
     {
     }
 
-    public function run(int $maxItems = 25, bool $dryRun = false, int $recentDays = 30, bool $includePdf = true): array
+    public function run(int $maxItems = 25, bool $dryRun = false, int $recentDays = 30, bool $includePdf = true, bool $saveDocuments = false): array
     {
         $startedAt = now();
         $country = $dryRun ? null : $this->ensureEuropeanUnionCountry();
@@ -96,7 +96,7 @@ class EuLegislationMonitorService
         $stored = collect();
 
         if (! $dryRun && $country) {
-            $stored = $items->map(fn (array $item) => $this->storeLegislationItem($country, $topic, $item, $includePdf));
+            $stored = $items->map(fn (array $item) => $this->storeLegislationItem($country, $topic, $item, $includePdf, $saveDocuments));
 
             CountryMonitorRun::query()->create([
                 'country_id' => $country->id,
@@ -128,6 +128,7 @@ class EuLegislationMonitorService
         int $maxPages = 1,
         bool $dryRun = false,
         bool $includePdf = true,
+        bool $saveDocuments = false,
         string $language = 'en',
         ?string $expertQuery = null,
         array $queryTerms = [],
@@ -202,7 +203,7 @@ class EuLegislationMonitorService
         $stored = collect();
 
         if (! $dryRun && $country && $topic) {
-            $stored = $items->map(fn (array $item) => $this->storeLegislationItem($country, $topic, $item, $includePdf));
+            $stored = $items->map(fn (array $item) => $this->storeLegislationItem($country, $topic, $item, $includePdf, $saveDocuments));
 
             CountryMonitorRun::query()->create([
                 'country_id' => $country->id,
@@ -353,9 +354,9 @@ class EuLegislationMonitorService
             ->values();
     }
 
-    private function storeLegislationItem(Country $country, CountryTopic $topic, array $item, bool $includePdf): CountryUpdate
+    private function storeLegislationItem(Country $country, CountryTopic $topic, array $item, bool $includePdf, bool $saveDocuments): CountryUpdate
     {
-        return DB::transaction(function () use ($country, $topic, $item, $includePdf) {
+        return DB::transaction(function () use ($country, $topic, $item, $includePdf, $saveDocuments) {
             $sourceUrl = (string) $item['source_url'];
             $fingerprint = CountryUpdateDedupeRules::sourceFingerprint($sourceUrl);
 
@@ -376,7 +377,7 @@ class EuLegislationMonitorService
                 })
                 ->first();
 
-            $htmlText = $this->retrieveLegalText($sourceUrl);
+            $htmlText = $saveDocuments ? $this->retrieveLegalText($sourceUrl) : '';
             $displayTitle = $this->displayTitleFor($item, $htmlText);
             $summary = $this->summaryFor($item);
             $payload = [
@@ -405,10 +406,10 @@ class EuLegislationMonitorService
                 ]);
             }
 
-            if (blank($update->source_document_id)) {
+            if ($saveDocuments && blank($update->source_document_id)) {
                 $document = $this->storeSourceDocument($country, $item, $includePdf, $htmlText, $displayTitle);
                 $update->forceFill(['source_document_id' => $document->id])->save();
-            } elseif ($update->sourceDocument) {
+            } elseif ($saveDocuments && $update->sourceDocument) {
                 $update->sourceDocument->forceFill([
                     'title' => Str::limit($displayTitle, 250, ''),
                     'source_url' => $sourceUrl,

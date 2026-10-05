@@ -151,7 +151,7 @@
                 <div>
                     <p class="eyebrow">Legislation Monitor</p>
                     <h2>EU legislation captured from official sources</h2>
-                    <p class="muted">This view shows enacted or final-stage legislation captured from EUR-Lex. SLS stores the official source link, archives the PDF when available, and indexes the retrieved legal text so it can be searched from the knowledge tools.</p>
+                    <p class="muted">This view shows enacted or final-stage legislation captured from EUR-Lex. SLS stores the official source link for review first; full legal documents are saved and indexed only when a user chooses to pull them into the knowledge tools.</p>
                 </div>
             </section>
         @endif
