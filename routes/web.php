@@ -435,13 +435,7 @@ $allMapCountries = fn () => $africaCountries()->merge($caribbeanCountries())->me
 
 $relevantCountryUpdates = function ($countries, string $focus = 'social_security', ?string $publishedSince = null) {
     $focuses = ReviewFocuses::all();
-    $focus = array_key_exists($focus, $focuses) ? $focus : ReviewFocuses::defaultKey();
-    $focusConfig = $focuses[$focus] ?? [];
-    $focusLabel = $focusConfig['label'] ?? 'Country Intelligence';
-    $focusTerms = collect($focusConfig['terms'] ?? [])
-        ->merge($focusConfig['strong_signals'] ?? [])
-        ->unique()
-        ->values();
+    $focus = $focus === 'all' || array_key_exists($focus, $focuses) ? $focus : ReviewFocuses::defaultKey();
 
     $countryNames = $countries->pluck('name')->all();
     $countryIsoCodes = $countries->pluck('iso')->all();
@@ -456,58 +450,15 @@ $relevantCountryUpdates = function ($countries, string $focus = 'social_security
         ->where('review_status', '<>', 'rejected')
         ->whereHas('country', fn ($query) => $query->whereIn('name', $countryNames)->orWhereIn('iso_code', $countryIsoCodes))
         ->when($publishedSince, fn ($query) => $query->whereNotNull('publication_date')->where('publication_date', '>=', $publishedSince))
-        ->where(function ($query) use ($focus, $focusLabel, $focusTerms) {
-            if ($focus !== 'social_security') {
-                $query->where('summary', 'like', '%[' . $focusLabel . ']%');
-
-                foreach ($focusTerms as $term) {
-                    $query->orWhere('title', 'like', '%' . $term . '%')
-                        ->orWhere('summary', 'like', '%' . $term . '%');
-                }
-
-                return;
-            }
-
-            $query->where('title', 'like', '%social security%')
-                ->orWhere('title', 'like', '%pension%')
-                ->orWhere('title', 'like', '%provident%')
-                ->orWhere('title', 'like', '%tender%')
-                ->orWhere('title', 'like', '%procurement%')
-                ->orWhere('title', 'like', '%request for proposal%')
-                ->orWhere('title', 'like', '%expression of interest%')
-                ->orWhere('title', 'like', '%bid%')
-                ->orWhere('title', 'like', '%ministry of labor%')
-                ->orWhere('title', 'like', '%ministry of labour%')
-                ->orWhere('title', 'like', '%protection sociale%')
-                ->orWhere('title', 'like', '%securite sociale%')
-                ->orWhere('title', 'like', '%sÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©curitÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â© sociale%')
-                ->orWhere('title', 'like', '%retraite%')
-                ->orWhere('title', 'like', '%IPRES%')
-                ->orWhere('title', 'like', '%CSS%')
-                ->orWhere('title', 'like', '%ABSSB%')
-                ->orWhere('title', 'like', '%contribution%')
-                ->orWhere('summary', 'like', '%social security%')
-                ->orWhere('summary', 'like', '%pension%')
-                ->orWhere('summary', 'like', '%provident%')
-                ->orWhere('summary', 'like', '%tender%')
-                ->orWhere('summary', 'like', '%procurement%')
-                ->orWhere('summary', 'like', '%request for proposal%')
-                ->orWhere('summary', 'like', '%expression of interest%')
-                ->orWhere('summary', 'like', '%bid%')
-                ->orWhere('summary', 'like', '%ministry of labor%')
-                ->orWhere('summary', 'like', '%ministry of labour%')
-                ->orWhere('summary', 'like', '%protection sociale%')
-                ->orWhere('summary', 'like', '%securite sociale%')
-                ->orWhere('summary', 'like', '%sÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©curitÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â© sociale%')
-                ->orWhere('summary', 'like', '%retraite%')
-                ->orWhere('summary', 'like', '%IPRES%')
-                ->orWhere('summary', 'like', '%CSS%')
-                ->orWhere('summary', 'like', '%ABSSB%')
-                ->orWhere('summary', 'like', '%contribution%');
-        })
         ->latest('publication_date')
         ->latest('retrieved_at')
         ->get()
+        ->map(function (CountryUpdate $update) {
+            $update->inferred_focus = CountryUpdateClassifier::inferFocus($update);
+
+            return $update;
+        })
+        ->when($focus !== 'all', fn ($updates) => $updates->filter(fn (CountryUpdate $update) => $update->inferred_focus === $focus))
         ->groupBy('country_id');
 
     $containsNonLatinScript = static fn (?string $value): bool => filled($value) && preg_match('/[^\p{Latin}\p{Common}\p{Inherited}]/u', (string) $value) === 1;
@@ -588,7 +539,8 @@ $relevantCountryUpdates = function ($countries, string $focus = 'social_security
 
     return $countries->map(function (array $country) use ($dbCountries, $updatesByCountryId, $cleanEnglishTitle, $classifyMapItemType, $storySummary, $containsNonLatinScript) {
         $dbCountry = $dbCountries->get($country['iso']);
-        $updates = $dbCountry ? $updatesByCountryId->get($dbCountry->id, collect())->take(3)->values() : collect();
+        $allUpdates = $dbCountry ? $updatesByCountryId->get($dbCountry->id, collect())->values() : collect();
+        $updates = $allUpdates->take(3)->values();
         $latest = $updates->first();
         $originalTitle = $latest ? trim((string) ($latest->title_original ?: $latest->title)) : '';
         $englishTitle = $latest ? $cleanEnglishTitle($latest->title_english, $originalTitle) : '';
@@ -615,7 +567,7 @@ $relevantCountryUpdates = function ($countries, string $focus = 'social_security
         $country['latest_opened_url'] = $latest ? route('sls.intelligence.mapItems.opened', ['update' => $latest]) : null;
         $country['latest_action_url'] = $latest ? route('sls.intelligence.mapItems.action', ['update' => $latest]) : null;
         $country['latest_follow_up_url'] = $latest ? route('sls.intelligence.updates.sourcePage', ['countryUpdate' => $latest]) . '#follow-up' : null;
-        $country['update_count'] = $updates->count();
+        $country['update_count'] = $allUpdates->count();
         $country['status'] = $updates->isNotEmpty() ? 'has-update' : ($dbCountry ? 'monitored' : 'not-started');
 
         return $country;
@@ -1905,7 +1857,7 @@ Route::get('/sls', function () use ($orderedProducts, $allMapCountries, $relevan
         ->values();
     $trackedRegions = $trackedCountries->pluck('region')->filter()->unique()->sort()->values();
     $trackedLanguages = $trackedCountries->pluck('default_language_code')->filter()->map(fn ($code) => strtoupper($code))->unique()->sort()->values();
-    $dashboardMapCountries = $relevantCountryUpdates($allMapCountries(), $workspaceDefaultFocus, $publishedSince);
+    $dashboardMapCountries = $relevantCountryUpdates($allMapCountries(), 'all', $publishedSince);
     $backupRoot = PHP_OS_FAMILY === 'Windows'
         ? 'C:\\Users\\marcv\\Documents\\1G-SLS-Backups'
         : storage_path('app/backups');
