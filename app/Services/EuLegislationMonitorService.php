@@ -290,7 +290,7 @@ class EuLegislationMonitorService
         $document->chunks()->delete();
 
         foreach ($this->chunkText($text) as $index => $chunkText) {
-            $chunkTitle = $document->title . ' - legislation text ' . ($index + 1);
+            $chunkTitle = Str::limit($document->title . ' - legislation text ' . ($index + 1), 250, '');
             $classification = $this->classifier->classify($chunkTitle, $chunkText, 'law');
 
             KnowledgeChunk::query()->create([
