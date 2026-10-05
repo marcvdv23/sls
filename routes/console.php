@@ -595,6 +595,55 @@ Artisan::command('sls:eu-legislation-monitor {--workspace=sustainability_consult
     return ($result['errors'] ?? []) === [] ? 0 : 1;
 })->purpose('Capture EU Official Journal legislation from EUR-Lex into Review Desk and searchable law documents');
 
+Artisan::command('sls:eurlex-alert-import {path : Path to pasted EUR-Lex RSS alert/search result text} {--workspace=sustainability_consulting : Workspace key to import into} {--source-name=EUR-Lex pasted RSS alert : Source label to show in Review Desk} {--limit= : Optional maximum number of parsed items to import} {--dry-run : Parse without saving}', function (EuLegislationMonitorService $monitor) {
+    $workspaceKey = trim((string) $this->option('workspace'));
+
+    if ($workspaceKey !== '' && Schema::hasTable('workspaces')) {
+        $workspaceId = DB::table('workspaces')
+            ->where('workspace_key', $workspaceKey)
+            ->where('status', 'active')
+            ->value('id');
+
+        if (! $workspaceId) {
+            $this->error('Workspace not found or inactive: ' . $workspaceKey);
+
+            return 1;
+        }
+
+        WorkspaceContext::forceWorkspace((int) $workspaceId);
+    }
+
+    $path = (string) $this->argument('path');
+    if (! is_file($path) || ! is_readable($path)) {
+        $this->error('Readable import file not found: ' . $path);
+
+        return 1;
+    }
+
+    $result = $monitor->importPastedAlertText(
+        text: (string) file_get_contents($path),
+        sourceName: trim((string) $this->option('source-name')) ?: 'EUR-Lex pasted RSS alert',
+        dryRun: (bool) $this->option('dry-run'),
+        limit: filled($this->option('limit')) ? max(1, (int) $this->option('limit')) : null,
+    );
+
+    $this->info('EUR-Lex pasted alert import completed.');
+    $this->line('Items parsed: ' . $result['items_found']);
+    $this->line('Items stored/updated: ' . $result['stored_count']);
+    $this->line('Document retrieval: review links only');
+
+    foreach (array_slice($result['items'], 0, 25) as $item) {
+        $this->line(sprintf(
+            '- %s | %s | %s',
+            $item['publication_date'] ?? 'no date',
+            $item['celex'] ?? 'no CELEX',
+            $item['title'] ?? 'Untitled'
+        ));
+    }
+
+    return 0;
+})->purpose('Import pasted EUR-Lex alert/search results into Legislation Review without retrieving documents');
+
 Artisan::command('sls:eurlex-backfill {--workspace=sustainability_consulting : Workspace key to run in} {--from= : Start date YYYY-MM-DD} {--to= : End date YYYY-MM-DD} {--years=5 : Lookback years when --from is omitted} {--page-size= : EUR-Lex results per page} {--pages= : Maximum pages to request} {--terms= : Comma-separated query terms, otherwise legislation focus terms are used} {--query= : Raw EUR-Lex expert query override} {--endpoint= : EUR-Lex SOAP endpoint override} {--save-documents : Retrieve, archive, and index full legal documents for matched items} {--no-pdf : Do not archive official PDFs when --save-documents is used} {--dry-run : Inspect without saving}', function (EuLegislationMonitorService $monitor) {
     $workspaceKey = trim((string) $this->option('workspace'));
 

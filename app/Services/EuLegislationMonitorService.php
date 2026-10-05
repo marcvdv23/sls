@@ -230,6 +230,50 @@ class EuLegislationMonitorService
         ];
     }
 
+    public function importPastedAlertText(string $text, string $sourceName = 'EUR-Lex pasted RSS alert', bool $dryRun = false, ?int $limit = null): array
+    {
+        $startedAt = now();
+        $items = $this->parsePastedAlertText($text);
+
+        if ($limit !== null && $limit > 0) {
+            $items = $items->take($limit)->values();
+        }
+
+        $items = $items
+            ->reject(fn (array $item) => $this->isNonEnglishOnlyCorrigendum($item))
+            ->unique(fn (array $item) => $item['celex'] ?: $item['source_url'])
+            ->sortByDesc(fn (array $item) => $item['publication_date'] ?? '')
+            ->values();
+
+        $stored = collect();
+        $country = $dryRun ? null : $this->ensureEuropeanUnionCountry();
+        $topic = $dryRun || ! $country ? null : $this->ensureTopic($country);
+
+        if (! $dryRun && $country && $topic) {
+            $stored = $items->map(function (array $item) use ($country, $topic, $sourceName) {
+                $item['source_name'] = $sourceName;
+
+                return $this->storeLegislationItem($country, $topic, $item, includePdf: false, saveDocuments: false);
+            });
+
+            CountryMonitorRun::query()->create([
+                'country_id' => $country->id,
+                'focus' => 'legislation',
+                'started_at' => $startedAt,
+                'finished_at' => now(),
+                'sources_checked' => [$sourceName],
+                'items_found' => $stored->filter(fn (CountryUpdate $update) => $update->wasRecentlyCreated)->count(),
+                'status' => 'completed',
+            ]);
+        }
+
+        return [
+            'items_found' => $items->count(),
+            'stored_count' => $stored->count(),
+            'items' => $items->all(),
+        ];
+    }
+
     private function sources(): Collection
     {
         if (! Schema::hasTable('intelligence_sources')) {
@@ -352,6 +396,91 @@ class EuLegislationMonitorService
             })
             ->filter(fn (array $item) => filled($item['source_url']) && filled($item['title']))
             ->values();
+    }
+
+    private function parsePastedAlertText(string $text): Collection
+    {
+        $items = collect();
+        $current = null;
+        $lines = preg_split('/\R/u', str_replace("\xC2\xA0", ' ', $text)) ?: [];
+
+        $finish = function () use (&$current, &$items): void {
+            if (! $current || blank($current['title'] ?? null)) {
+                $current = null;
+
+                return;
+            }
+
+            $identifier = (string) ($current['identifier'] ?? '');
+            $title = Str::squish((string) $current['title']);
+            $celex = str_starts_with($identifier, 'CELEX:') ? Str::after($identifier, 'CELEX:') : null;
+            $sourceUrl = $this->sourceUrlForIdentifier($identifier);
+            $author = Str::squish((string) ($current['author'] ?? ''));
+            $summaryParts = array_filter([
+                $identifier ? 'Identifier: ' . $identifier . '.' : null,
+                $author ? 'Author(s): ' . $author . '.' : null,
+                'Imported from a EUR-Lex RSS alert/search result. Full legal document has not been retrieved or archived.',
+            ]);
+
+            $items->push([
+                'title' => $title,
+                'celex' => $celex,
+                'source_url' => $sourceUrl,
+                'pdf_url' => null,
+                'xml_url' => null,
+                'source_name' => 'EUR-Lex pasted RSS alert',
+                'source_connector' => 'eurlex_pasted_alert',
+                'source_feed_url' => null,
+                'publication_date' => $current['publication_date'] ?? null,
+                'summary' => implode(' ', $summaryParts),
+                'raw_match_text' => Str::squish($identifier . ' ' . $title . ' ' . $author),
+            ]);
+
+            $current = null;
+        };
+
+        foreach ($lines as $line) {
+            $line = trim($line);
+
+            if ($line === '') {
+                continue;
+            }
+
+            if (preg_match('/^((?:CELEX|CONSIL|PI_COM|PI_EESC):[^:]+):\s*(.+)$/u', $line, $matches) === 1) {
+                $finish();
+
+                $current = [
+                    'identifier' => trim($matches[1]),
+                    'title' => trim($matches[2]),
+                    'publication_date' => null,
+                    'author' => null,
+                ];
+
+                continue;
+            }
+
+            if (! $current) {
+                continue;
+            }
+
+            if (preg_match('/^Publication date\s*:\s*(.+)$/iu', $line, $matches) === 1) {
+                $current['publication_date'] = $this->parseDate($matches[1])?->toDateString();
+
+                continue;
+            }
+
+            if (preg_match('/^Author\(s\)\s*:\s*(.+)$/iu', $line, $matches) === 1) {
+                $current['author'] = trim($matches[1]);
+
+                continue;
+            }
+
+            $current['title'] = trim(($current['title'] ?? '') . ' ' . $line);
+        }
+
+        $finish();
+
+        return $items;
     }
 
     private function storeLegislationItem(Country $country, CountryTopic $topic, array $item, bool $includePdf, bool $saveDocuments): CountryUpdate
@@ -755,6 +884,15 @@ class EuLegislationMonitorService
         }
 
         return $fallback;
+    }
+
+    private function sourceUrlForIdentifier(string $identifier): string
+    {
+        if (str_starts_with($identifier, 'CELEX:')) {
+            return 'https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:' . rawurlencode(Str::after($identifier, 'CELEX:'));
+        }
+
+        return 'https://eur-lex.europa.eu/search.html?scope=EURLEX&text=' . rawurlencode($identifier) . '&lang=en&type=quick';
     }
 
     private function extractCelex(string $value): ?string
