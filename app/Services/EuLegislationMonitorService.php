@@ -38,10 +38,17 @@ class EuLegislationMonitorService
         $sourceUrls = $sources->pluck('url')->filter()->unique()->values()->all();
         $items = collect();
         $errors = [];
+        $sourceStats = [];
 
         foreach ($sources as $source) {
             try {
-                $items = $items->merge($this->readFeed($source, $maxItems));
+                $feedItems = $this->readFeed($source, $maxItems);
+                $sourceStats[] = [
+                    'name' => $source->name,
+                    'url' => $source->url,
+                    'items_read' => $feedItems->count(),
+                ];
+                $items = $items->merge($feedItems);
 
                 if (! $dryRun) {
                     $source->forceFill([
@@ -52,6 +59,12 @@ class EuLegislationMonitorService
                 }
             } catch (Throwable $exception) {
                 $errors[] = $source->name . ': ' . $exception->getMessage();
+                $sourceStats[] = [
+                    'name' => $source->name,
+                    'url' => $source->url,
+                    'items_read' => 0,
+                    'error' => $exception->getMessage(),
+                ];
 
                 if (! $dryRun) {
                     $source->forceFill([
@@ -104,6 +117,7 @@ class EuLegislationMonitorService
             'stored_count' => $stored->count(),
             'errors' => $errors,
             'items' => $items->all(),
+            'source_stats' => $sourceStats,
         ];
     }
 
@@ -328,6 +342,8 @@ class EuLegislationMonitorService
                     'pdf_url' => $celex ? $this->eurlexUrl($celex, $link, 'PDF') : null,
                     'xml_url' => $celex ? $this->eurlexUrl($celex, $link, 'XML') : null,
                     'source_name' => $source->name,
+                    'source_connector' => $source->connector,
+                    'source_feed_url' => $source->url,
                     'publication_date' => $this->parseDate((string) $item->pubDate)?->toDateString(),
                     'summary' => $description,
                     'raw_match_text' => trim($title . ' ' . $description . ' CELEX ' . $celex),
@@ -535,11 +551,15 @@ class EuLegislationMonitorService
     private function isLegislationItem(array $item): bool
     {
         $text = Str::lower((string) ($item['raw_match_text'] ?? ''));
-        $hasOfficialLawSignal = filled($item['celex'] ?? null) && Str::contains($text, [
+        $hasOfficialSource = filled($item['celex'] ?? null)
+            || Str::contains(Str::lower((string) ($item['source_name'] ?? '')), ['official journal', 'eur-lex'])
+            || Str::contains(Str::lower((string) ($item['source_connector'] ?? '')), ['eurlex_official_journal', 'eurlex_rss']);
+        $hasOfficialLawSignal = $hasOfficialSource && Str::contains($text, [
             'regulation',
             'directive',
             'decision',
             'official journal',
+            'oj:l_',
         ]);
 
         if (! $hasOfficialLawSignal) {

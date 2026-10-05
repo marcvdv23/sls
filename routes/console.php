@@ -568,6 +568,15 @@ Artisan::command('sls:eu-legislation-monitor {--workspace=sustainability_consult
     $this->line('Items matched: ' . $result['items_found']);
     $this->line('Items stored/updated: ' . $result['stored_count']);
 
+    foreach (array_slice($result['source_stats'] ?? [], 0, 20) as $sourceStat) {
+        $this->line(sprintf(
+            'Source: %s | %s feed item(s)%s',
+            $sourceStat['name'] ?? 'Unknown source',
+            $sourceStat['items_read'] ?? 0,
+            filled($sourceStat['error'] ?? null) ? ' | error: ' . $sourceStat['error'] : ''
+        ));
+    }
+
     foreach (array_slice($result['items'], 0, 20) as $item) {
         $this->line(sprintf(
             '- %s | %s | %s',
