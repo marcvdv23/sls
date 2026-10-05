@@ -60,7 +60,16 @@ class EuLegislationMonitorService
         }
 
         $cutoff = now()->subDays(max(1, $recentDays))->startOfDay();
+        $nonEnglishItems = $items
+            ->filter(fn (array $item) => $this->isNonEnglishOnlyCorrigendum($item))
+            ->values();
+
+        if (! $dryRun && $country && $nonEnglishItems->isNotEmpty()) {
+            $this->rejectNonEnglishItems($country, $nonEnglishItems);
+        }
+
         $items = $items
+            ->reject(fn (array $item) => $this->isNonEnglishOnlyCorrigendum($item))
             ->filter(fn (array $item) => $this->isLegislationItem($item))
             ->filter(fn (array $item) => blank($item['publication_date'] ?? null) || Carbon::parse($item['publication_date'])->greaterThanOrEqualTo($cutoff))
             ->unique(fn (array $item) => $item['celex'] ?: $item['source_url'])
@@ -360,6 +369,56 @@ class EuLegislationMonitorService
         }
 
         return filled($item['celex'] ?? null) && Str::contains($text, ['regulation', 'directive', 'decision', 'official journal']);
+    }
+
+    private function isNonEnglishOnlyCorrigendum(array $item): bool
+    {
+        $text = Str::lower(implode(' ', [
+            $item['title'] ?? '',
+            $item['summary'] ?? '',
+            $item['raw_match_text'] ?? '',
+        ]));
+
+        return Str::contains($text, [
+            'does not concern the english version',
+            'does not affect the english version',
+            'no afecta a la versión inglesa',
+            'non concerne la version anglaise',
+        ]);
+    }
+
+    private function rejectNonEnglishItems(Country $country, Collection $items): void
+    {
+        $items->each(function (array $item) use ($country): void {
+            CountryUpdate::query()
+                ->where('country_id', $country->id)
+                ->where('review_status', '!=', 'rejected')
+                ->where(function ($query) use ($item) {
+                    $sourceUrl = (string) ($item['source_url'] ?? '');
+                    $celex = (string) ($item['celex'] ?? '');
+                    $title = Str::limit((string) ($item['title'] ?? ''), 500, '');
+
+                    if ($sourceUrl !== '') {
+                        $query->orWhere('source_url', $sourceUrl);
+                    }
+
+                    if ($celex !== '') {
+                        $query->orWhere('summary', 'like', '%' . addcslashes('CELEX: ' . $celex, '\\%_') . '%')
+                            ->orWhere('title', 'like', '%' . addcslashes($celex, '\\%_') . '%')
+                            ->orWhere('source_url', 'like', '%' . addcslashes($celex, '\\%_') . '%');
+                    }
+
+                    if ($title !== '') {
+                        $query->orWhere('title_original', $title);
+                    }
+                })
+                ->update([
+                    'review_status' => 'rejected',
+                    'rejection_reason_code' => 'not_relevant',
+                    'rejection_reason' => 'Skipped by EU legislation monitor because the EUR-Lex corrigendum does not concern the English version.',
+                    'rejected_at' => now(),
+                ]);
+        });
     }
 
     private function summaryFor(array $item): string
