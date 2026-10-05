@@ -4109,6 +4109,19 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
         ->get()
         ->keyBy(fn (Country $country) => strtoupper((string) $country->iso_code));
     $countryIds = $dbCountries->pluck('id')->all();
+    $countrySearchTerms = collect();
+
+    if ($countrySearchQuery !== '') {
+        $countrySearchTerms = $countrySearchCountries
+            ->map(fn (Country $country) => $country->name)
+            ->push($countrySearchQuery)
+            ->filter()
+            ->map(fn ($term) => trim((string) $term))
+            ->filter(fn (string $term) => mb_strlen($term) >= 3)
+            ->unique(fn (string $term) => Str::lower($term))
+            ->values();
+    }
+
     $hasTenderSignal = fn (CountryUpdate $update): bool => CountryUpdateClassifier::isTender($update);
     $filteredUpdates = CountryUpdate::query()
         ->with(['country', 'journalistArticles.journalist'])
@@ -4120,7 +4133,34 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
                 $query->where('review_status', $activeStatusFilter);
             }
         })
-        ->whereIn('country_id', $countryIds)
+        ->when($countrySearchQuery !== '', function ($query) use ($countryIds, $countrySearchTerms) {
+            $query->where(function ($countryMatchQuery) use ($countryIds, $countrySearchTerms) {
+                if ($countryIds === [] && $countrySearchTerms->isEmpty()) {
+                    $countryMatchQuery->whereRaw('1 = 0');
+
+                    return;
+                }
+
+                if ($countryIds !== []) {
+                    $countryMatchQuery->whereIn('country_id', $countryIds);
+                }
+
+                $countrySearchTerms->each(function (string $term) use ($countryMatchQuery) {
+                    $like = '%' . addcslashes($term, '\\%_') . '%';
+
+                    $countryMatchQuery->orWhere(function ($textQuery) use ($like) {
+                        $textQuery
+                            ->where('title', 'like', $like)
+                            ->orWhere('title_english', 'like', $like)
+                            ->orWhere('title_original', 'like', $like)
+                            ->orWhere('summary', 'like', $like)
+                            ->orWhere('summary_english', 'like', $like)
+                            ->orWhere('source_name', 'like', $like)
+                            ->orWhere('source_url', 'like', $like);
+                    });
+                });
+            });
+        }, fn ($query) => $query->whereIn('country_id', $countryIds))
         ->when(in_array($publishedFilter, ['last30', 'last60', 'last120'], true), fn ($query) => $query->whereNotNull('publication_date')->where('publication_date', '>=', now()->subDays(match ($publishedFilter) {
             'last120' => 120,
             'last60' => 60,
