@@ -26,6 +26,8 @@
         .favorite-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }        label.field { display:grid; gap:4px; color:var(--text-secondary); font-weight:700; }
         .stat strong { display:block; font-family:"Sora", sans-serif; font-size:1.8rem; line-height:1; margin-bottom:4px; }
         .filters { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+        .region-filters { flex-wrap:nowrap; overflow-x:auto; padding-bottom:2px; }
+        .region-filters .button { flex:0 0 auto; }
         .review-table { min-width:1440px; table-layout:fixed; }
         .serial-col { width:5rem; }
         .country-col { width:13.5rem; }
@@ -125,6 +127,8 @@
                 <?php foreach ($focuses as $focusKey => $focusConfig): ?>
                     <a class="button {{ $focus === $focusKey ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => $focusKey, 'region' => $region]) }}">{{ $focusConfig['label'] }}</a>
                 <?php endforeach; ?>
+            </div>
+            <div class="filters region-filters" aria-label="Geographic filters">
                 <a class="button {{ $region === 'all' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => $focus, 'region' => 'all']) }}">All regions</a>
                 <a class="button {{ $region === 'africa' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => $focus, 'region' => 'africa']) }}">Africa</a>
                 <a class="button {{ $region === 'asia' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => $focus, 'region' => 'asia']) }}">Asia</a>
