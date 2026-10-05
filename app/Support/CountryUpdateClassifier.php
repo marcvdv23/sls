@@ -135,7 +135,7 @@ class CountryUpdateClassifier
             return 'sector_tenders';
         }
 
-        if (self::isOfficialLegislation($text)) {
+        if (self::isOfficialLegislation($update, $text)) {
             return 'legislation';
         }
 
@@ -159,16 +159,21 @@ class CountryUpdateClassifier
         return null;
     }
 
-    private static function isOfficialLegislation(string $text): bool
+    private static function isOfficialLegislation(CountryUpdate $update, string $text): bool
     {
         if (! ReviewFocuses::has('legislation')) {
             return false;
         }
 
-        $hasLegislationSource = Str::contains($text, [
-            'celex:',
+        $sourceText = self::sourceText($update);
+        $hasOfficialLawSource = Str::contains($sourceText, [
             'eur-lex',
+            'eurlex',
             'official journal of the european union',
+            'official journal l',
+        ]);
+        $hasCelexIdentifier = Str::contains($text, [
+            'celex:',
         ]);
         $hasLegislationType = Str::contains($text, [
             'legislation',
@@ -178,7 +183,7 @@ class CountryUpdateClassifier
             'official journal',
         ]);
 
-        return $hasLegislationSource && $hasLegislationType;
+        return ($hasOfficialLawSource || $hasCelexIdentifier) && $hasLegislationType;
     }
 
     public static function isTender(CountryUpdate $update): bool
