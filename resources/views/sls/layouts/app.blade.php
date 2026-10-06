@@ -163,8 +163,12 @@
                     <nav class="nav-section" aria-label="{{ $section }}">
                         <button class="nav-section-title" type="button" data-nav-section-toggle aria-expanded="true" aria-controls="{{ $sectionId }}">{{ $section }}</button>
                         <div id="{{ $sectionId }}" class="nav-section-links">
-                        @foreach ($links as [$label, $href, $routePattern, $icon])
+                        @foreach ($links as $link)
                             @php
+                                $label = $link[0];
+                                $href = $link[1];
+                                $routePattern = $link[2];
+                                $icon = $link[3];
                                 $isReviewRoute = request()->routeIs('sls.intelligence.review');
                                 $isRegulatoryReview = $isReviewRoute && request()->query('focus') === 'legislation';
                                 $navActive = request()->routeIs($routePattern);
