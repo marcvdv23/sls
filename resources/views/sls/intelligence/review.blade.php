@@ -29,11 +29,12 @@
         .region-filters { flex-wrap:nowrap; overflow-x:auto; padding-bottom:2px; }
         .region-filters .button { flex:0 0 auto; }
         .review-table { min-width:1440px; table-layout:fixed; }
-        .review-table.legislation-table { min-width:1120px; }
+        .review-table.legislation-table { min-width:1220px; }
         .serial-col { width:5rem; }
         .country-col { width:13.5rem; }
         .english-title-col { width:38rem; }
-        .legislation-table .english-title-col { width:52rem; }
+        .legislation-table .english-title-col { width:48rem; }
+        .legal-type-col { width:9rem; }
         .review-actions-col { width:15rem; }
         .opportunity-col { width:7.5rem; }
         .source-col { width:15rem; }
@@ -130,6 +131,8 @@
                         'region' => $region,
                         'published' => $publishedFilter ?: null,
                         'type' => $typeFilter ?: null,
+                        'legal_type' => $legislationTypeFilter ?? 'all',
+                        'legal_stage' => $legislationStageFilter ?? 'all',
                         'per_page' => $displayLimit,
                     ];
                 ?>
@@ -154,6 +157,18 @@
                 <a class="button {{ $retrievedFilter === 'last90' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', array_filter($baseFilterQuery + ['retrieved' => 'last90'])) }}">Retrieved 90 days</a>
                 <a class="button {{ $retrievedFilter === 'all' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', array_filter($baseFilterQuery + ['retrieved' => 'all'])) }}">All backlog</a>
             </div>
+            @if ($isLegislationView)
+                <div class="filters" aria-label="Legislation document type filters">
+                    @foreach (($legislationTypeOptions ?? []) as $typeKey => $typeLabel)
+                        <a class="button {{ ($legislationTypeFilter ?? 'all') === $typeKey ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', array_filter($baseFilterQuery + ['legal_type' => $typeKey, 'legal_stage' => $legislationStageFilter ?? 'all', 'retrieved' => $retrievedFilter])) }}">{{ $typeLabel }}</a>
+                    @endforeach
+                </div>
+                <div class="filters" aria-label="Legislation stage filters">
+                    @foreach (($legislationStageOptions ?? []) as $stageKey => $stageLabel)
+                        <a class="button {{ ($legislationStageFilter ?? 'all') === $stageKey ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', array_filter($baseFilterQuery + ['legal_stage' => $stageKey, 'legal_type' => $legislationTypeFilter ?? 'all', 'retrieved' => $retrievedFilter])) }}">{{ $stageLabel }}</a>
+                    @endforeach
+                </div>
+            @endif
         </section>
 
         @if ($isLegislationView)
@@ -177,6 +192,8 @@
                 <input type="hidden" name="published" value="{{ $publishedFilter }}">
                 <input type="hidden" name="retrieved" value="{{ $retrievedFilter }}">
                 <input type="hidden" name="type" value="{{ $typeFilter }}">
+                <input type="hidden" name="legal_type" value="{{ $legislationTypeFilter ?? 'all' }}">
+                <input type="hidden" name="legal_stage" value="{{ $legislationStageFilter ?? 'all' }}">
                 <input type="hidden" name="per_page" value="{{ $displayLimit }}">
                 <label class="field">
                     Country name or ISO code
@@ -284,6 +301,9 @@
                             <th class="serial-col">Serial</th>
                             <th class="country-col">Country</th>
                             <th class="english-title-col">English title</th>
+                            <?php if ($isLegislationView): ?>
+                                <th class="legal-type-col">Type</th>
+                            <?php endif; ?>
                             <th class="review-actions-col">Review</th>
                             <th class="opportunity-col">Opportunity</th>
                             <th class="source-col">Source</th>
@@ -346,6 +366,12 @@
                                 $needsTranslation = $displayEnglishTitle === 'Translation pending';
                                 $summaryText = (string) $update->summary;
                                 $isLegislationRow = $update->inferred_focus === 'legislation';
+                                $legalInstrumentLabel = $update->legal_instrument_type
+                                    ? str($update->legal_instrument_type)->replace('_', ' ')->title()
+                                    : 'Other';
+                                $legislationStageLabel = $update->legislation_stage
+                                    ? str($update->legislation_stage)->replace('_', ' ')->title()
+                                    : 'Other';
                                 $evidenceLabel = $isLegislationRow
                                     ? 'Official law source'
                                     : (str_contains($summaryText, '[Aggregator lead - verify at official source]')
@@ -440,6 +466,15 @@
                                         <?php endif; ?>
                                     </div>
                                 </td>
+                                <?php if ($isLegislationView): ?>
+                                    <td>
+                                        <span class="pill good">{{ $legalInstrumentLabel }}</span>
+                                        <p style="margin-top:4px;"><span class="pill">{{ $legislationStageLabel }}</span></p>
+                                        @if ($update->legal_document_code)
+                                            <p class="muted" style="margin-top:4px;">{{ $update->legal_document_code }}</p>
+                                        @endif
+                                    </td>
+                                <?php endif; ?>
                                 <td>
                                     @if ($update->review_status === 'rejected')
                                         <form class="drop-form" method="post" action="{{ route('sls.intelligence.updates.restore', $update) }}">
@@ -517,7 +552,7 @@
                         <?php endforeach; ?>
                         <?php else: ?>
                             <tr>
-                                <td colspan="{{ $isLegislationView ? 7 : 12 }}" class="muted">No captured items match this view yet.</td>
+                                <td colspan="{{ $isLegislationView ? 8 : 12 }}" class="muted">No captured items match this view yet.</td>
                             </tr>
                         <?php endif; ?>
                     </tbody>

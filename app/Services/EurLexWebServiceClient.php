@@ -5,6 +5,7 @@ namespace App\Services;
 use DOMDocument;
 use DOMElement;
 use DOMXPath;
+use App\Support\EurLexDocumentClassifier;
 use App\Support\EurLexTitleCleaner;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -159,9 +160,14 @@ XML,
                 continue;
             }
 
+            $classification = EurLexDocumentClassifier::classify($celex, $title, 'EUR-Lex', $sourceUrl);
+
             $results[] = [
                 'title' => $this->squish($title),
                 'celex' => $celex ? strtoupper($celex) : null,
+                'legal_document_code' => $classification['legal_document_code'],
+                'legal_instrument_type' => $classification['legal_instrument_type'],
+                'legislation_stage' => $classification['legislation_stage'],
                 'source_url' => $sourceUrl,
                 'pdf_url' => $pdfUrl,
                 'xml_url' => $xmlUrl,

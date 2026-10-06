@@ -3974,6 +3974,14 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
         $retrievedFilter = 'current';
     }
     $typeFilter = Str::of((string) $request->query('type', ''))->lower()->toString();
+    $legislationTypeFilter = Str::of((string) $request->query('legal_type', 'all'))->lower()->toString();
+    $legislationStageFilter = Str::of((string) $request->query('legal_stage', 'all'))->lower()->toString();
+    if (! in_array($legislationTypeFilter, ['all', 'regulation', 'directive', 'decision', 'proposal', 'corrigendum', 'communication', 'report', 'recommendation', 'opinion', 'other'], true)) {
+        $legislationTypeFilter = 'all';
+    }
+    if (! in_array($legislationStageFilter, ['all', 'adopted', 'proposal', 'corrigendum', 'other'], true)) {
+        $legislationStageFilter = 'all';
+    }
     $countrySearchQuery = trim((string) $request->query('country_q', ''));
     $countrySearchType = Str::of((string) $request->query('country_type', 'all'))->lower()->toString();
     $countrySearchStatus = Str::of((string) $request->query('country_status', 'all'))->lower()->toString();
@@ -4140,6 +4148,8 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
             fn ($updates) => $updates->filter(fn (CountryUpdate $update) => $update->inferred_focus !== 'legislation'),
             fn ($updates) => $updates->filter(fn (CountryUpdate $update) => $update->inferred_focus === $focus)
         )
+        ->when($focus === 'legislation' && $legislationTypeFilter !== 'all', fn ($updates) => $updates->filter(fn (CountryUpdate $update) => (string) $update->legal_instrument_type === $legislationTypeFilter))
+        ->when($focus === 'legislation' && $legislationStageFilter !== 'all', fn ($updates) => $updates->filter(fn (CountryUpdate $update) => (string) $update->legislation_stage === $legislationStageFilter))
         ->when(in_array($activeTypeFilter, ['tenders', 'news'], true), fn ($updates) => $updates->filter(fn (CountryUpdate $update) => $activeTypeFilter === 'tenders' ? $hasTenderSignal($update) : ! $hasTenderSignal($update)))
         ->when($activeStatusFilter !== 'rejected', fn ($updates) => $updates->filter(fn (CountryUpdate $update) => ! CountryUpdateNoiseRules::isStaticReferenceUrl((string) $update->source_url)))
         ->unique(fn (CountryUpdate $update) => CountryUpdateDedupeRules::reviewDuplicateKey($update))
@@ -4310,6 +4320,28 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
         'region' => $region,
         'publishedFilter' => $publishedFilter,
         'typeFilter' => $typeFilter,
+        'legislationTypeFilter' => $legislationTypeFilter,
+        'legislationStageFilter' => $legislationStageFilter,
+        'legislationTypeOptions' => [
+            'all' => 'All doc types',
+            'regulation' => 'Regulations',
+            'directive' => 'Directives',
+            'decision' => 'Decisions',
+            'proposal' => 'Proposals',
+            'corrigendum' => 'Corrigenda',
+            'communication' => 'Communications',
+            'report' => 'Reports',
+            'recommendation' => 'Recommendations',
+            'opinion' => 'Opinions',
+            'other' => 'Other',
+        ],
+        'legislationStageOptions' => [
+            'all' => 'All stages',
+            'adopted' => 'Adopted/enacted',
+            'proposal' => 'Proposals',
+            'corrigendum' => 'Corrigenda',
+            'other' => 'Other stage',
+        ],
         'retrievedFilter' => $retrievedFilter,
         'reviewDeskCurrentStart' => $reviewDeskCurrentStart,
         'displayLimit' => $perPage,

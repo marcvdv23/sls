@@ -10,6 +10,7 @@ use App\Models\IntelligenceSource;
 use App\Models\KnowledgeChunk;
 use App\Models\SourceDocument;
 use App\Support\CountryUpdateDedupeRules;
+use App\Support\EurLexDocumentClassifier;
 use App\Support\ReviewFocuses;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
@@ -384,10 +385,14 @@ class EuLegislationMonitorService
                 $link = trim((string) $item->link);
                 $description = $this->plainText((string) $item->description);
                 $celex = $this->extractCelex($title . ' ' . $link . ' ' . $description);
+                $classification = EurLexDocumentClassifier::classify($celex, $title . ' ' . $description, (string) $source->name, $link);
 
                 return [
                     'title' => $title,
                     'celex' => $celex,
+                    'legal_document_code' => $classification['legal_document_code'],
+                    'legal_instrument_type' => $classification['legal_instrument_type'],
+                    'legislation_stage' => $classification['legislation_stage'],
                     'source_url' => $this->eurlexUrl($celex, $link, 'HTML'),
                     'pdf_url' => $celex ? $this->eurlexUrl($celex, $link, 'PDF') : null,
                     'xml_url' => $celex ? $this->eurlexUrl($celex, $link, 'XML') : null,
@@ -421,6 +426,7 @@ class EuLegislationMonitorService
             $celex = str_starts_with($identifier, 'CELEX:') ? Str::after($identifier, 'CELEX:') : null;
             $sourceUrl = $this->sourceUrlForIdentifier($identifier);
             $author = Str::squish((string) ($current['author'] ?? ''));
+            $classification = EurLexDocumentClassifier::classify($celex, $title, 'EUR-Lex pasted RSS alert', $sourceUrl);
             $summaryParts = array_filter([
                 $identifier ? 'Identifier: ' . $identifier . '.' : null,
                 $author ? 'Author(s): ' . $author . '.' : null,
@@ -430,6 +436,9 @@ class EuLegislationMonitorService
             $items->push([
                 'title' => $title,
                 'celex' => $celex,
+                'legal_document_code' => $classification['legal_document_code'],
+                'legal_instrument_type' => $classification['legal_instrument_type'],
+                'legislation_stage' => $classification['legislation_stage'],
                 'source_url' => $sourceUrl,
                 'pdf_url' => null,
                 'xml_url' => null,
@@ -514,6 +523,12 @@ class EuLegislationMonitorService
             $htmlText = $saveDocuments ? $this->retrieveLegalText($sourceUrl) : '';
             $displayTitle = $this->displayTitleFor($item, $htmlText);
             $summary = $this->summaryFor($item);
+            $classification = EurLexDocumentClassifier::classify(
+                $item['celex'] ?? $item['legal_document_code'] ?? null,
+                $displayTitle . ' ' . ((string) ($item['raw_match_text'] ?? $item['summary'] ?? '')),
+                (string) ($item['source_name'] ?? ''),
+                $sourceUrl,
+            );
             $payload = [
                 'country_id' => $country->id,
                 'country_topic_id' => $topic->id,
@@ -523,6 +538,9 @@ class EuLegislationMonitorService
                 'source_name' => Str::limit((string) $item['source_name'], 255, ''),
                 'source_url' => $sourceUrl,
                 'source_fingerprint' => $fingerprint,
+                'legal_document_code' => $classification['legal_document_code'],
+                'legal_instrument_type' => $classification['legal_instrument_type'],
+                'legislation_stage' => $classification['legislation_stage'],
                 'publication_date' => $item['publication_date'] ?? null,
                 'retrieved_at' => now(),
                 'summary' => $summary,
@@ -801,12 +819,26 @@ class EuLegislationMonitorService
     {
         $focusLabel = ReviewFocuses::get('legislation')['label'] ?? 'Legislation';
         $parts = array_filter([
-            '[' . $focusLabel . '] Enacted or Official Journal EU legislation item from EUR-Lex.',
+            '[' . $focusLabel . '] ' . $this->legislationMetadataLabel($item) . ' from EUR-Lex.',
             filled($item['celex'] ?? null) ? 'CELEX: ' . $item['celex'] . '.' : null,
             filled($item['summary'] ?? null) ? Str::limit($this->plainText((string) $item['summary']), 700) : null,
         ]);
 
         return implode(' ', $parts);
+    }
+
+    private function legislationMetadataLabel(array $item): string
+    {
+        $type = str_replace('_', ' ', (string) ($item['legal_instrument_type'] ?? 'legislation'));
+        $stage = str_replace('_', ' ', (string) ($item['legislation_stage'] ?? ''));
+
+        if ($type === '') {
+            $type = 'legislation';
+        }
+
+        return trim($stage !== '' && $stage !== 'other'
+            ? Str::title($stage) . ' ' . $type
+            : Str::title($type));
     }
 
     private function displayTitleFor(array $item, string $htmlText = ''): string
