@@ -1,8 +1,10 @@
 ﻿@extends('sls.layouts.app')
 
+@php($isLegislationView = ($focus ?? null) === 'legislation')
+
 @section('title', 'Country Intelligence Review')
 @section('eyebrow', 'Country Intelligence')
-@section('page_title', ($focus ?? 'all') === 'legislation' ? 'Legislation Review' : 'Tenders and Research Status')
+@section('page_title', $isLegislationView ? 'Legislation Review' : 'Tenders and Research Status')
 
 @section('topbar_actions')
     <a class="button" href="{{ route('sls.intelligence.stories.create') }}">Add story</a>
