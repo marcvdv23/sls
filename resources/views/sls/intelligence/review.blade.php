@@ -330,15 +330,7 @@
                                     ? $englishTitle
                                     : ($originalTitle !== '' && ! \App\Support\TitleLanguage::looksNonEnglish($originalTitle) ? $originalTitle : 'Translation pending');
                                 if ($isLegislationView && $displayEnglishTitle !== 'Translation pending') {
-                                    $displayEnglishTitle = trim(preg_replace('/\s+/', ' ', $displayEnglishTitle) ?? $displayEnglishTitle);
-
-                                    if (preg_match('/\b(?:Commission|Council|European Parliament|Regulation|Directive|Decision|Corrigendum|Proposal|Communication|Report)\b.*$/u', $displayEnglishTitle, $legislationTitleMatches) === 1) {
-                                        $cleanTitleCandidate = trim($legislationTitleMatches[0]);
-
-                                        if ($cleanTitleCandidate !== '' && strlen($cleanTitleCandidate) >= 30) {
-                                            $displayEnglishTitle = $cleanTitleCandidate;
-                                        }
-                                    }
+                                    $displayEnglishTitle = \App\Support\EurLexTitleCleaner::clean($displayEnglishTitle);
                                 }
                                 $displayHighlightedTitle = e($displayEnglishTitle);
                                 if ($isLegislationView && $displayEnglishTitle !== 'Translation pending') {

@@ -5,6 +5,7 @@ namespace App\Services;
 use DOMDocument;
 use DOMElement;
 use DOMXPath;
+use App\Support\EurLexTitleCleaner;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -361,17 +362,7 @@ XML,
 
     private function cleanTitle(string $title): string
     {
-        $title = $this->squish($title);
-
-        if (preg_match('/\b(?:Commission|Council|European Parliament|Regulation|Directive|Decision|Corrigendum|Proposal|Communication|Report)\b.*$/u', $title, $matches) === 1) {
-            $candidate = trim($matches[0]);
-
-            if ($candidate !== '' && strlen($candidate) >= 30) {
-                return $candidate;
-            }
-        }
-
-        return $title;
+        return EurLexTitleCleaner::clean($title);
     }
 
     private function normalDate(?string $value): ?string
