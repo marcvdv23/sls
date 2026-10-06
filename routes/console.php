@@ -644,7 +644,7 @@ Artisan::command('sls:eurlex-alert-import {path : Path to pasted EUR-Lex RSS ale
     return 0;
 })->purpose('Import pasted EUR-Lex alert/search results into Legislation Review without retrieving documents');
 
-Artisan::command('sls:eurlex-backfill {--workspace=sustainability_consulting : Workspace key to run in} {--from= : Start date YYYY-MM-DD} {--to= : End date YYYY-MM-DD} {--years=5 : Lookback years when --from is omitted} {--page-size= : EUR-Lex results per page} {--pages= : Maximum pages to request} {--terms= : Comma-separated query terms, otherwise legislation focus terms are used} {--query= : Raw EUR-Lex expert query override} {--endpoint= : EUR-Lex SOAP endpoint override} {--save-documents : Retrieve, archive, and index full legal documents for matched items} {--no-pdf : Do not archive official PDFs when --save-documents is used} {--dry-run : Inspect without saving}', function (EuLegislationMonitorService $monitor) {
+Artisan::command('sls:eurlex-backfill {--workspace=sustainability_consulting : Workspace key to run in} {--from= : Start date YYYY-MM-DD} {--to= : End date YYYY-MM-DD} {--years=5 : Lookback years when --from is omitted} {--page-size= : EUR-Lex results per page} {--pages= : Maximum pages to request} {--page-delay= : Seconds to wait between EUR-Lex webservice pages} {--terms= : Comma-separated query terms, otherwise legislation focus terms are used} {--query= : Raw EUR-Lex expert query override} {--endpoint= : EUR-Lex SOAP endpoint override} {--save-documents : Retrieve, archive, and index full legal documents for matched items} {--no-pdf : Do not archive official PDFs when --save-documents is used} {--dry-run : Inspect without saving}', function (EuLegislationMonitorService $monitor) {
     $workspaceKey = trim((string) $this->option('workspace'));
 
     if ($workspaceKey !== '' && Schema::hasTable('workspaces')) {
@@ -700,6 +700,7 @@ Artisan::command('sls:eurlex-backfill {--workspace=sustainability_consulting : W
         expertQuery: filled($this->option('query')) ? (string) $this->option('query') : null,
         queryTerms: $terms,
         endpointUrl: filled($this->option('endpoint')) ? (string) $this->option('endpoint') : (string) $setting('eurlex_webservice_endpoint_url', env('EURLEX_WEBSERVICE_ENDPOINT', 'https://eur-lex.europa.eu/EURLexWebService')),
+        pageDelaySeconds: max(0, (int) ($this->option('page-delay') ?: $setting('eurlex_backfill_page_delay_seconds', 10))),
     );
 
     $this->info('EUR-Lex webservice backfill completed.');
@@ -2712,6 +2713,7 @@ $scheduleEurLexBackfillMonitor = function (string $runTime, array $options, stri
             saveDocuments: (bool) ($options['save_documents'] ?? false),
             language: (string) ($options['language'] ?? 'en'),
             endpointUrl: (string) ($options['endpoint'] ?? env('EURLEX_WEBSERVICE_ENDPOINT', 'https://eur-lex.europa.eu/EURLexWebService')),
+            pageDelaySeconds: max(0, (int) ($options['page_delay_seconds'] ?? 10)),
         );
     })
         ->name($name)
@@ -2985,6 +2987,7 @@ try {
                             'save_documents' => $saveDocuments,
                             'language' => (string) $workspaceCrawlerSetting($workspaceId, 'eurlex_backfill_language', 'en'),
                             'endpoint' => $endpoint,
+                            'page_delay_seconds' => max(0, (int) $workspaceCrawlerSetting($workspaceId, 'eurlex_backfill_page_delay_seconds', 10)),
                         ], 'sls-workspace-' . Str::slug($workspaceKey) . '-eurlex-backfill-' . $slotIndex);
                     }
                 }

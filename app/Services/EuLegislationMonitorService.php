@@ -135,6 +135,7 @@ class EuLegislationMonitorService
         ?string $endpointUrl = null,
         ?string $username = null,
         ?string $password = null,
+        int $pageDelaySeconds = 10,
     ): array {
         $startedAt = now();
         $country = $dryRun ? null : $this->ensureEuropeanUnionCountry();
@@ -148,6 +149,10 @@ class EuLegislationMonitorService
         $totalHits = 0;
 
         for ($page = 1; $page <= max(1, $maxPages); $page++) {
+            if ($page > 1 && $pageDelaySeconds > 0) {
+                sleep(min(120, $pageDelaySeconds));
+            }
+
             try {
                 $result = $this->webServiceClient->search(
                     expertQuery: $expertQuery,
