@@ -102,8 +102,8 @@
                         ],
                     ] : ($slsBasicReviewerOnly ? [
                         'Review' => [
-                            ['Regulatory Radar', route('sls.intelligence.regulatoryRadar'), 'sls.intelligence.regulatoryRadar', 'REG'],
-                            ['Stories & Tenders', route('sls.intelligence.storiesTenders'), 'sls.intelligence.storiesTenders', 'REV'],
+                            ['Regulatory Radar', url('/sls/intelligence/regulatory-radar'), 'sls.intelligence.regulatoryRadar', 'REG'],
+                            ['Stories & Tenders', url('/sls/intelligence/review/stories-tenders'), 'sls.intelligence.storiesTenders', 'REV'],
                             ['Keywords', route('sls.intelligence.keywords'), 'sls.intelligence.keywords*', '#'],
                             ['Opportunities', route('sls.opportunities.index'), 'sls.opportunities.*', 'OPP'],
                             ['To Do', route('sls.tasks.index'), 'sls.tasks.*', 'TODO'],
@@ -120,7 +120,7 @@
                         ],
                         'Intelligence' => [
                             [$slsReviewLabel, route('sls.intelligence.review'), 'sls.intelligence.review', 'REV'],
-                            ['Regulatory Radar', route('sls.intelligence.regulatoryRadar'), 'sls.intelligence.regulatoryRadar', 'REG'],
+                            ['Regulatory Radar', url('/sls/intelligence/regulatory-radar'), 'sls.intelligence.regulatoryRadar', 'REG'],
                             ['Add Story', route('sls.intelligence.stories.create'), 'sls.intelligence.stories.*', '+'],
                             ['Opportunity Intake', route('sls.intelligence.opportunityIntake.create'), 'sls.intelligence.opportunityIntake.*', 'IN'],
                             ['Awarded Companies', route('sls.intelligence.awardedCompanies.index'), 'sls.intelligence.awardedCompanies.*', 'AWD'],
