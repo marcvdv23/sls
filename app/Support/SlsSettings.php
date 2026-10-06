@@ -119,6 +119,13 @@ class SlsSettings
                 'value_type' => 'text',
                 'default' => '',
             ],
+            'workspace.regulatory_radar_show_region_filter' => [
+                'group' => 'Workspace',
+                'label' => 'Show Regulatory Radar region filter',
+                'description' => 'Show the region dropdown on Regulatory Radar. Leave off for EU-only regulatory review.',
+                'value_type' => 'boolean',
+                'default' => '0',
+            ],
             'workspace.source_classes' => [
                 'group' => 'Workspace Sources',
                 'label' => 'Included source classes',

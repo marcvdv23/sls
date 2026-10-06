@@ -138,6 +138,7 @@
 @section('content')
     @php($austinTz = 'America/Chicago')
     @php($isLegislationView = $focus === 'legislation')
+    @php($showRegulatoryRadarRegionFilter = (bool) ($showRegulatoryRadarRegionFilter ?? false))
     @php($legislationHighlightTerms = $legislationHighlightTerms ?? [])
 
     <div class="stack">
@@ -163,27 +164,37 @@
                 <input type="hidden" name="published" value="{{ $publishedFilter }}">
                 <input type="hidden" name="type" value="{{ $typeFilter }}">
                 <input type="hidden" name="per_page" value="{{ $displayLimit }}">
-                <label class="field">
-                    Product focus
-                    <select name="focus">
-                        <option value="all" @selected($focus === 'all')>All items</option>
-                        @foreach ($focuses as $focusKey => $focusConfig)
-                            <option value="{{ $focusKey }}" @selected($focus === $focusKey)>{{ $focusConfig['label'] }}</option>
-                        @endforeach
-                    </select>
-                </label>
-                <label class="field">
-                    Region
-                    <select name="region">
-                        <option value="all" @selected($region === 'all')>All regions</option>
-                        <option value="africa" @selected($region === 'africa')>Africa</option>
-                        <option value="asia" @selected($region === 'asia')>Asia</option>
-                        <option value="caribbean" @selected($region === 'caribbean')>Caribbean</option>
-                        <option value="latin_america" @selected($region === 'latin_america')>Latin America</option>
-                        <option value="north_america" @selected($region === 'north_america')>North America</option>
-                        <option value="europe" @selected($region === 'europe')>Europe</option>
-                    </select>
-                </label>
+                @if ($isLegislationView)
+                    <input type="hidden" name="focus" value="legislation">
+                @else
+                    <label class="field">
+                        Product focus
+                        <select name="focus">
+                            <option value="all" @selected($focus === 'all')>All items</option>
+                            @foreach ($focuses as $focusKey => $focusConfig)
+                                @if ($focusKey !== 'legislation')
+                                    <option value="{{ $focusKey }}" @selected($focus === $focusKey)>{{ $focusConfig['label'] }}</option>
+                                @endif
+                            @endforeach
+                        </select>
+                    </label>
+                @endif
+                @if (! $isLegislationView || $showRegulatoryRadarRegionFilter)
+                    <label class="field">
+                        Region
+                        <select name="region">
+                            <option value="all" @selected($region === 'all')>All regions</option>
+                            <option value="africa" @selected($region === 'africa')>Africa</option>
+                            <option value="asia" @selected($region === 'asia')>Asia</option>
+                            <option value="caribbean" @selected($region === 'caribbean')>Caribbean</option>
+                            <option value="latin_america" @selected($region === 'latin_america')>Latin America</option>
+                            <option value="north_america" @selected($region === 'north_america')>North America</option>
+                            <option value="europe" @selected($region === 'europe')>Europe</option>
+                        </select>
+                    </label>
+                @else
+                    <input type="hidden" name="region" value="global">
+                @endif
                 <label class="field">
                     Retrieved
                     <select name="retrieved">

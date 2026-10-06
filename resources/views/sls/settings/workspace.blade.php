@@ -114,6 +114,12 @@
                                 <div class="settings-control">
                                     @if ($setting->value_type === 'text')
                                         <textarea id="setting-{{ \Illuminate\Support\Str::slug($setting->setting_key) }}" name="settings[{{ $setting->setting_key }}]">{{ old('settings.' . $setting->setting_key, $setting->setting_value) }}</textarea>
+                                    @elseif ($setting->value_type === 'boolean')
+                                        <input type="hidden" name="settings[{{ $setting->setting_key }}]" value="0">
+                                        <label style="display:flex;align-items:center;gap:8px;font-weight:700;color:var(--text-secondary);">
+                                            <input id="setting-{{ \Illuminate\Support\Str::slug($setting->setting_key) }}" name="settings[{{ $setting->setting_key }}]" type="checkbox" value="1" @checked(in_array((string) old('settings.' . $setting->setting_key, $setting->setting_value), ['1', 'true', 'on'], true))>
+                                            Enabled
+                                        </label>
                                     @else
                                         <input id="setting-{{ \Illuminate\Support\Str::slug($setting->setting_key) }}" name="settings[{{ $setting->setting_key }}]" type="text" value="{{ old('settings.' . $setting->setting_key, $setting->setting_value) }}" autocomplete="off">
                                     @endif

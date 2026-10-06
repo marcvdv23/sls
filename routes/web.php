@@ -4371,6 +4371,7 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
         'focusProductMap' => $reviewFocusProductMap,
         'focus' => $focus,
         'isLegislationView' => $focus === 'legislation',
+        'showRegulatoryRadarRegionFilter' => SlsSettings::get('workspace.regulatory_radar_show_region_filter', '0') === '1',
         'region' => $region,
         'publishedFilter' => $publishedFilter,
         'typeFilter' => $typeFilter,
