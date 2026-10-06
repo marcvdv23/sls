@@ -143,6 +143,7 @@
             ->reject(fn ($term) => in_array(Str::lower($term), $genericLegislationTerms, true))
             ->unique(fn ($term) => Str::lower($term))
             ->sortByDesc(fn ($term) => mb_strlen($term))
+            ->take(80)
             ->values()
             ->all();
         $cleanLegislationTitle = function (string $title): string {
@@ -159,17 +160,22 @@
             return $title;
         };
         $highlightLegislationTitle = function (string $title) use ($legislationHighlightTerms): string {
-            $escapedTitle = e($title);
+            $highlightedTitle = e($title);
 
             if ($legislationHighlightTerms === []) {
-                return $escapedTitle;
+                return $highlightedTitle;
             }
 
-            $pattern = '/(' . collect($legislationHighlightTerms)
-                ->map(fn ($term) => preg_quote($term, '/'))
-                ->implode('|') . ')/iu';
+            foreach ($legislationHighlightTerms as $term) {
+                $pattern = '/' . preg_quote($term, '/') . '/iu';
+                $nextTitle = preg_replace($pattern, '<mark class="match-highlight">$0</mark>', $highlightedTitle);
 
-            return preg_replace($pattern, '<mark class="match-highlight">$1</mark>', $escapedTitle) ?? $escapedTitle;
+                if (is_string($nextTitle)) {
+                    $highlightedTitle = $nextTitle;
+                }
+            }
+
+            return $highlightedTitle;
         };
         $sourceDisplayName = function (?string $sourceName): string {
             $sourceName = trim((string) $sourceName);
