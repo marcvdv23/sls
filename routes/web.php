@@ -4258,6 +4258,7 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
         'products' => $reviewProducts,
         'focusProductMap' => $reviewFocusProductMap,
         'focus' => $focus,
+        'isLegislationView' => $focus === 'legislation',
         'region' => $region,
         'publishedFilter' => $publishedFilter,
         'typeFilter' => $typeFilter,

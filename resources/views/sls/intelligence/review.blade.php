@@ -1,4 +1,4 @@
-﻿@extends('sls.layouts.app')
+@extends('sls.layouts.app')
 
 @php($isLegislationView = ($focus ?? null) === 'legislation')
 
