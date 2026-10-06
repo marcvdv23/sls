@@ -172,6 +172,11 @@ class CountryUpdateClassifier
             'official journal of the european union',
             'official journal l',
         ]);
+
+        if ($hasOfficialLawSource) {
+            return true;
+        }
+
         $hasCelexIdentifier = Str::contains($text, [
             'celex:',
         ]);

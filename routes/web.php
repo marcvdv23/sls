@@ -4255,6 +4255,50 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
         ->mapWithKeys(fn (Product $product) => [$productFocusKey($product) => $product->id])
         ->all();
 
+    $genericLegislationTerms = [
+        'celex',
+        'decision',
+        'decision (eu)',
+        'directive',
+        'directive (eu)',
+        'eur-lex',
+        'legislation',
+        'official journal',
+        'official journal of the european union',
+        'regulation',
+        'regulation (eu)',
+    ];
+    $legislationHighlightTerms = collect($focuses['legislation']['terms'] ?? [])
+        ->merge($focuses['legislation']['strong_signals'] ?? [])
+        ->merge([
+            'biodiversity',
+            'carbon',
+            'cbam',
+            'circular economy',
+            'climate',
+            'co2',
+            'due diligence',
+            'emission',
+            'energy',
+            'environment',
+            'esg',
+            'fluorinated greenhouse gases',
+            'greenhouse gases',
+            'pollution',
+            'renewable',
+            'sustainability',
+            'waste',
+            'water',
+        ])
+        ->map(fn ($term) => trim((string) $term))
+        ->filter()
+        ->reject(fn ($term) => in_array(Str::lower($term), $genericLegislationTerms, true))
+        ->unique(fn ($term) => Str::lower($term))
+        ->sortByDesc(fn ($term) => strlen($term))
+        ->take(60)
+        ->values()
+        ->all();
+
     return view('sls.intelligence.review', [
         'updates' => $updates,
         'countryStatus' => $countryStatus,
@@ -4271,6 +4315,7 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
         'displayLimit' => $perPage,
         'totalMatchingUpdates' => $totalMatchingUpdates,
         'focuses' => $focuses,
+        'legislationHighlightTerms' => $legislationHighlightTerms,
         'totalCountries' => $countryStatus->count(),
         'researchedCountries' => $countryStatus->filter(fn (array $country) => $country['last_researched'] !== null)->count(),
         'countrySearchQuery' => $countrySearchQuery,

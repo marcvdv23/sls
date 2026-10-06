@@ -102,56 +102,7 @@
 @section('content')
     @php($austinTz = 'America/Chicago')
     @php($isLegislationView = $focus === 'legislation')
-    @php
-        $legislationHighlightTerms = [];
-
-        if ($isLegislationView) {
-            $genericLegislationTerms = [
-                'celex',
-                'decision',
-                'decision (eu)',
-                'directive',
-                'directive (eu)',
-                'eur-lex',
-                'legislation',
-                'official journal',
-                'official journal of the european union',
-                'regulation',
-                'regulation (eu)',
-            ];
-
-            $legislationHighlightTerms = collect($focuses['legislation']['terms'] ?? [])
-                ->merge($focuses['legislation']['strong_signals'] ?? [])
-                ->merge([
-                    'biodiversity',
-                    'carbon',
-                    'cbam',
-                    'circular economy',
-                    'climate',
-                    'co2',
-                    'due diligence',
-                    'emission',
-                    'energy',
-                    'environment',
-                    'esg',
-                    'fluorinated greenhouse gases',
-                    'greenhouse gases',
-                    'pollution',
-                    'renewable',
-                    'sustainability',
-                    'waste',
-                    'water',
-                ])
-                ->map(fn ($term) => trim((string) $term))
-                ->filter()
-                ->reject(fn ($term) => in_array(Str::lower($term), $genericLegislationTerms, true))
-                ->unique(fn ($term) => Str::lower($term))
-                ->sortByDesc(fn ($term) => strlen($term))
-                ->take(60)
-                ->values()
-                ->all();
-        }
-    @endphp
+    @php($legislationHighlightTerms = $legislationHighlightTerms ?? [])
 
     <div class="stack">
         <section class="review-summary">
@@ -173,13 +124,15 @@
             <p class="eyebrow">Filters</p>
             <h2>Review by product focus and region</h2>
             <div class="filters">
-                @php($baseFilterQuery = [
-                    'focus' => $focus,
-                    'region' => $region,
-                    'published' => $publishedFilter ?: null,
-                    'type' => $typeFilter ?: null,
-                    'per_page' => $displayLimit,
-                ])
+                <?php
+                    $baseFilterQuery = [
+                        'focus' => $focus,
+                        'region' => $region,
+                        'published' => $publishedFilter ?: null,
+                        'type' => $typeFilter ?: null,
+                        'per_page' => $displayLimit,
+                    ];
+                ?>
                 <a class="button {{ $focus === 'all' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => 'all', 'region' => $region]) }}">All items</a>
                 <?php foreach ($focuses as $focusKey => $focusConfig): ?>
                     <a class="button {{ $focus === $focusKey ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => $focusKey, 'region' => $region]) }}">{{ $focusConfig['label'] }}</a>
@@ -533,7 +486,7 @@
                                         <select name="product_id" aria-label="Map {{ $serialNumber }} to product">
                                             @foreach ($products as $product)
                                                 <option value="{{ $product->id }}" @selected($defaultOpportunityProduct && (int) $product->id === (int) $defaultOpportunityProduct->id)>
-                                                    {{ Str::after($product->name, 'Interact ') ?: $product->name }}
+                                                    {{ \Illuminate\Support\Str::after($product->name, 'Interact ') ?: $product->name }}
                                                 </option>
                                             @endforeach
                                         </select>
@@ -541,7 +494,7 @@
                                     </form>
                                 </td>
                                 @php($displaySourceName = trim((string) $update->source_name))
-                                <td>{{ Str::contains(Str::lower($displaySourceName), 'eur-lex') ? 'EUR-Lex' : ($displaySourceName !== '' ? $displaySourceName : 'Unknown source') }}</td>
+                                <td>{{ \Illuminate\Support\Str::contains(\Illuminate\Support\Str::lower($displaySourceName), 'eur-lex') ? 'EUR-Lex' : ($displaySourceName !== '' ? $displaySourceName : 'Unknown source') }}</td>
                                 <td>
                                     <span class="pill {{ $isLegislationRow ? 'good' : $evidenceClass }}">{{ $evidenceLabel }}</span>
                                     @if ($isLegislationRow && $update->source_document_id)
