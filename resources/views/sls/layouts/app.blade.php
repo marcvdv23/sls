@@ -167,11 +167,13 @@
                             @php
                                 $isReviewRoute = request()->routeIs('sls.intelligence.review');
                                 $isRegulatoryReview = $isReviewRoute && request()->query('focus') === 'legislation';
-                                $navActive = match ($label) {
-                                    'Regulatory Radar' => $isRegulatoryReview,
-                                    'News & Tenders' => $isReviewRoute && ! $isRegulatoryReview,
-                                    default => request()->routeIs($routePattern),
-                                };
+                                $navActive = request()->routeIs($routePattern);
+
+                                if ($label === 'Regulatory Radar') {
+                                    $navActive = $isRegulatoryReview;
+                                } elseif ($label === 'News & Tenders') {
+                                    $navActive = $isReviewRoute && ! $isRegulatoryReview;
+                                }
                             @endphp
                             <a class="nav-link {{ $navActive ? 'active' : '' }}" href="{{ $href }}" title="{{ $label }}">
                                 <span class="nav-icon">{{ $icon }}</span>
