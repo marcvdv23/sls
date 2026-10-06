@@ -158,35 +158,35 @@
                     ]);
                 @endphp
 
-                @foreach ($navSections as $section => $links)
-                    @php($sectionId = 'nav-section-' . \Illuminate\Support\Str::slug($section))
+                <?php foreach ($navSections as $section => $links): ?>
+                    <?php $sectionId = 'nav-section-' . \Illuminate\Support\Str::slug($section); ?>
                     <nav class="nav-section" aria-label="{{ $section }}">
                         <button class="nav-section-title" type="button" data-nav-section-toggle aria-expanded="true" aria-controls="{{ $sectionId }}">{{ $section }}</button>
                         <div id="{{ $sectionId }}" class="nav-section-links">
-                        @foreach ($links as $link)
-                            @php
-                                $label = $link[0];
-                                $href = $link[1];
-                                $routePattern = $link[2];
-                                $icon = $link[3];
-                                $isReviewRoute = request()->routeIs('sls.intelligence.review');
-                                $isRegulatoryReview = $isReviewRoute && request()->query('focus') === 'legislation';
-                                $navActive = request()->routeIs($routePattern);
+                            <?php foreach ($links as $link): ?>
+                                <?php
+                                    $label = $link[0];
+                                    $href = $link[1];
+                                    $routePattern = $link[2];
+                                    $icon = $link[3];
+                                    $isReviewRoute = request()->routeIs('sls.intelligence.review');
+                                    $isRegulatoryReview = $isReviewRoute && request()->query('focus') === 'legislation';
+                                    $navActive = request()->routeIs($routePattern);
 
-                                if ($label === 'Regulatory Radar') {
-                                    $navActive = $isRegulatoryReview;
-                                } elseif ($label === 'News & Tenders') {
-                                    $navActive = $isReviewRoute && ! $isRegulatoryReview;
-                                }
-                            @endphp
-                            <a class="nav-link {{ $navActive ? 'active' : '' }}" href="{{ $href }}" title="{{ $label }}">
-                                <span class="nav-icon">{{ $icon }}</span>
-                                <span class="nav-text">{{ $label }}</span>
-                            </a>
-                        @endforeach
+                                    if ($label === 'Regulatory Radar') {
+                                        $navActive = $isRegulatoryReview;
+                                    } elseif ($label === 'News & Tenders') {
+                                        $navActive = $isReviewRoute && ! $isRegulatoryReview;
+                                    }
+                                ?>
+                                <a class="nav-link {{ $navActive ? 'active' : '' }}" href="{{ $href }}" title="{{ $label }}">
+                                    <span class="nav-icon">{{ $icon }}</span>
+                                    <span class="nav-text">{{ $label }}</span>
+                                </a>
+                            <?php endforeach; ?>
                         </div>
                     </nav>
-                @endforeach
+                <?php endforeach; ?>
             </aside>
 
             <div class="sls-page">
