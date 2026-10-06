@@ -102,7 +102,7 @@
                         ],
                     ] : ($slsBasicReviewerOnly ? [
                         'Review' => [
-                            [$slsReviewLabel, route('sls.intelligence.review'), 'sls.intelligence.review', 'REV'],
+                            ['Regulatory Radar', route('sls.intelligence.review', ['focus' => 'legislation', 'region' => 'global', 'retrieved' => 'current', 'country_q' => 'European Union']), 'sls.intelligence.review', 'REG'],
                             ['Keywords', route('sls.intelligence.keywords'), 'sls.intelligence.keywords*', '#'],
                             ['Opportunities', route('sls.opportunities.index'), 'sls.opportunities.*', 'OPP'],
                             ['To Do', route('sls.tasks.index'), 'sls.tasks.*', 'TODO'],
