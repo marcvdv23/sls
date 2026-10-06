@@ -31,6 +31,29 @@
                         'can_assign',
                         'can_configure',
                     ])->contains(fn ($column) => (bool) $permission->{$column}));
+            $slsBasicReviewerForms = collect(['intelligence_review', 'intelligence_keywords', 'opportunities', 'organization_tasks']);
+            $slsBasicReviewerOnly = ! $slsSourceMaintenanceOnly
+                && $slsUserGroup
+                && ! $slsUserGroup->is_admin
+                && $slsUserGroup->permissions
+                    ->whereIn('form_key', $slsBasicReviewerForms->all())
+                    ->contains(fn ($permission) => (bool) $permission->can_view || (bool) $permission->can_update)
+                && ! $slsUserGroup->permissions
+                    ->reject(fn ($permission) => $slsBasicReviewerForms->contains($permission->form_key))
+                    ->contains(fn ($permission) => collect([
+                        'can_view',
+                        'can_search',
+                        'can_insert',
+                        'can_update',
+                        'can_delete',
+                        'can_approve',
+                        'can_print',
+                        'can_export',
+                        'can_import',
+                        'can_run_process',
+                        'can_assign',
+                        'can_configure',
+                    ])->contains(fn ($column) => (bool) $permission->{$column}));
         @endphp
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -76,6 +99,13 @@
                     $navSections = $slsSourceMaintenanceOnly ? [
                         'Work' => [
                             ['Source Maintenance', route('sls.sourceMaintenance.index'), 'sls.sourceMaintenance.*', 'SRC'],
+                        ],
+                    ] : ($slsBasicReviewerOnly ? [
+                        'Review' => [
+                            [$slsReviewLabel, route('sls.intelligence.review'), 'sls.intelligence.review', 'REV'],
+                            ['Keywords', route('sls.intelligence.keywords'), 'sls.intelligence.keywords*', '#'],
+                            ['Opportunities', route('sls.opportunities.index'), 'sls.opportunities.*', 'OPP'],
+                            ['To Do', route('sls.tasks.index'), 'sls.tasks.*', 'TODO'],
                         ],
                     ] : [
                         'Work' => [
@@ -124,7 +154,7 @@
                             ['Backup', url('/sls#backup'), 'sls.system.backup', 'BAK'],
                             ['Email Accounts', route('sls.emailAccounts.index'), 'sls.emailAccounts.*', 'EML'],
                         ],
-                    ];
+                    ]);
                 @endphp
 
                 @foreach ($navSections as $section => $links)

@@ -5,13 +5,42 @@
 @section('page_title', ($focus ?? 'all') === 'legislation' ? 'Legislation Review' : 'Tenders and Research Status')
 
 @section('topbar_actions')
-    <a class="button" href="{{ route('sls.intelligence.stories.create') }}">Add story</a>
-    <a class="button secondary" href="{{ route('sls.intelligence.world', ['focus' => $focus === 'all' ? 'social_security' : $focus, 'region' => $region === 'all' ? null : $region]) }}">Map</a>
+    @php
+        $reviewUserGroup = auth()->user()?->group?->loadMissing('permissions');
+        $reviewAllowedForms = collect(['intelligence_review', 'intelligence_keywords', 'opportunities', 'organization_tasks']);
+        $reviewBasicOnly = $reviewUserGroup
+            && ! $reviewUserGroup->is_admin
+            && $reviewUserGroup->permissions
+                ->whereIn('form_key', $reviewAllowedForms->all())
+                ->contains(fn ($permission) => (bool) $permission->can_view || (bool) $permission->can_update)
+            && ! $reviewUserGroup->permissions
+                ->reject(fn ($permission) => $reviewAllowedForms->contains($permission->form_key))
+                ->contains(fn ($permission) => collect([
+                    'can_view',
+                    'can_search',
+                    'can_insert',
+                    'can_update',
+                    'can_delete',
+                    'can_approve',
+                    'can_print',
+                    'can_export',
+                    'can_import',
+                    'can_run_process',
+                    'can_assign',
+                    'can_configure',
+                ])->contains(fn ($column) => (bool) $permission->{$column}));
+    @endphp
+    @unless ($reviewBasicOnly)
+        <a class="button" href="{{ route('sls.intelligence.stories.create') }}">Add story</a>
+        <a class="button secondary" href="{{ route('sls.intelligence.world', ['focus' => $focus === 'all' ? 'social_security' : $focus, 'region' => $region === 'all' ? null : $region]) }}">Map</a>
+    @endunless
     <a class="button secondary" href="#country-search">Country search</a>
-    <a class="button secondary" href="{{ route('sls.intelligence.contacts') }}">Contact directory</a>
-    <a class="button secondary" href="{{ route('sls.intelligence.sources', ['region' => $region]) }}">Source coverage</a>
-    <a class="button secondary" href="{{ route('sls.intelligence.coverage', ['focus' => $focus, 'region' => $region]) }}">Agent coverage</a>
-    <a class="button secondary" href="{{ route('sls.intelligence.dropped', ['focus' => $focus === 'all' ? null : $focus]) }}">Dropped items</a>
+    @unless ($reviewBasicOnly)
+        <a class="button secondary" href="{{ route('sls.intelligence.contacts') }}">Contact directory</a>
+        <a class="button secondary" href="{{ route('sls.intelligence.sources', ['region' => $region]) }}">Source coverage</a>
+        <a class="button secondary" href="{{ route('sls.intelligence.coverage', ['focus' => $focus, 'region' => $region]) }}">Agent coverage</a>
+        <a class="button secondary" href="{{ route('sls.intelligence.dropped', ['focus' => $focus === 'all' ? null : $focus]) }}">Dropped items</a>
+    @endunless
 @endsection
 
 @push('head')
