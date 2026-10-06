@@ -11,6 +11,7 @@ use App\Models\KnowledgeChunk;
 use App\Models\SourceDocument;
 use App\Support\CountryUpdateDedupeRules;
 use App\Support\EurLexDocumentClassifier;
+use App\Support\EurLexTitleCleaner;
 use App\Support\ReviewFocuses;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
@@ -849,19 +850,20 @@ class EuLegislationMonitorService
             return $legalTitle;
         }
 
-        $summary = $this->plainText((string) ($item['summary'] ?? ''));
+        $summary = EurLexTitleCleaner::clean($this->plainText((string) ($item['summary'] ?? '')));
         if ($summary !== '' && ! $this->isIdentifierOnlyTitle($summary)) {
             return Str::limit($summary, 500, '');
         }
 
-        $title = trim((string) ($item['title'] ?? ''));
+        $title = EurLexTitleCleaner::clean((string) ($item['title'] ?? ''));
         if ($title !== '' && ! $this->isIdentifierOnlyTitle($title)) {
             return $title;
         }
 
-        return filled($item['celex'] ?? null)
-            ? 'EUR-Lex legislation ' . $item['celex']
-            : 'EUR-Lex legislation item';
+        return EurLexTitleCleaner::fallbackTitle(
+            $item['legal_document_code'] ?? $item['celex'] ?? null,
+            $item['legal_instrument_type'] ?? null,
+        );
     }
 
     private function extractLegalTitle(string $text): string

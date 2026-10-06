@@ -127,7 +127,7 @@ XML,
                 ])
                 ?: $this->extractCelex($resultText);
 
-            $title = $this->firstValueForNames($xpath, $resultNode, [
+            $rawTitle = $this->firstValueForNames($xpath, $resultNode, [
                     'TI_DISPLAY',
                     'TITLE',
                     'EXPRESSION_TITLE',
@@ -136,7 +136,7 @@ XML,
                 ])
                 ?: $this->firstTitleLikeNodeText($xpath, $resultNode)
                 ?: ($celex ? 'EUR-Lex legislation ' . $celex : 'EUR-Lex legislation item');
-            $title = $this->cleanTitle($title);
+            $title = $this->cleanTitle($rawTitle);
 
             $publicationDate = $this->normalDate(
                 $this->firstValueForNames($xpath, $resultNode, [
@@ -160,7 +160,11 @@ XML,
                 continue;
             }
 
-            $classification = EurLexDocumentClassifier::classify($celex, $title, 'EUR-Lex', $sourceUrl);
+            $classification = EurLexDocumentClassifier::classify($celex, trim($rawTitle . ' ' . $title . ' ' . $resultText), 'EUR-Lex', $sourceUrl);
+
+            if ($title === '') {
+                $title = EurLexTitleCleaner::fallbackTitle($classification['legal_document_code'] ?? $celex, $classification['legal_instrument_type'] ?? null);
+            }
 
             $results[] = [
                 'title' => $this->squish($title),

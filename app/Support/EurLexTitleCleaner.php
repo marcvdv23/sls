@@ -6,7 +6,7 @@ class EurLexTitleCleaner
 {
     public static function clean(string $title): string
     {
-        $title = trim(preg_replace('/\s+/', ' ', $title) ?? $title);
+        $title = self::squish($title);
 
         if ($title === '') {
             return '';
@@ -33,6 +33,46 @@ class EurLexTitleCleaner
             }
         }
 
+        if ($title === '' || self::isMetadataOnly($title)) {
+            return '';
+        }
+
         return $title;
+    }
+
+    public static function fallbackTitle(?string $code, ?string $type = null): string
+    {
+        $label = self::label($type ?: 'legislation');
+        $code = strtoupper(trim((string) $code));
+
+        return trim('EUR-Lex ' . $label . ($code !== '' ? ' ' . $code : ''));
+    }
+
+    public static function isMetadataOnly(string $title): bool
+    {
+        $title = self::squish($title);
+
+        if ($title === '') {
+            return true;
+        }
+
+        $lower = strtolower($title);
+
+        return str_starts_with($lower, 'eng_cellar:')
+            || str_contains($lower, ' all_all ')
+            || str_contains($lower, ' eu_law_all ')
+            || str_contains($lower, ' published_in_oj');
+    }
+
+    private static function label(?string $type): string
+    {
+        $label = trim(str_replace('_', ' ', (string) $type));
+
+        return $label !== '' ? ucwords($label) : 'Legislation';
+    }
+
+    private static function squish(string $value): string
+    {
+        return trim(preg_replace('/\s+/', ' ', $value) ?? $value);
     }
 }

@@ -151,21 +151,21 @@
                 <a class="button {{ $region === 'europe' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => $focus, 'region' => 'europe']) }}">Europe</a>
             </div>
             <div class="filters">
-                <a class="button {{ $retrievedFilter === 'current' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', array_filter($baseFilterQuery + ['retrieved' => 'current'])) }}">Current intake</a>
-                <a class="button {{ $retrievedFilter === 'last7' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', array_filter($baseFilterQuery + ['retrieved' => 'last7'])) }}">Retrieved 7 days</a>
-                <a class="button {{ $retrievedFilter === 'last30' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', array_filter($baseFilterQuery + ['retrieved' => 'last30'])) }}">Retrieved 30 days</a>
-                <a class="button {{ $retrievedFilter === 'last90' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', array_filter($baseFilterQuery + ['retrieved' => 'last90'])) }}">Retrieved 90 days</a>
-                <a class="button {{ $retrievedFilter === 'all' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', array_filter($baseFilterQuery + ['retrieved' => 'all'])) }}">All backlog</a>
+                <a class="button {{ $retrievedFilter === 'current' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', array_filter(array_merge($baseFilterQuery, ['retrieved' => 'current']))) }}">Current intake</a>
+                <a class="button {{ $retrievedFilter === 'last7' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', array_filter(array_merge($baseFilterQuery, ['retrieved' => 'last7']))) }}">Retrieved 7 days</a>
+                <a class="button {{ $retrievedFilter === 'last30' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', array_filter(array_merge($baseFilterQuery, ['retrieved' => 'last30']))) }}">Retrieved 30 days</a>
+                <a class="button {{ $retrievedFilter === 'last90' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', array_filter(array_merge($baseFilterQuery, ['retrieved' => 'last90']))) }}">Retrieved 90 days</a>
+                <a class="button {{ $retrievedFilter === 'all' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', array_filter(array_merge($baseFilterQuery, ['retrieved' => 'all']))) }}">All backlog</a>
             </div>
             @if ($isLegislationView)
                 <div class="filters" aria-label="Legislation document type filters">
                     @foreach (($legislationTypeOptions ?? []) as $typeKey => $typeLabel)
-                        <a class="button {{ ($legislationTypeFilter ?? 'all') === $typeKey ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', array_filter($baseFilterQuery + ['legal_type' => $typeKey, 'legal_stage' => $legislationStageFilter ?? 'all', 'retrieved' => $retrievedFilter])) }}">{{ $typeLabel }}</a>
+                        <a class="button {{ ($legislationTypeFilter ?? 'all') === $typeKey ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', array_filter(array_merge($baseFilterQuery, ['legal_type' => $typeKey, 'legal_stage' => $legislationStageFilter ?? 'all', 'retrieved' => $retrievedFilter]))) }}">{{ $typeLabel }}</a>
                     @endforeach
                 </div>
                 <div class="filters" aria-label="Legislation stage filters">
                     @foreach (($legislationStageOptions ?? []) as $stageKey => $stageLabel)
-                        <a class="button {{ ($legislationStageFilter ?? 'all') === $stageKey ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', array_filter($baseFilterQuery + ['legal_stage' => $stageKey, 'legal_type' => $legislationTypeFilter ?? 'all', 'retrieved' => $retrievedFilter])) }}">{{ $stageLabel }}</a>
+                        <a class="button {{ ($legislationStageFilter ?? 'all') === $stageKey ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', array_filter(array_merge($baseFilterQuery, ['legal_stage' => $stageKey, 'legal_type' => $legislationTypeFilter ?? 'all', 'retrieved' => $retrievedFilter]))) }}">{{ $stageLabel }}</a>
                     @endforeach
                 </div>
             @endif
@@ -350,7 +350,10 @@
                                     ? $englishTitle
                                     : ($originalTitle !== '' && ! \App\Support\TitleLanguage::looksNonEnglish($originalTitle) ? $originalTitle : 'Translation pending');
                                 if ($isLegislationView && $displayEnglishTitle !== 'Translation pending') {
-                                    $displayEnglishTitle = \App\Support\EurLexTitleCleaner::clean($displayEnglishTitle);
+                                    $cleanLegislationTitle = \App\Support\EurLexTitleCleaner::clean($displayEnglishTitle);
+                                    $displayEnglishTitle = $cleanLegislationTitle !== ''
+                                        ? $cleanLegislationTitle
+                                        : \App\Support\EurLexTitleCleaner::fallbackTitle($update->legal_document_code, $update->legal_instrument_type);
                                 }
                                 $displayHighlightedTitle = e($displayEnglishTitle);
                                 if ($isLegislationView && $displayEnglishTitle !== 'Translation pending') {
