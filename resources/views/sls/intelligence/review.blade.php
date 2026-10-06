@@ -349,8 +349,13 @@
                                 $displayEnglishTitle = $englishTitleIsUsable
                                     ? $englishTitle
                                     : ($originalTitle !== '' && ! \App\Support\TitleLanguage::looksNonEnglish($originalTitle) ? $originalTitle : 'Translation pending');
+                                $summaryText = (string) $update->summary;
                                 if ($isLegislationView && $displayEnglishTitle !== 'Translation pending') {
                                     $cleanLegislationTitle = \App\Support\EurLexTitleCleaner::clean($displayEnglishTitle);
+                                    if ($cleanLegislationTitle === '' || \App\Support\EurLexTitleCleaner::isFallbackTitle($cleanLegislationTitle)) {
+                                        $summaryLegislationTitle = \App\Support\EurLexTitleCleaner::clean($summaryText);
+                                        $cleanLegislationTitle = $summaryLegislationTitle !== '' ? $summaryLegislationTitle : $cleanLegislationTitle;
+                                    }
                                     $displayEnglishTitle = $cleanLegislationTitle !== ''
                                         ? $cleanLegislationTitle
                                         : \App\Support\EurLexTitleCleaner::fallbackTitle($update->legal_document_code, $update->legal_instrument_type);
@@ -367,7 +372,6 @@
                                     }
                                 }
                                 $needsTranslation = $displayEnglishTitle === 'Translation pending';
-                                $summaryText = (string) $update->summary;
                                 $isLegislationRow = $update->inferred_focus === 'legislation';
                                 $legalInstrumentLabel = $update->legal_instrument_type
                                     ? str($update->legal_instrument_type)->replace('_', ' ')->title()

@@ -860,6 +860,11 @@ class EuLegislationMonitorService
             return $title;
         }
 
+        $rawMatchTitle = EurLexTitleCleaner::clean((string) ($item['raw_match_text'] ?? ''));
+        if ($rawMatchTitle !== '' && ! $this->isIdentifierOnlyTitle($rawMatchTitle)) {
+            return Str::limit($rawMatchTitle, 500, '');
+        }
+
         return EurLexTitleCleaner::fallbackTitle(
             $item['legal_document_code'] ?? $item['celex'] ?? null,
             $item['legal_instrument_type'] ?? null,

@@ -162,6 +162,11 @@ XML,
 
             $classification = EurLexDocumentClassifier::classify($celex, trim($rawTitle . ' ' . $title . ' ' . $resultText), 'EUR-Lex', $sourceUrl);
 
+            if ($title === '' || EurLexTitleCleaner::isFallbackTitle($title)) {
+                $summaryTitle = $this->cleanTitle($resultText);
+                $title = $summaryTitle !== '' ? $summaryTitle : $title;
+            }
+
             if ($title === '') {
                 $title = EurLexTitleCleaner::fallbackTitle($classification['legal_document_code'] ?? $celex, $classification['legal_instrument_type'] ?? null);
             }
