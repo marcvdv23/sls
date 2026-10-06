@@ -134,6 +134,7 @@ XML,
                 ])
                 ?: $this->firstTitleLikeNodeText($xpath, $resultNode)
                 ?: ($celex ? 'EUR-Lex legislation ' . $celex : 'EUR-Lex legislation item');
+            $title = $this->cleanTitle($title);
 
             $publicationDate = $this->normalDate(
                 $this->firstValueForNames($xpath, $resultNode, [
@@ -163,7 +164,7 @@ XML,
                 'source_url' => $sourceUrl,
                 'pdf_url' => $pdfUrl,
                 'xml_url' => $xmlUrl,
-                'source_name' => 'EUR-Lex Webservice',
+                'source_name' => 'EUR-Lex',
                 'publication_date' => $publicationDate,
                 'summary' => $resultText,
                 'raw_match_text' => trim($title . ' ' . $resultText . ' CELEX ' . $celex),
@@ -356,6 +357,21 @@ XML,
         return preg_match('/\b([0-9][0-9]{4}[A-Z]{1,3}[0-9A-Z]{3,}(?:R(?:\([0-9A-Z]+\))?|\([0-9A-Z]+\))?)\b/i', $value, $matches) === 1
             ? strtoupper($matches[1])
             : null;
+    }
+
+    private function cleanTitle(string $title): string
+    {
+        $title = $this->squish($title);
+
+        if (preg_match('/\b(?:Commission|Council|European Parliament|Regulation|Directive|Decision|Corrigendum|Proposal|Communication|Report)\b.*$/u', $title, $matches) === 1) {
+            $candidate = trim($matches[0]);
+
+            if ($candidate !== '' && mb_strlen($candidate) >= 30) {
+                return $candidate;
+            }
+        }
+
+        return $title;
     }
 
     private function normalDate(?string $value): ?string
