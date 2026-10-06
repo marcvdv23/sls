@@ -4135,7 +4135,11 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
 
             return $update;
         })
-        ->when($focus !== 'all', fn ($updates) => $updates->filter(fn (CountryUpdate $update) => $update->inferred_focus === $focus))
+        ->when(
+            $focus === 'all',
+            fn ($updates) => $updates->filter(fn (CountryUpdate $update) => $update->inferred_focus !== 'legislation'),
+            fn ($updates) => $updates->filter(fn (CountryUpdate $update) => $update->inferred_focus === $focus)
+        )
         ->when(in_array($activeTypeFilter, ['tenders', 'news'], true), fn ($updates) => $updates->filter(fn (CountryUpdate $update) => $activeTypeFilter === 'tenders' ? $hasTenderSignal($update) : ! $hasTenderSignal($update)))
         ->when($activeStatusFilter !== 'rejected', fn ($updates) => $updates->filter(fn (CountryUpdate $update) => ! CountryUpdateNoiseRules::isStaticReferenceUrl((string) $update->source_url)))
         ->unique(fn (CountryUpdate $update) => CountryUpdateDedupeRules::reviewDuplicateKey($update))
