@@ -57,6 +57,10 @@
         .filters { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
         .region-filters { flex-wrap:nowrap; overflow-x:auto; padding-bottom:2px; }
         .region-filters .button { flex:0 0 auto; }
+        .review-filter-form { display:grid; grid-template-columns:repeat(5, minmax(150px, 1fr)) auto; gap:10px; align-items:end; margin-top:10px; }
+        .review-filter-form label.field { min-width:0; }
+        .review-filter-form select { width:100%; }
+        .review-filter-form button { min-height:38px; }
         .review-table { min-width:1440px; table-layout:fixed; }
         .review-table.legislation-table { min-width:1220px; }
         .serial-col { width:5rem; }
@@ -123,7 +127,7 @@
         .journalist-actions { display: contents; }
         .mini-link { display: inline-flex; border-radius: 999px; padding: .2rem .45rem; background: #eef4ff; color: var(--accent); font-size: .74rem; font-weight: 800; text-decoration: none; }
         @media (max-width:980px) {
-            .review-summary, .country-search-grid, .country-search-summary { grid-template-columns:1fr; }
+            .review-summary, .country-search-grid, .country-search-summary, .review-filter-form { grid-template-columns:1fr; }
             .review-table { min-width:900px; }
         }
     </style>
@@ -153,51 +157,64 @@
         <section class="panel">
             <p class="eyebrow">Filters</p>
             <h2>Review by product focus and region</h2>
-            <div class="filters">
-                <?php
-                    $baseFilterQuery = [
-                        'focus' => $focus,
-                        'region' => $region,
-                        'published' => $publishedFilter ?: null,
-                        'type' => $typeFilter ?: null,
-                        'legal_type' => $legislationTypeFilter ?? 'all',
-                        'legal_stage' => $legislationStageFilter ?? 'all',
-                        'per_page' => $displayLimit,
-                    ];
-                ?>
-                <a class="button {{ $focus === 'all' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => 'all', 'region' => $region]) }}">All items</a>
-                <?php foreach ($focuses as $focusKey => $focusConfig): ?>
-                    <a class="button {{ $focus === $focusKey ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => $focusKey, 'region' => $region]) }}">{{ $focusConfig['label'] }}</a>
-                <?php endforeach; ?>
-            </div>
-            <div class="filters region-filters" aria-label="Geographic filters">
-                <a class="button {{ $region === 'all' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => $focus, 'region' => 'all']) }}">All regions</a>
-                <a class="button {{ $region === 'africa' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => $focus, 'region' => 'africa']) }}">Africa</a>
-                <a class="button {{ $region === 'asia' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => $focus, 'region' => 'asia']) }}">Asia</a>
-                <a class="button {{ $region === 'caribbean' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => $focus, 'region' => 'caribbean']) }}">Caribbean</a>
-                <a class="button {{ $region === 'latin_america' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => $focus, 'region' => 'latin_america']) }}">Latin America</a>
-                <a class="button {{ $region === 'north_america' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => $focus, 'region' => 'north_america']) }}">North America</a>
-                <a class="button {{ $region === 'europe' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => $focus, 'region' => 'europe']) }}">Europe</a>
-            </div>
-            <div class="filters">
-                <a class="button {{ $retrievedFilter === 'current' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', array_filter(array_merge($baseFilterQuery, ['retrieved' => 'current']))) }}">Current intake</a>
-                <a class="button {{ $retrievedFilter === 'last7' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', array_filter(array_merge($baseFilterQuery, ['retrieved' => 'last7']))) }}">Retrieved 7 days</a>
-                <a class="button {{ $retrievedFilter === 'last30' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', array_filter(array_merge($baseFilterQuery, ['retrieved' => 'last30']))) }}">Retrieved 30 days</a>
-                <a class="button {{ $retrievedFilter === 'last90' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', array_filter(array_merge($baseFilterQuery, ['retrieved' => 'last90']))) }}">Retrieved 90 days</a>
-                <a class="button {{ $retrievedFilter === 'all' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', array_filter(array_merge($baseFilterQuery, ['retrieved' => 'all']))) }}">All backlog</a>
-            </div>
-            @if ($isLegislationView)
-                <div class="filters" aria-label="Legislation document type filters">
-                    @foreach (($legislationTypeOptions ?? []) as $typeKey => $typeLabel)
-                        <a class="button {{ ($legislationTypeFilter ?? 'all') === $typeKey ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', array_filter(array_merge($baseFilterQuery, ['legal_type' => $typeKey, 'legal_stage' => $legislationStageFilter ?? 'all', 'retrieved' => $retrievedFilter]))) }}">{{ $typeLabel }}</a>
-                    @endforeach
-                </div>
-                <div class="filters" aria-label="Legislation stage filters">
-                    @foreach (($legislationStageOptions ?? []) as $stageKey => $stageLabel)
-                        <a class="button {{ ($legislationStageFilter ?? 'all') === $stageKey ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', array_filter(array_merge($baseFilterQuery, ['legal_stage' => $stageKey, 'legal_type' => $legislationTypeFilter ?? 'all', 'retrieved' => $retrievedFilter]))) }}">{{ $stageLabel }}</a>
-                    @endforeach
-                </div>
-            @endif
+            <form class="review-filter-form" method="get" action="{{ route('sls.intelligence.review') }}">
+                <input type="hidden" name="published" value="{{ $publishedFilter }}">
+                <input type="hidden" name="type" value="{{ $typeFilter }}">
+                <input type="hidden" name="per_page" value="{{ $displayLimit }}">
+                <label class="field">
+                    Product focus
+                    <select name="focus">
+                        <option value="all" @selected($focus === 'all')>All items</option>
+                        @foreach ($focuses as $focusKey => $focusConfig)
+                            <option value="{{ $focusKey }}" @selected($focus === $focusKey)>{{ $focusConfig['label'] }}</option>
+                        @endforeach
+                    </select>
+                </label>
+                <label class="field">
+                    Region
+                    <select name="region">
+                        <option value="all" @selected($region === 'all')>All regions</option>
+                        <option value="africa" @selected($region === 'africa')>Africa</option>
+                        <option value="asia" @selected($region === 'asia')>Asia</option>
+                        <option value="caribbean" @selected($region === 'caribbean')>Caribbean</option>
+                        <option value="latin_america" @selected($region === 'latin_america')>Latin America</option>
+                        <option value="north_america" @selected($region === 'north_america')>North America</option>
+                        <option value="europe" @selected($region === 'europe')>Europe</option>
+                    </select>
+                </label>
+                <label class="field">
+                    Retrieved
+                    <select name="retrieved">
+                        <option value="current" @selected($retrievedFilter === 'current')>Current intake</option>
+                        <option value="last7" @selected($retrievedFilter === 'last7')>Retrieved 7 days</option>
+                        <option value="last30" @selected($retrievedFilter === 'last30')>Retrieved 30 days</option>
+                        <option value="last90" @selected($retrievedFilter === 'last90')>Retrieved 90 days</option>
+                        <option value="all" @selected($retrievedFilter === 'all')>All backlog</option>
+                    </select>
+                </label>
+                @if ($isLegislationView)
+                    <label class="field">
+                        Document type
+                        <select name="legal_type">
+                            @foreach (($legislationTypeOptions ?? []) as $typeKey => $typeLabel)
+                                <option value="{{ $typeKey }}" @selected(($legislationTypeFilter ?? 'all') === $typeKey)>{{ $typeLabel }}</option>
+                            @endforeach
+                        </select>
+                    </label>
+                    <label class="field">
+                        Stage
+                        <select name="legal_stage">
+                            @foreach (($legislationStageOptions ?? []) as $stageKey => $stageLabel)
+                                <option value="{{ $stageKey }}" @selected(($legislationStageFilter ?? 'all') === $stageKey)>{{ $stageLabel }}</option>
+                            @endforeach
+                        </select>
+                    </label>
+                @else
+                    <input type="hidden" name="legal_type" value="{{ $legislationTypeFilter ?? 'all' }}">
+                    <input type="hidden" name="legal_stage" value="{{ $legislationStageFilter ?? 'all' }}">
+                @endif
+                <button type="submit">Apply</button>
+            </form>
         </section>
 
         @if ($isLegislationView)
