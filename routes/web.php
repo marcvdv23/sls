@@ -4115,6 +4115,26 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
     }
 
     $hasTenderSignal = fn (CountryUpdate $update): bool => CountryUpdateClassifier::isTender($update);
+    $isLegislationUpdate = function (CountryUpdate $update): bool {
+        $sourceText = Str::lower(implode(' ', [
+            (string) $update->source_name,
+            (string) $update->source_url,
+            (string) $update->title,
+            (string) $update->title_english,
+            (string) $update->title_original,
+        ]));
+
+        return (string) $update->legal_document_code !== ''
+            || (string) $update->legal_instrument_type !== ''
+            || (string) $update->legislation_stage !== ''
+            || Str::contains($sourceText, [
+                'eur-lex',
+                'celex:',
+                'eu_law_all legislation',
+                'published_in_oj',
+                'publications.europa.eu/resource/celex',
+            ]);
+    };
     $filteredUpdates = CountryUpdate::query()
         ->with(['country', 'journalistArticles.journalist', 'opportunities.product'])
         ->when($activeStatusFilter === 'rejected', fn ($query) => $query->where('review_status', 'rejected'))
@@ -4177,8 +4197,10 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
         })
         ->when(
             $focus === 'all',
-            fn ($updates) => $updates->filter(fn (CountryUpdate $update) => $update->inferred_focus !== 'legislation'),
-            fn ($updates) => $updates->filter(fn (CountryUpdate $update) => $update->inferred_focus === $focus)
+            fn ($updates) => $updates->filter(fn (CountryUpdate $update) => ! $isLegislationUpdate($update)),
+            fn ($updates) => $updates->filter(fn (CountryUpdate $update) => $focus === 'legislation'
+                ? $isLegislationUpdate($update)
+                : $update->inferred_focus === $focus)
         )
         ->when($focus === 'legislation' && $legislationTypeFilter !== 'all', fn ($updates) => $updates->filter(fn (CountryUpdate $update) => (string) $update->legal_instrument_type === $legislationTypeFilter))
         ->when($focus === 'legislation' && $legislationStageFilter !== 'all', fn ($updates) => $updates->filter(fn (CountryUpdate $update) => (string) $update->legislation_stage === $legislationStageFilter))
