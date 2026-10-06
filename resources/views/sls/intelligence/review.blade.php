@@ -34,7 +34,9 @@
         <a class="button" href="{{ route('sls.intelligence.stories.create') }}">Add story</a>
         <a class="button secondary" href="{{ route('sls.intelligence.world', ['focus' => $focus === 'all' ? 'social_security' : $focus, 'region' => $region === 'all' ? null : $region]) }}">Map</a>
     @endunless
-    <a class="button secondary" href="#country-search">Country search</a>
+    @if (($focus ?? 'all') !== 'legislation')
+        <a class="button secondary" href="#country-search">Country search</a>
+    @endif
     @unless ($reviewBasicOnly)
         <a class="button secondary" href="{{ route('sls.intelligence.contacts') }}">Contact directory</a>
         <a class="button secondary" href="{{ route('sls.intelligence.sources', ['region' => $region]) }}">Source coverage</a>
@@ -227,6 +229,7 @@
             </section>
         @endif
 
+        @unless ($isLegislationView)
         <section id="country-search" class="panel stack">
             <div>
                 <p class="eyebrow">Country Search</p>
@@ -293,12 +296,13 @@
 
             @endif
         </section>
+        @endunless
         <section class="panel stack">
             <div>
                 <p class="eyebrow">Captured Items</p>
                 <h2>
                     @if ($isLegislationView)
-                        {{ $countrySearchQuery !== '' ? 'Legislation items for country search' : 'Legislation items found' }}
+                        Regulatory Radar items found
                     @else
                         {{ $countrySearchQuery !== '' ? 'Review Desk items for country search' : 'All tenders, RFPs, and intelligence items found' }}
                     @endif
@@ -647,7 +651,7 @@
                 </nav>
             </div>
         </section>
-        @if ($countrySearchQuery !== '')
+        @if (! $isLegislationView && $countrySearchQuery !== '')
             <section class="panel stack">
                 <div>
                     <p class="eyebrow">Monitor Runs</p>
