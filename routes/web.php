@@ -5581,11 +5581,14 @@ $seedMarketCrawlers = function () {
         return;
     }
 
+    $currentWorkspaceKey = (string) (WorkspaceContext::current()?->workspace_key ?: SlsSettings::get('workspace.key', 'social_security'));
+    $isSocialSecurityWorkspace = $currentWorkspaceKey === 'social_security';
+
     collect([
         ['name' => 'University procurement and leadership crawler', 'crawler_key' => 'university_procurement_leadership', 'crawler_type' => 'university_contact_crawler', 'description' => 'Finds university procurement, leadership, HR, IT, and published institutional contact details.'],
         ['name' => 'School district procurement and leadership crawler', 'crawler_key' => 'school_district_procurement_leadership', 'crawler_type' => 'school_district_contact_crawler', 'description' => 'Finds school district procurement, superintendent, HR, IT, finance, and public contact details.'],
         ['name' => 'National procurement portal crawler', 'crawler_key' => 'national_procurement_portal', 'crawler_type' => 'national_procurement_crawler', 'description' => 'Checks official country procurement portals and records registration requirements.'],
-        ['name' => 'Social security organization crawler', 'crawler_key' => 'social_security_organization', 'crawler_type' => 'social_security_contact_crawler', 'description' => 'Finds official social security organization websites, media/press pages, procurement pages, leadership, and public contacts.'],
+        ...($isSocialSecurityWorkspace ? [['name' => 'Social security organization crawler', 'crawler_key' => 'social_security_organization', 'crawler_type' => 'social_security_contact_crawler', 'description' => 'Finds official social security organization websites, media/press pages, procurement pages, leadership, and public contacts.']] : []),
         ['name' => 'Competitor and bidder enrichment crawler', 'crawler_key' => 'competitor_bidder_enrichment', 'crawler_type' => 'leadership_contact_crawler', 'description' => 'Enriches competitor and bidder accounts created from tender documents by checking websites, procurement/supplier pages, leadership, HR, IT, news, and public contacts.'],
         ['name' => 'Utility procurement and leadership crawler', 'crawler_key' => 'utility_procurement_leadership', 'crawler_type' => 'utility_contact_crawler', 'description' => 'Finds utility company procurement pages, executive leadership, HR, IT, and public contacts.'],
         ['name' => 'Oil and gas procurement crawler', 'crawler_key' => 'oil_gas_procurement_leadership', 'crawler_type' => 'oil_gas_contact_crawler', 'description' => 'Finds oil and gas company procurement, supplier, leadership, HR, IT, and public contact details.'],
@@ -5597,7 +5600,7 @@ $seedMarketCrawlers = function () {
 
     $socialSecurityCrawler = MarketCrawler::query()->where('crawler_key', 'social_security_organization')->first();
 
-    if ($socialSecurityCrawler) {
+    if ($isSocialSecurityWorkspace && $socialSecurityCrawler) {
         Country::query()
             ->whereNotNull('social_security_administration_name')
             ->where('social_security_administration_name', '<>', '')
