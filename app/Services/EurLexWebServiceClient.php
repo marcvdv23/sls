@@ -110,23 +110,39 @@ XML,
         }
 
         $results = [];
-        foreach ($xpath->query('//*[local-name()="result"]') ?: [] as $resultNode) {
+        foreach ($this->resultNodes($xpath) as $resultNode) {
             if (! $resultNode instanceof DOMElement) {
                 continue;
             }
 
             $resultText = $this->squish($resultNode->textContent);
-            $celex = $this->firstNodeText($xpath, 'DN', $resultNode)
-                ?: $this->firstNodeText($xpath, 'CELEX', $resultNode)
+            $celex = $this->firstValueForNames($xpath, $resultNode, [
+                    'DN',
+                    'CELEX',
+                    'ID_CELEX',
+                    'RESOURCE_LEGAL_ID_CELEX',
+                    'WORK_ID_DOCUMENT',
+                ])
                 ?: $this->extractCelex($resultText);
 
-            $title = $this->firstNodeText($xpath, 'TI_DISPLAY', $resultNode)
-                ?: $this->firstNodeText($xpath, 'TITLE', $resultNode)
+            $title = $this->firstValueForNames($xpath, $resultNode, [
+                    'TI_DISPLAY',
+                    'TITLE',
+                    'EXPRESSION_TITLE',
+                    'EXPRESSION_TITLE_ALTERNATIVE',
+                    'WORK_TITLE',
+                ])
                 ?: $this->firstTitleLikeNodeText($xpath, $resultNode)
                 ?: ($celex ? 'EUR-Lex legislation ' . $celex : 'EUR-Lex legislation item');
 
             $publicationDate = $this->normalDate(
-                $this->firstNodeText($xpath, 'DD', $resultNode)
+                $this->firstValueForNames($xpath, $resultNode, [
+                    'DD',
+                    'DATE_DOCUMENT',
+                    'WORK_DATE_DOCUMENT',
+                    'DATE_PUBLICATION',
+                    'MANIFESTATION_OFFICIAL-JOURNAL_PART_PAGE_FIRST',
+                ])
                 ?: $this->firstDateLikeNodeText($xpath, $resultNode)
             );
 
@@ -218,12 +234,75 @@ XML,
         return $node ? $this->squish($node->textContent) : '';
     }
 
+    private function resultNodes(DOMXPath $xpath): array
+    {
+        $upper = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        $lower = 'abcdefghijklmnopqrstuvwxyz';
+        $queries = [
+            '//*[translate(local-name(), "' . $lower . '", "' . $upper . '")="RESULT"]',
+            '//*[local-name()="NOTICE"]/ancestor::*[translate(local-name(), "' . $lower . '", "' . $upper . '")="RESULT"]',
+            '//*[local-name()="NOTICE"]/..',
+        ];
+
+        foreach ($queries as $query) {
+            $nodes = $xpath->query($query);
+
+            if ($nodes && $nodes->length > 0) {
+                $results = [];
+                foreach ($nodes as $node) {
+                    if ($node instanceof DOMElement) {
+                        $results[] = $node;
+                    }
+                }
+
+                return $results;
+            }
+        }
+
+        return [];
+    }
+
+    private function firstValueForNames(DOMXPath $xpath, DOMElement $context, array $localNames): string
+    {
+        foreach ($localNames as $localName) {
+            $value = $this->firstValueText($xpath, $localName, $context);
+
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return '';
+    }
+
+    private function firstValueText(DOMXPath $xpath, string $localName, DOMElement $context): string
+    {
+        $expression = './/*[local-name()="' . $localName . '"]';
+        $nodes = $xpath->query($expression, $context);
+
+        foreach ($nodes ?: [] as $node) {
+            if (! $node instanceof DOMElement) {
+                continue;
+            }
+
+            $valueNode = $xpath->query('.//*[local-name()="VALUE"]', $node)?->item(0);
+            $text = $this->squish($valueNode?->textContent ?: $node->textContent);
+
+            if ($text !== '') {
+                return $text;
+            }
+        }
+
+        return '';
+    }
+
     private function firstTitleLikeNodeText(DOMXPath $xpath, DOMElement $context): string
     {
         $nodes = $xpath->query('.//*[contains(translate(local-name(), "abcdefghijklmnopqrstuvwxyz", "ABCDEFGHIJKLMNOPQRSTUVWXYZ"), "TITLE")]', $context);
 
         foreach ($nodes ?: [] as $node) {
-            $text = $this->squish($node->textContent);
+            $valueNode = $node instanceof DOMElement ? $xpath->query('.//*[local-name()="VALUE"]', $node)?->item(0) : null;
+            $text = $this->squish($valueNode?->textContent ?: $node->textContent);
             if ($text !== '') {
                 return $text;
             }
@@ -237,7 +316,8 @@ XML,
         $nodes = $xpath->query('.//*[contains(translate(local-name(), "abcdefghijklmnopqrstuvwxyz", "ABCDEFGHIJKLMNOPQRSTUVWXYZ"), "DATE")]', $context);
 
         foreach ($nodes ?: [] as $node) {
-            $date = $this->normalDate($node->textContent);
+            $valueNode = $node instanceof DOMElement ? $xpath->query('.//*[local-name()="VALUE"]', $node)?->item(0) : null;
+            $date = $this->normalDate($valueNode?->textContent ?: $node->textContent);
             if ($date !== null) {
                 return $date;
             }
@@ -249,7 +329,7 @@ XML,
     private function firstDocumentLink(DOMXPath $xpath, DOMElement $context, string $format): ?string
     {
         $format = strtoupper($format);
-        $nodes = $xpath->query('.//*[contains(translate(local-name(), "abcdefghijklmnopqrstuvwxyz", "ABCDEFGHIJKLMNOPQRSTUVWXYZ"), "LINK")]', $context);
+        $nodes = $xpath->query('.//*[contains(translate(local-name(), "abcdefghijklmnopqrstuvwxyz", "ABCDEFGHIJKLMNOPQRSTUVWXYZ"), "LINK") or contains(translate(local-name(), "abcdefghijklmnopqrstuvwxyz", "ABCDEFGHIJKLMNOPQRSTUVWXYZ"), "CONTENT") or contains(translate(local-name(), "abcdefghijklmnopqrstuvwxyz", "ABCDEFGHIJKLMNOPQRSTUVWXYZ"), "ITEM")]', $context);
 
         foreach ($nodes ?: [] as $node) {
             $text = $this->squish($node->textContent);
@@ -273,7 +353,7 @@ XML,
 
     private function extractCelex(string $value): ?string
     {
-        return preg_match('/\b(3[0-9]{4}[A-Z][0-9A-Z]{3,}(?:\([0-9A-Z]+\))?)\b/i', $value, $matches) === 1
+        return preg_match('/\b([0-9][0-9]{4}[A-Z]{1,3}[0-9A-Z]{3,}(?:R(?:\([0-9A-Z]+\))?|\([0-9A-Z]+\))?)\b/i', $value, $matches) === 1
             ? strtoupper($matches[1])
             : null;
     }
