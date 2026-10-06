@@ -153,46 +153,6 @@
                 ->all();
         }
 
-        $cleanLegislationTitle = function (string $title): string {
-            $title = trim(preg_replace('/\s+/', ' ', $title) ?? $title);
-
-            if (preg_match('/\b(?:Commission|Council|European Parliament|Regulation|Directive|Decision|Corrigendum|Proposal|Communication|Report)\b.*$/u', $title, $matches) === 1) {
-                $candidate = trim($matches[0]);
-
-                if ($candidate !== '' && strlen($candidate) >= 30) {
-                    return $candidate;
-                }
-            }
-
-            return $title;
-        };
-        $highlightLegislationTitle = function (string $title) use ($legislationHighlightTerms): string {
-            $highlightedTitle = e($title);
-
-            if ($legislationHighlightTerms === []) {
-                return $highlightedTitle;
-            }
-
-            foreach ($legislationHighlightTerms as $term) {
-                $pattern = '/' . preg_quote($term, '/') . '/iu';
-                $nextTitle = preg_replace($pattern, '<mark class="match-highlight">$0</mark>', $highlightedTitle);
-
-                if (is_string($nextTitle)) {
-                    $highlightedTitle = $nextTitle;
-                }
-            }
-
-            return $highlightedTitle;
-        };
-        $sourceDisplayName = function (?string $sourceName): string {
-            $sourceName = trim((string) $sourceName);
-
-            if (Str::contains(Str::lower($sourceName), 'eur-lex')) {
-                return 'EUR-Lex';
-            }
-
-            return $sourceName !== '' ? $sourceName : 'Unknown source';
-        };
     @endphp
 
     <div class="stack">
@@ -419,7 +379,26 @@
                                     ? $englishTitle
                                     : ($originalTitle !== '' && ! \App\Support\TitleLanguage::looksNonEnglish($originalTitle) ? $originalTitle : 'Translation pending');
                                 if ($isLegislationView && $displayEnglishTitle !== 'Translation pending') {
-                                    $displayEnglishTitle = $cleanLegislationTitle($displayEnglishTitle);
+                                    $displayEnglishTitle = trim(preg_replace('/\s+/', ' ', $displayEnglishTitle) ?? $displayEnglishTitle);
+
+                                    if (preg_match('/\b(?:Commission|Council|European Parliament|Regulation|Directive|Decision|Corrigendum|Proposal|Communication|Report)\b.*$/u', $displayEnglishTitle, $legislationTitleMatches) === 1) {
+                                        $cleanTitleCandidate = trim($legislationTitleMatches[0]);
+
+                                        if ($cleanTitleCandidate !== '' && strlen($cleanTitleCandidate) >= 30) {
+                                            $displayEnglishTitle = $cleanTitleCandidate;
+                                        }
+                                    }
+                                }
+                                $displayHighlightedTitle = e($displayEnglishTitle);
+                                if ($isLegislationView && $displayEnglishTitle !== 'Translation pending') {
+                                    foreach ($legislationHighlightTerms as $term) {
+                                        $highlightPattern = '/' . preg_quote($term, '/') . '/iu';
+                                        $nextHighlightedTitle = preg_replace($highlightPattern, '<mark class="match-highlight">$0</mark>', $displayHighlightedTitle);
+
+                                        if (is_string($nextHighlightedTitle)) {
+                                            $displayHighlightedTitle = $nextHighlightedTitle;
+                                        }
+                                    }
                                 }
                                 $needsTranslation = $displayEnglishTitle === 'Translation pending';
                                 $summaryText = (string) $update->summary;
@@ -486,14 +465,14 @@
                                             <?php elseif ($update->source_url): ?>
                                                 <a class="title-link" href="{{ route('sls.intelligence.updates.sourcePage', $update) }}" target="_blank" rel="noreferrer">
                                                     @if ($isLegislationView)
-                                                        {!! $highlightLegislationTitle($displayEnglishTitle) !!}
+                                                        {!! $displayHighlightedTitle !!}
                                                     @else
                                                         {{ $displayEnglishTitle }}
                                                     @endif
                                                 </a>
                                             <?php else: ?>
                                                 @if ($isLegislationView)
-                                                    {!! $highlightLegislationTitle($displayEnglishTitle) !!}
+                                                    {!! $displayHighlightedTitle !!}
                                                 @else
                                                     {{ $displayEnglishTitle }}
                                                 @endif
@@ -563,7 +542,8 @@
                                         <button class="secondary tiny" type="submit">Map</button>
                                     </form>
                                 </td>
-                                <td>{{ $sourceDisplayName($update->source_name) }}</td>
+                                @php($displaySourceName = trim((string) $update->source_name))
+                                <td>{{ Str::contains(Str::lower($displaySourceName), 'eur-lex') ? 'EUR-Lex' : ($displaySourceName !== '' ? $displaySourceName : 'Unknown source') }}</td>
                                 <td>
                                     <span class="pill {{ $isLegislationRow ? 'good' : $evidenceClass }}">{{ $evidenceLabel }}</span>
                                     @if ($isLegislationRow && $update->source_document_id)
