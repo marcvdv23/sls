@@ -4084,7 +4084,7 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
 
     $hasTenderSignal = fn (CountryUpdate $update): bool => CountryUpdateClassifier::isTender($update);
     $filteredUpdates = CountryUpdate::query()
-        ->with(['country', 'journalistArticles.journalist'])
+        ->with(['country', 'journalistArticles.journalist', 'opportunities.product'])
         ->when($activeStatusFilter === 'rejected', fn ($query) => $query->where('review_status', 'rejected'))
         ->when($activeStatusFilter !== 'rejected', function ($query) use ($activeStatusFilter) {
             $query->where('review_status', '!=', 'rejected');

@@ -385,13 +385,21 @@
                                     ? 'Aggregator lead'
                                     : (str_contains($summaryText, '[Official tender source]') ? 'Official source' : 'Needs verification'));
                                 $evidenceClass = $evidenceLabel === 'Official source' ? 'good' : ($evidenceLabel === 'Aggregator lead' ? 'warn' : 'bad');
-                                $defaultOpportunityProductId = ($focusProductMap ?? [])[$update->inferred_focus] ?? null;
+                                $existingOpportunityProduct = $update->opportunities
+                                    ->pluck('product')
+                                    ->filter()
+                                    ->first();
+                                $defaultOpportunityProductId = $existingOpportunityProduct
+                                    ? $existingOpportunityProduct->id
+                                    : ($focusProductMap ?? [])[$update->inferred_focus] ?? null;
                                 $defaultOpportunityProduct = $defaultOpportunityProductId
                                     ? ($products ?? collect())->first(fn ($product) => (int) $product->id === (int) $defaultOpportunityProductId)
                                     : null;
-                                $defaultOpportunityProduct = $defaultOpportunityProduct
-                                    ?: ($products ?? collect())->first(fn ($product) => (bool) ($product->is_default ?? false))
-                                    ?: ($products ?? collect())->first();
+                                if (! $isLegislationRow) {
+                                    $defaultOpportunityProduct = $defaultOpportunityProduct
+                                        ?: ($products ?? collect())->first(fn ($product) => (bool) ($product->is_default ?? false))
+                                        ?: ($products ?? collect())->first();
+                                }
                             ?>
                             <tr>
                                 <td>
@@ -518,6 +526,9 @@
                                     <form class="inline-update-form opportunity-map-form" method="post" action="{{ route('sls.intelligence.opportunities.store', $update) }}">
                                         @csrf
                                         <select name="product_id" aria-label="Map {{ $serialNumber }} to product">
+                                            @if (! $defaultOpportunityProduct)
+                                                <option value="" selected>Choose product</option>
+                                            @endif
                                             @foreach ($products as $product)
                                                 <option value="{{ $product->id }}" @selected($defaultOpportunityProduct && (int) $product->id === (int) $defaultOpportunityProduct->id)>
                                                     {{ \Illuminate\Support\Str::after($product->name, 'Interact ') ?: $product->name }}
