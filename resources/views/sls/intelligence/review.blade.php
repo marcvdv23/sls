@@ -1,10 +1,8 @@
-@extends('sls.layouts.app')
-
-@php($isLegislationView = ($focus ?? null) === 'legislation')
+﻿@extends('sls.layouts.app')
 
 @section('title', 'Country Intelligence Review')
 @section('eyebrow', 'Country Intelligence')
-@section('page_title', $isLegislationView ? 'Legislation Review' : 'Tenders and Research Status')
+@section('page_title', ($focus ?? 'all') === 'legislation' ? 'Legislation Review' : 'Tenders and Research Status')
 
 @section('topbar_actions')
     <a class="button" href="{{ route('sls.intelligence.stories.create') }}">Add story</a>
@@ -31,15 +29,12 @@
         .region-filters { flex-wrap:nowrap; overflow-x:auto; padding-bottom:2px; }
         .region-filters .button { flex:0 0 auto; }
         .review-table { min-width:1440px; table-layout:fixed; }
-        .review-table.legislation-table { min-width:1120px; }
         .serial-col { width:5rem; }
         .country-col { width:13.5rem; }
         .english-title-col { width:38rem; }
-        .legislation-table .english-title-col { width:52rem; }
         .review-actions-col { width:15rem; }
         .opportunity-col { width:7.5rem; }
         .source-col { width:15rem; }
-        .legislation-table .source-col { width:7rem; }
         .evidence-col { width:8.5rem; }
         .date-col { width:7rem; }
         .retrieved-col { width:9rem; }
@@ -49,14 +44,11 @@
         .title-cell { overflow-wrap:anywhere; }
         .country-action-stack { display:grid; gap:7px; align-items:start; }
         .country-action-stack .pill { justify-self:start; white-space:normal; line-height:1.15; border-radius:8px; }
-        .country-action-stack.legislation-country-actions .country-fix-form { display:grid; gap:6px; }
-        .country-action-stack.legislation-country-actions .country-fix-form button { justify-self:start; }
         .summary-cell { max-width:520px; color:var(--text-secondary); }
         .translation-pending { color:var(--accent-warning); font-weight:800; }
         .external-source { display:grid; gap:3px; min-width:110px; }
         .external-source small { display:block; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-secondary); }
         .copy-row { display:grid; grid-template-columns:minmax(0, 1fr) 5.5rem; gap:8px; align-items:start; }
-        .copy-row.legislation-title-row { grid-template-columns:minmax(0, 1fr); }
         .serial-copy-row { display:grid; gap:5px; align-items:start; }
         .copy-value { min-width:0; overflow-wrap:anywhere; }
         .title-meta { display:flex; flex-wrap:wrap; gap:4px 8px; margin-bottom:4px; color:var(--text-secondary); font-size:11px; font-weight:800; line-height:1.25; }
@@ -70,7 +62,6 @@
         .copy-button.copied { border-color:var(--accent-success); color:var(--accent-success); }
         .title-link { color:var(--text-primary); text-decoration:none; }
         .title-link:hover { color:var(--accent-primary); text-decoration:underline; }
-        .match-highlight { background:#fff3bf; color:#111827; border-radius:4px; padding:0 .12em; box-decoration-break:clone; -webkit-box-decoration-break:clone; }
         .pagination-wrap { display:flex; justify-content:space-between; gap:12px; align-items:center; flex-wrap:wrap; margin-top:12px; }
         .pager-links { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
         .pager-links a,
@@ -104,56 +95,6 @@
 @section('content')
     @php($austinTz = 'America/Chicago')
     @php($isLegislationView = $focus === 'legislation')
-    @php
-        $legislationHighlightTerms = [];
-        $genericLegislationTerms = [
-            'celex',
-            'decision',
-            'decision (eu)',
-            'directive',
-            'directive (eu)',
-            'eur-lex',
-            'legislation',
-            'official journal',
-            'official journal of the european union',
-            'regulation',
-            'regulation (eu)',
-        ];
-
-        if ($isLegislationView) {
-            $legislationHighlightTerms = collect($focuses['legislation']['terms'] ?? [])
-                ->merge($focuses['legislation']['strong_signals'] ?? [])
-                ->merge([
-                    'biodiversity',
-                    'carbon',
-                    'cbam',
-                    'circular economy',
-                    'climate',
-                    'co2',
-                    'due diligence',
-                    'emission',
-                    'energy',
-                    'environment',
-                    'esg',
-                    'fluorinated greenhouse gases',
-                    'greenhouse gases',
-                    'pollution',
-                    'renewable',
-                    'sustainability',
-                    'waste',
-                    'water',
-                ])
-                ->map(fn ($term) => trim((string) $term))
-                ->filter()
-                ->reject(fn ($term) => in_array(Str::lower($term), $genericLegislationTerms, true))
-                ->unique(fn ($term) => Str::lower($term))
-                ->sortByDesc(fn ($term) => strlen($term))
-                ->take(80)
-                ->values()
-                ->all();
-        }
-
-    @endphp
 
     <div class="stack">
         <section class="review-summary">
@@ -327,7 +268,7 @@
                 <?php endif; ?>
             </div>
             <div class="table-wrap">
-                <table class="data-table review-table {{ $isLegislationView ? 'legislation-table' : '' }}">
+                <table class="data-table review-table">
                     <thead>
                         <tr>
                             <th class="serial-col">Serial</th>
@@ -337,13 +278,11 @@
                             <th class="opportunity-col">Opportunity</th>
                             <th class="source-col">Source</th>
                             <th class="evidence-col">Evidence</th>
-                            @unless ($isLegislationView)
-                                <th class="date-col">Published</th>
-                                <th class="retrieved-col">Retrieved (Austin time)</th>
-                                <th class="score-col">Score</th>
-                                <th class="status-col">Status</th>
-                                <th class="award-col">Award</th>
-                            @endunless
+                            <th class="date-col">Published</th>
+                            <th class="retrieved-col">Retrieved (Austin time)</th>
+                            <th class="score-col">Score</th>
+                            <th class="status-col">Status</th>
+                            <th class="award-col">Award</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -378,28 +317,6 @@
                                 $displayEnglishTitle = $englishTitleIsUsable
                                     ? $englishTitle
                                     : ($originalTitle !== '' && ! \App\Support\TitleLanguage::looksNonEnglish($originalTitle) ? $originalTitle : 'Translation pending');
-                                if ($isLegislationView && $displayEnglishTitle !== 'Translation pending') {
-                                    $displayEnglishTitle = trim(preg_replace('/\s+/', ' ', $displayEnglishTitle) ?? $displayEnglishTitle);
-
-                                    if (preg_match('/\b(?:Commission|Council|European Parliament|Regulation|Directive|Decision|Corrigendum|Proposal|Communication|Report)\b.*$/u', $displayEnglishTitle, $legislationTitleMatches) === 1) {
-                                        $cleanTitleCandidate = trim($legislationTitleMatches[0]);
-
-                                        if ($cleanTitleCandidate !== '' && strlen($cleanTitleCandidate) >= 30) {
-                                            $displayEnglishTitle = $cleanTitleCandidate;
-                                        }
-                                    }
-                                }
-                                $displayHighlightedTitle = e($displayEnglishTitle);
-                                if ($isLegislationView && $displayEnglishTitle !== 'Translation pending') {
-                                    foreach ($legislationHighlightTerms as $term) {
-                                        $highlightPattern = '/' . preg_quote($term, '/') . '/iu';
-                                        $nextHighlightedTitle = preg_replace($highlightPattern, '<mark class="match-highlight">$0</mark>', $displayHighlightedTitle);
-
-                                        if (is_string($nextHighlightedTitle)) {
-                                            $displayHighlightedTitle = $nextHighlightedTitle;
-                                        }
-                                    }
-                                }
                                 $needsTranslation = $displayEnglishTitle === 'Translation pending';
                                 $summaryText = (string) $update->summary;
                                 $isLegislationRow = $update->inferred_focus === 'legislation';
@@ -425,7 +342,7 @@
                                     </div>
                                 </td>
                                 <td>
-                                    <div class="country-action-stack {{ $isLegislationView ? 'legislation-country-actions' : '' }}">
+                                    <div class="country-action-stack">
                                         <form class="inline-update-form country-fix-form" method="post" action="{{ route('sls.intelligence.updates.country', $update) }}">
                                             @csrf
                                             <input type="hidden" name="return_to" value="{{ request()->fullUrl() }}">
@@ -436,18 +353,13 @@
                                                     </option>
                                                 @endforeach
                                             </select>
-                                            @if ($isLegislationView)
-                                                <span class="pill">{{ $update->inferred_focus && isset($focuses[$update->inferred_focus]) ? $focuses[$update->inferred_focus]['label'] : 'Unclassified' }}</span>
-                                            @endif
                                             <button class="secondary tiny" type="submit">Update</button>
                                         </form>
-                                        @unless ($isLegislationView)
-                                            <span class="pill">{{ $update->inferred_focus && isset($focuses[$update->inferred_focus]) ? $focuses[$update->inferred_focus]['label'] : 'Unclassified' }}</span>
-                                        @endunless
+                                        <span class="pill">{{ $update->inferred_focus && isset($focuses[$update->inferred_focus]) ? $focuses[$update->inferred_focus]['label'] : 'Unclassified' }}</span>
                                     </div>
                                 </td>
                                 <td class="title-cell">
-                                    <div class="copy-row {{ $isLegislationView ? 'legislation-title-row' : '' }}">
+                                    <div class="copy-row">
                                         <span class="copy-value">
                                             <span class="title-meta">
                                                 <span>Published {{ $update->publication_date?->toDateString() ?: 'not captured' }}</span>
@@ -463,38 +375,26 @@
                                             <?php if ($needsTranslation): ?>
                                                 <span class="translation-pending">Translation pending</span>
                                             <?php elseif ($update->source_url): ?>
-                                                <a class="title-link" href="{{ route('sls.intelligence.updates.sourcePage', $update) }}" target="_blank" rel="noreferrer">
-                                                    @if ($isLegislationView)
-                                                        {!! $displayHighlightedTitle !!}
-                                                    @else
-                                                        {{ $displayEnglishTitle }}
-                                                    @endif
-                                                </a>
+                                                <a class="title-link" href="{{ route('sls.intelligence.updates.sourcePage', $update) }}" target="_blank" rel="noreferrer">{{ $displayEnglishTitle }}</a>
                                             <?php else: ?>
-                                                @if ($isLegislationView)
-                                                    {!! $displayHighlightedTitle !!}
-                                                @else
-                                                    {{ $displayEnglishTitle }}
-                                                @endif
+                                                {{ $displayEnglishTitle }}
                                             <?php endif; ?>
                                         </span>
-                                        @unless ($isLegislationView)
-                                            <span class="row-action-stack">
-                                                <button class="action-link copy-button" type="button" title="Copy English title" data-copy-text="{{ $displayEnglishTitle }}">Copy</button>
-                                                @if ($update->journalistArticles->isNotEmpty())
-                                                    @foreach ($update->journalistArticles as $journalistArticle)
-                                                        @if ($journalistArticle->journalist)
-                                                            <a class="action-link" href="{{ route('sls.intelligence.journalists.show', $journalistArticle->journalist) }}">{{ $journalistArticle->journalist->name }}</a>
-                                                        @endif
-                                                    @endforeach
-                                                @else
-                                                    <form class="journalist-capture-form" method="post" action="{{ route('sls.intelligence.journalists.capture', $update) }}">
-                                                        @csrf
-                                                        <button class="action-link" type="submit">Add Journo</button>
-                                                    </form>
-                                                @endif
-                                            </span>
-                                        @endunless
+                                        <span class="row-action-stack">
+                                            <button class="action-link copy-button" type="button" title="Copy English title" data-copy-text="{{ $displayEnglishTitle }}">Copy</button>
+                                            @if ($update->journalistArticles->isNotEmpty())
+                                                @foreach ($update->journalistArticles as $journalistArticle)
+                                                    @if ($journalistArticle->journalist)
+                                                        <a class="action-link" href="{{ route('sls.intelligence.journalists.show', $journalistArticle->journalist) }}">{{ $journalistArticle->journalist->name }}</a>
+                                                    @endif
+                                                @endforeach
+                                            @else
+                                                <form class="journalist-capture-form" method="post" action="{{ route('sls.intelligence.journalists.capture', $update) }}">
+                                                    @csrf
+                                                    <button class="action-link" type="submit">Add Journo</button>
+                                                </form>
+                                            @endif
+                                        </span>
                                     </div>
                                 </td>
                                 <td>
@@ -542,34 +442,31 @@
                                         <button class="secondary tiny" type="submit">Map</button>
                                     </form>
                                 </td>
-                                @php($displaySourceName = trim((string) $update->source_name))
-                                <td>{{ Str::contains(Str::lower($displaySourceName), 'eur-lex') ? 'EUR-Lex' : ($displaySourceName !== '' ? $displaySourceName : 'Unknown source') }}</td>
+                                <td>{{ $update->source_name ?: 'Unknown source' }}</td>
                                 <td>
                                     <span class="pill {{ $isLegislationRow ? 'good' : $evidenceClass }}">{{ $evidenceLabel }}</span>
                                     @if ($isLegislationRow && $update->source_document_id)
                                         <p style="margin-top:4px;"><a href="{{ route('sls.knowledge.show', $update->source_document_id) }}">Indexed law text</a></p>
                                     @endif
                                 </td>
-                                @unless ($isLegislationView)
-                                    <td>{{ $update->publication_date?->toDateString() ?: 'Not captured' }}</td>
-                                    <td>{{ $update->retrieved_at?->copy()->timezone($austinTz)->format('Y-m-d H:i') ?: 'Not captured' }}</td>
-                                    <td>{{ $update->relevance_score }}</td>
-                                    <td><span class="pill warn">{{ $update->review_status }}</span></td>
-                                    <td>
-                                        <?php if ($update->award_status === 'awarded'): ?>
-                                            <span class="pill good">Awarded</span>
-                                            <?php if ($update->award_url): ?>
-                                                <p style="margin-top:4px;"><a href="{{ $update->award_url }}" target="_blank" rel="noreferrer">Award record</a></p>
-                                            <?php endif; ?>
-                                        <?php elseif ($update->award_status === 'not_found'): ?>
-                                            <span class="pill">No award found</span>
-                                        <?php elseif ($update->award_checked_at): ?>
-                                            <span class="pill warn">Unknown</span>
-                                        <?php else: ?>
-                                            <span class="muted">Not checked</span>
+                                <td>{{ $update->publication_date?->toDateString() ?: 'Not captured' }}</td>
+                                <td>{{ $update->retrieved_at?->copy()->timezone($austinTz)->format('Y-m-d H:i') ?: 'Not captured' }}</td>
+                                <td>{{ $update->relevance_score }}</td>
+                                <td><span class="pill warn">{{ $update->review_status }}</span></td>
+                                <td>
+                                    <?php if ($update->award_status === 'awarded'): ?>
+                                        <span class="pill good">Awarded</span>
+                                        <?php if ($update->award_url): ?>
+                                            <p style="margin-top:4px;"><a href="{{ $update->award_url }}" target="_blank" rel="noreferrer">Award record</a></p>
                                         <?php endif; ?>
-                                    </td>
-                                @endunless
+                                    <?php elseif ($update->award_status === 'not_found'): ?>
+                                        <span class="pill">No award found</span>
+                                    <?php elseif ($update->award_checked_at): ?>
+                                        <span class="pill warn">Unknown</span>
+                                    <?php else: ?>
+                                        <span class="muted">Not checked</span>
+                                    <?php endif; ?>
+                                </td>
                             </tr>
                         <?php endforeach; ?>
                         <?php else: ?>
