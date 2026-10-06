@@ -54,8 +54,6 @@ class RequireSlsLogin
 
             if (! $request->is(
                 'sls/intelligence/review',
-                'sls/intelligence/review/stories-tenders',
-                'sls/intelligence/regulatory-radar',
                 'sls/intelligence/search',
                 'sls/intelligence/keywords',
                 'sls/intelligence/keywords/*',
