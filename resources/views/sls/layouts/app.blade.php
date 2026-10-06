@@ -8,6 +8,29 @@
             $slsEntityName = \App\Support\SlsSettings::get('entity.display_name', config('sls.entity.display_name', config('sls.entity.name', '2interact')));
             $slsWorkspaceName = \App\Support\SlsSettings::get('workspace.name', config('sls.workspace.name', 'Social Security Sales'));
             $slsReviewLabel = \App\Support\SlsSettings::get('workspace.review_label', config('sls.workspace.review_label', 'Review Desk'));
+            $slsUser = auth()->user();
+            $slsUserGroup = $slsUser?->group?->loadMissing('permissions');
+            $slsSourcePermission = $slsUserGroup?->permissions?->firstWhere('form_key', 'source_maintenance');
+            $slsSourceMaintenanceOnly = $slsUserGroup
+                && ! $slsUserGroup->is_admin
+                && $slsSourcePermission
+                && ((bool) $slsSourcePermission->can_view || (bool) $slsSourcePermission->can_update)
+                && ! $slsUserGroup->permissions
+                    ->reject(fn ($permission) => $permission->form_key === 'source_maintenance')
+                    ->contains(fn ($permission) => collect([
+                        'can_view',
+                        'can_search',
+                        'can_insert',
+                        'can_update',
+                        'can_delete',
+                        'can_approve',
+                        'can_print',
+                        'can_export',
+                        'can_import',
+                        'can_run_process',
+                        'can_assign',
+                        'can_configure',
+                    ])->contains(fn ($column) => (bool) $permission->{$column}));
         @endphp
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -50,7 +73,11 @@
                 </div>
 
                 @php
-                    $navSections = [
+                    $navSections = $slsSourceMaintenanceOnly ? [
+                        'Work' => [
+                            ['Source Maintenance', route('sls.sourceMaintenance.index'), 'sls.sourceMaintenance.*', 'SRC'],
+                        ],
+                    ] : [
                         'Work' => [
                             ['Dashboard', url('/sls'), 'sls.dashboard', 'DB'],
                             ['Global CRM Search', route('sls.crm.search'), 'sls.crm.search', 'CRM'],
@@ -85,6 +112,7 @@
                         ],
                         'Setup' => [
                             ['Workspace Settings', route('sls.settings.workspace'), 'sls.settings.workspace*', 'SET'],
+                            ['Source Maintenance', route('sls.sourceMaintenance.index'), 'sls.sourceMaintenance.*', 'SRC'],
                             ['Products & Services', route('sls.settings.products'), 'sls.settings.products*', 'PRD'],
                             ['Review Categories', route('sls.settings.reviewFocuses'), 'sls.settings.reviewFocuses*', 'REV'],
                             ['Priority Opportunities', route('sls.settings.priorityOpportunities'), 'sls.settings.priorityOpportunities*', 'PRI'],

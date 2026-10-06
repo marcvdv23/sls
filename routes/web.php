@@ -77,6 +77,7 @@ use App\Support\SerpApiSearchConfig;
 use App\Support\SlsSettings;
 use App\Support\SocialSecurityAdminNameCleaner;
 use App\Support\TitleLanguage;
+use App\Support\TrackedCountrySourceDirectory;
 use App\Support\WorkspaceContext;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -630,6 +631,29 @@ Route::post('/sls/logout', function (Request $request) {
     return redirect()->route('sls.login');
 })->name('sls.logout');
 
+$ensureSourceMaintenanceAccess = function (string $action = 'view') {
+    $user = auth()->user();
+
+    if (! $user) {
+        return;
+    }
+
+    abort_unless(app(\App\Services\AccessControlService::class)->can($user, 'source_maintenance', $action), 403);
+};
+
+Route::get('/sls/source-maintenance', function (TrackedCountrySourceDirectory $directory) use ($defaultSlsProduct, $ensureSourceMaintenanceAccess, $orderedProducts) {
+    $ensureSourceMaintenanceAccess('view');
+
+    $countries = $directory->countries($defaultSlsProduct());
+
+    return view('sls.source-maintenance.index', [
+        'countries' => $countries,
+        'trackedRegions' => $countries->pluck('region')->filter()->unique()->sort()->values(),
+        'trackedLanguages' => $countries->pluck('default_language_code')->filter()->map(fn ($code) => strtoupper($code))->unique()->sort()->values(),
+        'products' => $orderedProducts(),
+    ]);
+})->name('sls.sourceMaintenance.index');
+
 Route::post('/sls/intelligence/map-items/{update}/opened', function (CountryUpdate $update) {
     abort_if($update->review_status === 'rejected', 404);
 
@@ -681,7 +705,9 @@ Route::post('/sls/intelligence/map-items/{update}/action', function (Request $re
     ]);
 })->name('sls.intelligence.mapItems.action');
 
-Route::post('/sls/tracked-countries/admin-urls', function (Request $request) use ($defaultSlsProduct) {
+Route::post('/sls/tracked-countries/admin-urls', function (Request $request) use ($defaultSlsProduct, $ensureSourceMaintenanceAccess) {
+    $ensureSourceMaintenanceAccess('update');
+
     $data = $request->validate([
         'country_iso' => ['required', 'string', 'max:8'],
         'country_name' => ['required', 'string', 'max:255'],
@@ -810,7 +836,9 @@ Route::post('/sls/tracked-countries/admin-urls', function (Request $request) use
     ]);
 })->name('sls.trackedCountries.adminUrls.update');
 
-Route::post('/sls/tracked-countries/admin-urls/delete', function (Request $request) {
+Route::post('/sls/tracked-countries/admin-urls/delete', function (Request $request) use ($ensureSourceMaintenanceAccess) {
+    $ensureSourceMaintenanceAccess('update');
+
     $data = $request->validate([
         'country_iso' => ['required', 'string', 'max:8'],
         'organization_name' => ['required', 'string', 'max:255'],
