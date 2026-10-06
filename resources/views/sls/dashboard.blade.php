@@ -94,10 +94,12 @@
 @section('topbar_actions')
     <a class="button" href="{{ route('sls.crm.search') }}">Global CRM search</a>
     <a class="button secondary" href="{{ route('sls.intelligence.review') }}">Review desk</a>
-    <form method="post" action="{{ route('sls.system.scheduler.restart') }}" style="margin:0;">
-        @csrf
-        <button class="secondary" type="submit">Restart scheduler</button>
-    </form>
+    @if (PHP_OS_FAMILY === 'Windows' && is_file(base_path('scripts/restart-windows-scheduler-loop.ps1')))
+        <form method="post" action="{{ route('sls.system.scheduler.restart') }}" style="margin:0;">
+            @csrf
+            <button class="secondary" type="submit">Restart scheduler</button>
+        </form>
+    @endif
     <form method="post" action="{{ route('sls.system.backup') }}" style="margin:0;">
         @csrf
         <button class="secondary" type="submit">Run backup</button>

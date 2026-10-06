@@ -1937,6 +1937,10 @@ Route::get('/sls', function () use ($orderedProducts, $allMapCountries, $relevan
 });
 
 Route::post('/sls/system/scheduler/restart', function () {
+    if (PHP_OS_FAMILY !== 'Windows') {
+        return back()->with('error', 'Scheduler restart is only available on the local Windows development setup. Production uses cron/systemd.');
+    }
+
     $script = base_path('scripts/restart-windows-scheduler-loop.ps1');
 
     if (! is_file($script)) {
