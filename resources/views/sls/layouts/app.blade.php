@@ -103,6 +103,7 @@
                     ] : ($slsBasicReviewerOnly ? [
                         'Review' => [
                             ['Regulatory Radar', route('sls.intelligence.review', ['focus' => 'legislation', 'region' => 'global', 'retrieved' => 'current', 'country_q' => 'European Union']), 'sls.intelligence.review', 'REG'],
+                            ['News & Tenders', route('sls.intelligence.review', ['focus' => 'all', 'region' => 'all', 'retrieved' => 'current']), 'sls.intelligence.review', 'REV'],
                             ['Keywords', route('sls.intelligence.keywords'), 'sls.intelligence.keywords*', '#'],
                             ['Opportunities', route('sls.opportunities.index'), 'sls.opportunities.*', 'OPP'],
                             ['To Do', route('sls.tasks.index'), 'sls.tasks.*', 'TODO'],
@@ -163,7 +164,16 @@
                         <button class="nav-section-title" type="button" data-nav-section-toggle aria-expanded="true" aria-controls="{{ $sectionId }}">{{ $section }}</button>
                         <div id="{{ $sectionId }}" class="nav-section-links">
                         @foreach ($links as [$label, $href, $routePattern, $icon])
-                            <a class="nav-link {{ request()->routeIs($routePattern) ? 'active' : '' }}" href="{{ $href }}" title="{{ $label }}">
+                            @php
+                                $isReviewRoute = request()->routeIs('sls.intelligence.review');
+                                $isRegulatoryReview = $isReviewRoute && request()->query('focus') === 'legislation';
+                                $navActive = match ($label) {
+                                    'Regulatory Radar' => $isRegulatoryReview,
+                                    'News & Tenders' => $isReviewRoute && ! $isRegulatoryReview,
+                                    default => request()->routeIs($routePattern),
+                                };
+                            @endphp
+                            <a class="nav-link {{ $navActive ? 'active' : '' }}" href="{{ $href }}" title="{{ $label }}">
                                 <span class="nav-icon">{{ $icon }}</span>
                                 <span class="nav-text">{{ $label }}</span>
                             </a>
