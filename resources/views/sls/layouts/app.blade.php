@@ -102,7 +102,8 @@
                         ],
                     ] : ($slsBasicReviewerOnly ? [
                         'Review' => [
-                            [$slsReviewLabel, route('sls.intelligence.review'), 'sls.intelligence.review', 'REV'],
+                            ['Regulatory Radar', route('sls.intelligence.regulatoryRadar'), 'sls.intelligence.regulatoryRadar', 'REG'],
+                            ['Stories & Tenders', route('sls.intelligence.storiesTenders'), 'sls.intelligence.storiesTenders', 'REV'],
                             ['Keywords', route('sls.intelligence.keywords'), 'sls.intelligence.keywords*', '#'],
                             ['Opportunities', route('sls.opportunities.index'), 'sls.opportunities.*', 'OPP'],
                             ['To Do', route('sls.tasks.index'), 'sls.tasks.*', 'TODO'],
@@ -119,6 +120,7 @@
                         ],
                         'Intelligence' => [
                             [$slsReviewLabel, route('sls.intelligence.review'), 'sls.intelligence.review', 'REV'],
+                            ['Regulatory Radar', route('sls.intelligence.regulatoryRadar'), 'sls.intelligence.regulatoryRadar', 'REG'],
                             ['Add Story', route('sls.intelligence.stories.create'), 'sls.intelligence.stories.*', '+'],
                             ['Opportunity Intake', route('sls.intelligence.opportunityIntake.create'), 'sls.intelligence.opportunityIntake.*', 'IN'],
                             ['Awarded Companies', route('sls.intelligence.awardedCompanies.index'), 'sls.intelligence.awardedCompanies.*', 'AWD'],
@@ -163,7 +165,14 @@
                         <button class="nav-section-title" type="button" data-nav-section-toggle aria-expanded="true" aria-controls="{{ $sectionId }}">{{ $section }}</button>
                         <div id="{{ $sectionId }}" class="nav-section-links">
                         @foreach ($links as [$label, $href, $routePattern, $icon])
-                            <a class="nav-link {{ request()->routeIs($routePattern) ? 'active' : '' }}" href="{{ $href }}" title="{{ $label }}">
+                            @php
+                                $isReviewRoute = request()->routeIs('sls.intelligence.review');
+                                $isRegulatoryReview = $isReviewRoute && request()->query('focus') === 'legislation';
+                                $navActive = request()->routeIs($routePattern)
+                                    || ($label === 'Regulatory Radar' && $isRegulatoryReview)
+                                    || ($label === 'Stories & Tenders' && $isReviewRoute && ! $isRegulatoryReview);
+                            @endphp
+                            <a class="nav-link {{ $navActive ? 'active' : '' }}" href="{{ $href }}" title="{{ $label }}">
                                 <span class="nav-icon">{{ $icon }}</span>
                                 <span class="nav-text">{{ $label }}</span>
                             </a>
