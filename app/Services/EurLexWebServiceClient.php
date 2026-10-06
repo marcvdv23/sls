@@ -366,7 +366,7 @@ XML,
         if (preg_match('/\b(?:Commission|Council|European Parliament|Regulation|Directive|Decision|Corrigendum|Proposal|Communication|Report)\b.*$/u', $title, $matches) === 1) {
             $candidate = trim($matches[0]);
 
-            if ($candidate !== '' && mb_strlen($candidate) >= 30) {
+            if ($candidate !== '' && strlen($candidate) >= 30) {
                 return $candidate;
             }
         }

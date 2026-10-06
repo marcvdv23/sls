@@ -103,6 +103,7 @@
     @php($austinTz = 'America/Chicago')
     @php($isLegislationView = $focus === 'legislation')
     @php
+        $legislationHighlightTerms = [];
         $genericLegislationTerms = [
             'celex',
             'decision',
@@ -116,43 +117,47 @@
             'regulation',
             'regulation (eu)',
         ];
-        $legislationHighlightTerms = collect($focuses['legislation']['terms'] ?? [])
-            ->merge($focuses['legislation']['strong_signals'] ?? [])
-            ->merge([
-                'biodiversity',
-                'carbon',
-                'cbam',
-                'circular economy',
-                'climate',
-                'co2',
-                'due diligence',
-                'emission',
-                'energy',
-                'environment',
-                'esg',
-                'fluorinated greenhouse gases',
-                'greenhouse gases',
-                'pollution',
-                'renewable',
-                'sustainability',
-                'waste',
-                'water',
-            ])
-            ->map(fn ($term) => trim((string) $term))
-            ->filter()
-            ->reject(fn ($term) => in_array(Str::lower($term), $genericLegislationTerms, true))
-            ->unique(fn ($term) => Str::lower($term))
-            ->sortByDesc(fn ($term) => mb_strlen($term))
-            ->take(80)
-            ->values()
-            ->all();
+
+        if ($isLegislationView) {
+            $legislationHighlightTerms = collect($focuses['legislation']['terms'] ?? [])
+                ->merge($focuses['legislation']['strong_signals'] ?? [])
+                ->merge([
+                    'biodiversity',
+                    'carbon',
+                    'cbam',
+                    'circular economy',
+                    'climate',
+                    'co2',
+                    'due diligence',
+                    'emission',
+                    'energy',
+                    'environment',
+                    'esg',
+                    'fluorinated greenhouse gases',
+                    'greenhouse gases',
+                    'pollution',
+                    'renewable',
+                    'sustainability',
+                    'waste',
+                    'water',
+                ])
+                ->map(fn ($term) => trim((string) $term))
+                ->filter()
+                ->reject(fn ($term) => in_array(Str::lower($term), $genericLegislationTerms, true))
+                ->unique(fn ($term) => Str::lower($term))
+                ->sortByDesc(fn ($term) => strlen($term))
+                ->take(80)
+                ->values()
+                ->all();
+        }
+
         $cleanLegislationTitle = function (string $title): string {
             $title = trim(preg_replace('/\s+/', ' ', $title) ?? $title);
 
             if (preg_match('/\b(?:Commission|Council|European Parliament|Regulation|Directive|Decision|Corrigendum|Proposal|Communication|Report)\b.*$/u', $title, $matches) === 1) {
                 $candidate = trim($matches[0]);
 
-                if ($candidate !== '' && mb_strlen($candidate) >= 30) {
+                if ($candidate !== '' && strlen($candidate) >= 30) {
                     return $candidate;
                 }
             }
