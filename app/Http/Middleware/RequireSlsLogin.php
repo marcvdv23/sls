@@ -44,12 +44,7 @@ class RequireSlsLogin
 
         if ($this->isBasicReviewerOnlyUser(auth()->user())) {
             if ($request->is('sls')) {
-                return redirect()->route('sls.intelligence.review', [
-                    'focus' => 'legislation',
-                    'region' => 'global',
-                    'retrieved' => 'current',
-                    'country_q' => 'European Union',
-                ]);
+                return redirect()->route('sls.intelligence.regulatoryRadar');
             }
 
             if (! $request->is(

@@ -152,8 +152,8 @@
                 </p>
             </div>
             <div class="review-mode-switch" aria-label="Review desk mode">
-                <a class="button {{ $isLegislationView ? '' : 'secondary' }}" href="{{ url('/sls/intelligence/regulatory-radar') }}">Regulatory Radar</a>
-                <a class="button {{ $isLegislationView ? 'secondary' : '' }}" href="{{ url('/sls/intelligence/review/stories-tenders') }}">Stories & Tenders</a>
+                <a class="button {{ $isLegislationView ? '' : 'secondary' }}" href="{{ route('sls.intelligence.regulatoryRadar') }}">Regulatory Radar</a>
+                <a class="button {{ $isLegislationView ? 'secondary' : '' }}" href="{{ route('sls.intelligence.storiesTenders') }}">Stories & Tenders</a>
             </div>
         </section>
 
