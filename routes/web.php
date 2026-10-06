@@ -3993,24 +3993,6 @@ Route::post('/sls/intelligence/stories', function (Request $request) {
         ->with('status', 'Manual ' . ($data['item_type'] === 'tender' ? 'tender' : 'news story') . ' added to Review Desk.');
 })->name('sls.intelligence.stories.store');
 
-Route::get('/sls/intelligence/regulatory-radar', function (Request $request) {
-    return redirect()->route('sls.intelligence.review', array_filter(array_merge($request->query(), [
-        'focus' => 'legislation',
-        'region' => 'global',
-        'retrieved' => $request->query('retrieved', 'current'),
-        'country_q' => $request->query('country_q', 'European Union'),
-    ])));
-})->name('sls.intelligence.regulatoryRadar');
-
-Route::get('/sls/intelligence/review/stories-tenders', function (Request $request) {
-    return redirect()->route('sls.intelligence.review', array_filter(array_merge($request->query(), [
-        'focus' => $request->query('focus') === 'legislation' ? 'all' : $request->query('focus', 'all'),
-        'region' => $request->query('region', 'all'),
-        'legal_type' => null,
-        'legal_stage' => null,
-    ])));
-})->name('sls.intelligence.storiesTenders');
-
 Route::get('/sls/intelligence/review', function (Request $request) use ($allMapCountries, $orderedProducts, $productFocusKey) {
     $focuses = ReviewFocuses::all();
     $focus = array_key_exists((string) $request->query('focus', 'all'), $focuses)
@@ -4035,9 +4017,6 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
     $countrySearchQuery = trim((string) $request->query('country_q', ''));
     $countrySearchType = Str::of((string) $request->query('country_type', 'all'))->lower()->toString();
     $countrySearchStatus = Str::of((string) $request->query('country_status', 'all'))->lower()->toString();
-    if ($focus === 'legislation' && $countrySearchQuery === '') {
-        $countrySearchQuery = 'European Union';
-    }
     $activeTypeFilter = in_array($countrySearchType, ['tenders', 'news'], true) ? $countrySearchType : $typeFilter;
     $activeStatusFilter = $countrySearchQuery !== '' ? $countrySearchStatus : $statusFilter;
     $perPage = min(500, max(25, (int) $request->query('per_page', $request->query('limit', 100))));
@@ -4133,10 +4112,6 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
             ->filter(fn (string $term) => mb_strlen($term) >= 3)
             ->unique(fn (string $term) => Str::lower($term))
             ->values();
-    }
-
-    if ($focus === 'legislation') {
-        $countrySearchTerms = collect();
     }
 
     $hasTenderSignal = fn (CountryUpdate $update): bool => CountryUpdateClassifier::isTender($update);
@@ -4373,7 +4348,6 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
         'products' => $reviewProducts,
         'focusProductMap' => $reviewFocusProductMap,
         'focus' => $focus,
-        'reviewMode' => $focus === 'legislation' ? 'regulatory_radar' : 'stories_tenders',
         'isLegislationView' => $focus === 'legislation',
         'region' => $region,
         'publishedFilter' => $publishedFilter,

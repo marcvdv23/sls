@@ -1,8 +1,8 @@
 ﻿@extends('sls.layouts.app')
 
-@section('title', ($focus ?? 'all') === 'legislation' ? 'Regulatory Radar' : 'Stories & Tenders Review')
+@section('title', 'Country Intelligence Review')
 @section('eyebrow', 'Country Intelligence')
-@section('page_title', ($focus ?? 'all') === 'legislation' ? 'Regulatory Radar' : 'Stories & Tenders Review')
+@section('page_title', ($focus ?? 'all') === 'legislation' ? 'Legislation Review' : 'Tenders and Research Status')
 
 @section('topbar_actions')
     @php
@@ -34,9 +34,7 @@
         <a class="button" href="{{ route('sls.intelligence.stories.create') }}">Add story</a>
         <a class="button secondary" href="{{ route('sls.intelligence.world', ['focus' => $focus === 'all' ? 'social_security' : $focus, 'region' => $region === 'all' ? null : $region]) }}">Map</a>
     @endunless
-    @if (($focus ?? 'all') !== 'legislation')
-        <a class="button secondary" href="#country-search">Country search</a>
-    @endif
+    <a class="button secondary" href="#country-search">Country search</a>
     @unless ($reviewBasicOnly)
         <a class="button secondary" href="{{ route('sls.intelligence.contacts') }}">Contact directory</a>
         <a class="button secondary" href="{{ route('sls.intelligence.sources', ['region' => $region]) }}">Source coverage</a>
@@ -48,8 +46,6 @@
 @push('head')
     <style>
         .review-summary { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:10px; }
-        .review-mode-switch { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-        .review-mode-switch .button { min-width:11rem; justify-content:center; }
         .country-search-grid { display:grid; grid-template-columns:minmax(260px, 1fr) 12rem 12rem auto; gap:10px; align-items:end; }
         .country-search-summary { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:10px; }
         .country-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:10px; }
@@ -139,24 +135,6 @@
     @php($legislationHighlightTerms = $legislationHighlightTerms ?? [])
 
     <div class="stack">
-        <section class="panel stack">
-            <div>
-                <p class="eyebrow">Review Desk</p>
-                <h2>{{ $isLegislationView ? 'Regulatory Radar' : 'Stories & Tenders' }}</h2>
-                <p class="muted">
-                    @if ($isLegislationView)
-                        EU regulatory items from EUR-Lex, with document type and stage filters for legal review.
-                    @else
-                        News stories, tenders, RFPs, partnerships, and research leads. Legislation is handled separately in Regulatory Radar.
-                    @endif
-                </p>
-            </div>
-            <div class="review-mode-switch" aria-label="Review desk mode">
-                <a class="button {{ $isLegislationView ? '' : 'secondary' }}" href="{{ route('sls.intelligence.regulatoryRadar') }}">Regulatory Radar</a>
-                <a class="button {{ $isLegislationView ? 'secondary' : '' }}" href="{{ route('sls.intelligence.storiesTenders') }}">Stories & Tenders</a>
-            </div>
-        </section>
-
         <section class="review-summary">
             <div class="panel stat">
                 <strong>{{ $totalMatchingUpdates }}</strong>
@@ -174,38 +152,33 @@
 
         <section class="panel">
             <p class="eyebrow">Filters</p>
-            <h2>{{ $isLegislationView ? 'Filter regulatory items' : 'Review by product focus and region' }}</h2>
-            <?php
-                $baseFilterQuery = [
-                    'focus' => $isLegislationView ? 'legislation' : $focus,
-                    'region' => $isLegislationView ? 'global' : $region,
-                    'published' => $publishedFilter ?: null,
-                    'retrieved' => $retrievedFilter ?: null,
-                    'type' => $typeFilter ?: null,
-                    'legal_type' => $legislationTypeFilter ?? 'all',
-                    'legal_stage' => $legislationStageFilter ?? 'all',
-                    'country_q' => $isLegislationView ? 'European Union' : ($countrySearchQuery ?: null),
-                    'per_page' => $displayLimit,
-                ];
-            ?>
-            @unless ($isLegislationView)
-                <div class="filters">
-                    <a class="button {{ $focus === 'all' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => 'all', 'region' => $region]) }}">All items</a>
-                    <?php foreach ($focuses as $focusKey => $focusConfig): ?>
-                        <?php if ($focusKey === 'legislation') { continue; } ?>
-                        <a class="button {{ $focus === $focusKey ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => $focusKey, 'region' => $region]) }}">{{ $focusConfig['label'] }}</a>
-                    <?php endforeach; ?>
-                </div>
-                <div class="filters region-filters" aria-label="Geographic filters">
-                    <a class="button {{ $region === 'all' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => $focus, 'region' => 'all']) }}">All regions</a>
-                    <a class="button {{ $region === 'africa' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => $focus, 'region' => 'africa']) }}">Africa</a>
-                    <a class="button {{ $region === 'asia' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => $focus, 'region' => 'asia']) }}">Asia</a>
-                    <a class="button {{ $region === 'caribbean' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => $focus, 'region' => 'caribbean']) }}">Caribbean</a>
-                    <a class="button {{ $region === 'latin_america' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => $focus, 'region' => 'latin_america']) }}">Latin America</a>
-                    <a class="button {{ $region === 'north_america' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => $focus, 'region' => 'north_america']) }}">North America</a>
-                    <a class="button {{ $region === 'europe' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => $focus, 'region' => 'europe']) }}">Europe</a>
-                </div>
-            @endunless
+            <h2>Review by product focus and region</h2>
+            <div class="filters">
+                <?php
+                    $baseFilterQuery = [
+                        'focus' => $focus,
+                        'region' => $region,
+                        'published' => $publishedFilter ?: null,
+                        'type' => $typeFilter ?: null,
+                        'legal_type' => $legislationTypeFilter ?? 'all',
+                        'legal_stage' => $legislationStageFilter ?? 'all',
+                        'per_page' => $displayLimit,
+                    ];
+                ?>
+                <a class="button {{ $focus === 'all' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => 'all', 'region' => $region]) }}">All items</a>
+                <?php foreach ($focuses as $focusKey => $focusConfig): ?>
+                    <a class="button {{ $focus === $focusKey ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => $focusKey, 'region' => $region]) }}">{{ $focusConfig['label'] }}</a>
+                <?php endforeach; ?>
+            </div>
+            <div class="filters region-filters" aria-label="Geographic filters">
+                <a class="button {{ $region === 'all' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => $focus, 'region' => 'all']) }}">All regions</a>
+                <a class="button {{ $region === 'africa' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => $focus, 'region' => 'africa']) }}">Africa</a>
+                <a class="button {{ $region === 'asia' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => $focus, 'region' => 'asia']) }}">Asia</a>
+                <a class="button {{ $region === 'caribbean' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => $focus, 'region' => 'caribbean']) }}">Caribbean</a>
+                <a class="button {{ $region === 'latin_america' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => $focus, 'region' => 'latin_america']) }}">Latin America</a>
+                <a class="button {{ $region === 'north_america' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => $focus, 'region' => 'north_america']) }}">North America</a>
+                <a class="button {{ $region === 'europe' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', ['focus' => $focus, 'region' => 'europe']) }}">Europe</a>
+            </div>
             <div class="filters">
                 <a class="button {{ $retrievedFilter === 'current' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', array_filter(array_merge($baseFilterQuery, ['retrieved' => 'current']))) }}">Current intake</a>
                 <a class="button {{ $retrievedFilter === 'last7' ? '' : 'secondary' }}" href="{{ route('sls.intelligence.review', array_filter(array_merge($baseFilterQuery, ['retrieved' => 'last7']))) }}">Retrieved 7 days</a>
@@ -237,7 +210,6 @@
             </section>
         @endif
 
-        @unless ($isLegislationView)
         <section id="country-search" class="panel stack">
             <div>
                 <p class="eyebrow">Country Search</p>
@@ -304,13 +276,12 @@
 
             @endif
         </section>
-        @endunless
         <section class="panel stack">
             <div>
                 <p class="eyebrow">Captured Items</p>
                 <h2>
                     @if ($isLegislationView)
-                        EU regulatory items found
+                        {{ $countrySearchQuery !== '' ? 'Legislation items for country search' : 'Legislation items found' }}
                     @else
                         {{ $countrySearchQuery !== '' ? 'Review Desk items for country search' : 'All tenders, RFPs, and intelligence items found' }}
                     @endif
@@ -659,7 +630,7 @@
                 </nav>
             </div>
         </section>
-        @if (! $isLegislationView && $countrySearchQuery !== '')
+        @if ($countrySearchQuery !== '')
             <section class="panel stack">
                 <div>
                     <p class="eyebrow">Monitor Runs</p>
