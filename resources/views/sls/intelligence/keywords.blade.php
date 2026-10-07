@@ -27,6 +27,9 @@
         .legacy-page label { color: var(--text-secondary); font-size: 12px; font-weight: 800; }
         .legacy-page table { background: var(--bg-secondary); }
         .legacy-page .empty { border: 1px dashed var(--border-subtle); border-radius: var(--radius-card); padding: 14px; }
+        .term-list { display:flex; flex-wrap:wrap; gap:6px; max-width:640px; }
+        .term-chip { display:inline-flex; border-radius:999px; padding:.22rem .5rem; background:#eef4ff; color:var(--accent-primary); font-size:.76rem; font-weight:800; line-height:1.2; }
+        .term-chip.signal { background:#ecfdf3; color:#047857; }
         @media (max-width: 980px) {
             .legacy-page > header { align-items: flex-start; flex-direction: column; }
         }
@@ -54,9 +57,61 @@
             @endif
 
             <section class="panel">
+                <p class="eyebrow">Workspace Monitored Terms</p>
+                <h2>Terms used by this workspace's crawlers</h2>
+                <p class="muted" style="margin-top:.35rem;">These are the enabled review-category terms and strong signals for the active workspace. The crawler uses them to find, classify, and explain matched stories, tenders, and regulatory items.</p>
+
+                <div class="table-wrap" style="margin-top:12px;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Focus</th>
+                                <th>Terms</th>
+                                <th>Strong signals</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @forelse ($reviewFocuses as $reviewFocus)
+                                <tr>
+                                    <td>
+                                        <strong>{{ $reviewFocus->label }}</strong>
+                                        @if ($reviewFocus->description)
+                                            <p class="muted">{{ $reviewFocus->description }}</p>
+                                        @endif
+                                    </td>
+                                    <td>
+                                        <div class="term-list">
+                                            @forelse (($reviewFocus->terms ?? []) as $term)
+                                                <span class="term-chip">{{ $term }}</span>
+                                            @empty
+                                                <span class="muted">No terms configured.</span>
+                                            @endforelse
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div class="term-list">
+                                            @forelse (($reviewFocus->strong_signals ?? []) as $term)
+                                                <span class="term-chip signal">{{ $term }}</span>
+                                            @empty
+                                                <span class="muted">No strong signals configured.</span>
+                                            @endforelse
+                                        </div>
+                                    </td>
+                                </tr>
+                            @empty
+                                <tr>
+                                    <td colspan="3" class="muted">No workspace review categories are configured yet.</td>
+                                </tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="panel">
                 <p class="eyebrow">Manage Terms</p>
-                <h2>Terms monitored for tenders and news stories</h2>
-                <p class="muted" style="margin-top:.35rem;">Enabled Source Discovery terms are used by SerpAPI to find official social security, labour, civil service, and procurement sites. Disable noisy terms before running large batches.</p>
+                <h2>Additional keyword rules</h2>
+                <p class="muted" style="margin-top:.35rem;">These workspace-specific keyword rows are added to the review-category terms above. Source Discovery terms are used by SerpAPI to find official sources for this workspace.</p>
 
                 <form class="filter-grid" method="get" action="{{ route('sls.intelligence.keywords') }}">
                     <label>Focus

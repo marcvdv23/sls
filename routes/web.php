@@ -9659,6 +9659,14 @@ Route::get('/sls/intelligence/keywords', function () use ($seedIntelligenceRegis
     $focusFilter = (string) request('focus', 'source_discovery');
     $languageFilter = (string) request('language', 'all');
     $categoryFilter = (string) request('category', 'all');
+    $focuses = collect(ReviewFocuses::all())
+        ->merge([
+            'source_discovery' => [
+                'label' => 'Source Discovery',
+                'description' => 'SerpAPI seed terms for finding official workspace sources.',
+            ],
+        ])
+        ->all();
 
     $keywords = IntelligenceKeyword::query()
         ->when($focusFilter !== 'all', fn ($query) => $query->where('focus', $focusFilter))
@@ -9672,14 +9680,12 @@ Route::get('/sls/intelligence/keywords', function () use ($seedIntelligenceRegis
 
     return view('sls.intelligence.keywords', [
         'keywords' => $keywords,
-        'focuses' => collect(ReviewFocuses::all())
-            ->merge([
-                'source_discovery' => [
-                    'label' => 'Source Discovery',
-                    'description' => 'SerpAPI seed terms for finding official social security, labour, civil service, and procurement sources.',
-                ],
-            ])
-            ->all(),
+        'focuses' => $focuses,
+        'reviewFocuses' => ReviewFocus::query()
+            ->where('is_enabled', true)
+            ->orderBy('sort_order')
+            ->orderBy('label')
+            ->get(),
         'focusFilter' => $focusFilter,
         'languageFilter' => $languageFilter,
         'categoryFilter' => $categoryFilter,
