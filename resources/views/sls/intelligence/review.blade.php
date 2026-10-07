@@ -2,7 +2,19 @@
 
 @section('title', 'Country Intelligence Review')
 @section('eyebrow', 'Country Intelligence')
-@section('page_title', ($focus ?? 'all') === 'legislation' ? 'Legislation Review' : 'Tenders and Research Status')
+@section('page_title')
+    @if (($focus ?? 'all') === 'legislation')
+        Legislation Review
+        <span class="title-info">
+            <button type="button" class="title-info-button" aria-label="About Legislation Review">i</button>
+            <span class="title-info-popover" role="tooltip">
+                This view shows enacted or final-stage legislation captured from EUR-Lex. SLS stores the official source link for review first; full legal documents are saved and indexed only when a user chooses to pull them into the knowledge tools.
+            </span>
+        </span>
+    @else
+        Tenders and Research Status
+    @endif
+@endsection
 
 @section('topbar_actions')
     @php
@@ -47,6 +59,11 @@
 
 @push('head')
     <style>
+        .title-info { position:relative; display:inline-flex; align-items:center; margin-left:8px; vertical-align:middle; }
+        .title-info-button { display:inline-flex; align-items:center; justify-content:center; width:1.25rem; height:1.25rem; border:1px solid var(--border-subtle); border-radius:999px; background:var(--bg-primary); color:var(--accent-primary); font-size:.8rem; font-weight:900; line-height:1; cursor:pointer; }
+        .title-info-popover { position:absolute; top:calc(100% + 8px); left:0; z-index:30; display:none; width:min(420px, calc(100vw - 32px)); padding:12px; border:1px solid var(--border-subtle); border-radius:8px; background:var(--bg-primary); box-shadow:var(--shadow-card); color:var(--text-secondary); font-size:.88rem; font-weight:500; line-height:1.45; }
+        .title-info:hover .title-info-popover,
+        .title-info:focus-within .title-info-popover { display:block; }
         .review-summary { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:10px; }
         .country-search-grid { display:grid; grid-template-columns:minmax(260px, 1fr) 12rem 12rem auto; gap:10px; align-items:end; }
         .country-search-summary { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:10px; }
@@ -142,15 +159,7 @@
     @php($legislationHighlightTerms = $legislationHighlightTerms ?? [])
 
     <div class="stack">
-        @if ($isLegislationView)
-            <section class="panel stack">
-                <div>
-                    <p class="eyebrow">Legislation Monitor</p>
-                    <h2>EU legislation captured from official sources</h2>
-                    <p class="muted">This view shows enacted or final-stage legislation captured from EUR-Lex. SLS stores the official source link for review first; full legal documents are saved and indexed only when a user chooses to pull them into the knowledge tools.</p>
-                </div>
-            </section>
-        @else
+        @unless ($isLegislationView)
             <section class="review-summary">
                 <div class="panel stat">
                     <strong>{{ $totalMatchingUpdates }}</strong>
@@ -165,18 +174,23 @@
                     <span class="muted">countries in selected scope</span>
                 </div>
             </section>
-        @endif
+        @endunless
 
         <section class="panel">
             <p class="eyebrow">Filters</p>
-            <h2>Review by product focus and region</h2>
+            <h2>{{ $isLegislationView ? 'Search and filter retrieved legislation' : 'Review by product focus and region' }}</h2>
             <form class="review-filter-form" method="get" action="{{ route('sls.intelligence.review') }}">
                 <input type="hidden" name="published" value="{{ $publishedFilter }}">
                 <input type="hidden" name="type" value="{{ $typeFilter }}">
                 <input type="hidden" name="per_page" value="{{ $displayLimit }}">
                 @if ($isLegislationView)
                     <input type="hidden" name="focus" value="legislation">
+                    <label class="field">
+                        Search titles
+                        <input name="title_q" value="{{ $titleSearchQuery ?? '' }}" placeholder="Search retrieved legislation titles">
+                    </label>
                 @else
+                    <input type="hidden" name="title_q" value="{{ $titleSearchQuery ?? '' }}">
                     <label class="field">
                         Product focus
                         <select name="focus">
@@ -254,6 +268,7 @@
                 <input type="hidden" name="type" value="{{ $typeFilter }}">
                 <input type="hidden" name="legal_type" value="{{ $legislationTypeFilter ?? 'all' }}">
                 <input type="hidden" name="legal_stage" value="{{ $legislationStageFilter ?? 'all' }}">
+                <input type="hidden" name="title_q" value="{{ $titleSearchQuery ?? '' }}">
                 <input type="hidden" name="per_page" value="{{ $displayLimit }}">
                 <label class="field">
                     Country name or ISO code

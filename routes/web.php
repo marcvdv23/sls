@@ -4014,6 +4014,7 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
     if (! in_array($legislationStageFilter, ['all', 'adopted', 'proposal', 'corrigendum', 'other'], true)) {
         $legislationStageFilter = 'all';
     }
+    $titleSearchQuery = trim((string) $request->query('title_q', ''));
     $countrySearchQuery = trim((string) $request->query('country_q', ''));
     $countrySearchType = Str::of((string) $request->query('country_type', 'all'))->lower()->toString();
     $countrySearchStatus = Str::of((string) $request->query('country_status', 'all'))->lower()->toString();
@@ -4173,6 +4174,17 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
                 });
             });
         }, fn ($query) => $query->whereIn('country_id', $countryIds))
+        ->when($titleSearchQuery !== '', function ($query) use ($titleSearchQuery) {
+            $like = '%' . addcslashes($titleSearchQuery, '\\%_') . '%';
+
+            $query->where(function ($titleQuery) use ($like) {
+                $titleQuery
+                    ->where('title', 'like', $like)
+                    ->orWhere('title_english', 'like', $like)
+                    ->orWhere('title_original', 'like', $like)
+                    ->orWhere('legal_document_code', 'like', $like);
+            });
+        })
         ->when(in_array($publishedFilter, ['last30', 'last60', 'last120'], true), fn ($query) => $query->whereNotNull('publication_date')->where('publication_date', '>=', now()->subDays(match ($publishedFilter) {
             'last120' => 120,
             'last60' => 60,
@@ -4405,6 +4417,7 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
         'legislationHighlightTerms' => $legislationHighlightTerms,
         'totalCountries' => $countryStatus->count(),
         'researchedCountries' => $countryStatus->filter(fn (array $country) => $country['last_researched'] !== null)->count(),
+        'titleSearchQuery' => $titleSearchQuery,
         'countrySearchQuery' => $countrySearchQuery,
         'countrySearchType' => $countrySearchType,
         'countrySearchStatus' => $countrySearchStatus,
