@@ -187,7 +187,7 @@
                     <input type="hidden" name="focus" value="legislation">
                     <label class="field">
                         Search titles
-                        <input name="title_q" value="{{ $titleSearchQuery ?? '' }}" placeholder="Search retrieved legislation titles">
+                        <input type="search" name="title_q" value="{{ $titleSearchQuery ?? '' }}" placeholder="Search title words or CELEX">
                     </label>
                 @else
                     <input type="hidden" name="title_q" value="{{ $titleSearchQuery ?? '' }}">

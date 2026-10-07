@@ -4114,6 +4114,12 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
             ->unique(fn (string $term) => Str::lower($term))
             ->values();
     }
+    $titleSearchTerms = collect(preg_split('/\s+/', $titleSearchQuery) ?: [])
+        ->map(fn ($term) => trim((string) $term))
+        ->filter(fn (string $term) => mb_strlen($term) >= 2)
+        ->unique(fn (string $term) => Str::lower($term))
+        ->take(8)
+        ->values();
 
     $hasTenderSignal = fn (CountryUpdate $update): bool => CountryUpdateClassifier::isTender($update);
     $isLegislationUpdate = function (CountryUpdate $update): bool {
@@ -4174,17 +4180,6 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
                 });
             });
         }, fn ($query) => $query->whereIn('country_id', $countryIds))
-        ->when($titleSearchQuery !== '', function ($query) use ($titleSearchQuery) {
-            $like = '%' . addcslashes($titleSearchQuery, '\\%_') . '%';
-
-            $query->where(function ($titleQuery) use ($like) {
-                $titleQuery
-                    ->where('title', 'like', $like)
-                    ->orWhere('title_english', 'like', $like)
-                    ->orWhere('title_original', 'like', $like)
-                    ->orWhere('legal_document_code', 'like', $like);
-            });
-        })
         ->when(in_array($publishedFilter, ['last30', 'last60', 'last120'], true), fn ($query) => $query->whereNotNull('publication_date')->where('publication_date', '>=', now()->subDays(match ($publishedFilter) {
             'last120' => 120,
             'last60' => 60,
@@ -4214,6 +4209,18 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
                 ? $isLegislationUpdate($update)
                 : $update->inferred_focus === $focus)
         )
+        ->when($titleSearchTerms->isNotEmpty(), fn ($updates) => $updates->filter(function (CountryUpdate $update) use ($titleSearchTerms) {
+            $searchText = Str::lower(html_entity_decode(implode(' ', array_filter([
+                (string) $update->title,
+                (string) $update->title_english,
+                (string) $update->title_original,
+                (string) $update->summary,
+                (string) $update->summary_english,
+                (string) $update->legal_document_code,
+            ])), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+
+            return $titleSearchTerms->every(fn (string $term) => Str::contains($searchText, Str::lower($term)));
+        }))
         ->when($focus === 'legislation' && $legislationTypeFilter !== 'all', fn ($updates) => $updates->filter(fn (CountryUpdate $update) => (string) $update->legal_instrument_type === $legislationTypeFilter))
         ->when($focus === 'legislation' && $legislationStageFilter !== 'all', fn ($updates) => $updates->filter(fn (CountryUpdate $update) => (string) $update->legislation_stage === $legislationStageFilter))
         ->when(in_array($activeTypeFilter, ['tenders', 'news'], true), fn ($updates) => $updates->filter(fn (CountryUpdate $update) => $activeTypeFilter === 'tenders' ? $hasTenderSignal($update) : ! $hasTenderSignal($update)))
