@@ -4001,9 +4001,10 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
     $region = Str::of((string) $request->query('region', 'all'))->lower()->toString();
     $statusFilter = Str::of((string) $request->query('status', 'all'))->lower()->toString();
     $publishedFilter = Str::of((string) $request->query('published', ''))->lower()->toString();
-    $retrievedFilter = Str::of((string) $request->query('retrieved', 'current'))->lower()->toString();
+    $defaultRetrievedFilter = $focus === 'legislation' ? 'all' : 'current';
+    $retrievedFilter = Str::of((string) $request->query('retrieved', $defaultRetrievedFilter))->lower()->toString();
     if (! in_array($retrievedFilter, ['current', 'last7', 'last14', 'last30', 'last90', 'all'], true)) {
-        $retrievedFilter = 'current';
+        $retrievedFilter = $defaultRetrievedFilter;
     }
     $typeFilter = Str::of((string) $request->query('type', ''))->lower()->toString();
     $legislationTypeFilter = Str::of((string) $request->query('legal_type', 'all'))->lower()->toString();
