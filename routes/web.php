@@ -8420,22 +8420,22 @@ $seedIntelligenceRegistries = function () use ($allMapCountries) {
     }
 
     if (Schema::hasTable('intelligence_keywords')) {
-        collect(ReviewFocuses::all())
-            ->each(function (array $focusConfig, string $focus) {
-                collect($focusConfig['terms'] ?? [])
-                    ->merge($focusConfig['strong_signals'] ?? [])
-                    ->unique()
-                    ->each(fn (string $term) => IntelligenceKeyword::firstOrCreate([
-                        'focus' => $focus,
-                        'term' => $term,
-                        'language_code' => 'en',
-                    ], [
-                        'category' => 'core',
-                        'is_enabled' => true,
-                    ]));
-            });
-
         if ($currentWorkspaceKey === 'social_security') {
+            collect(ReviewFocuses::all())
+                ->each(function (array $focusConfig, string $focus) {
+                    collect($focusConfig['terms'] ?? [])
+                        ->merge($focusConfig['strong_signals'] ?? [])
+                        ->unique()
+                        ->each(fn (string $term) => IntelligenceKeyword::firstOrCreate([
+                            'focus' => $focus,
+                            'term' => $term,
+                            'language_code' => 'en',
+                        ], [
+                            'category' => 'core',
+                            'is_enabled' => true,
+                        ]));
+                });
+
             collect(config('country_intelligence.source_discovery_terms', []))
                 ->each(function (array $terms, string $languageCode) {
                     collect($terms)
