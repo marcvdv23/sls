@@ -506,20 +506,22 @@ class EuLegislationMonitorService
 
             $update = CountryUpdate::query()
                 ->where('country_id', $country->id)
-                ->where(function ($query) use ($item, $sourceUrl, $fingerprint) {
+                ->where(function ($query) use ($sourceUrl, $fingerprint) {
                     $query->where('source_url', $sourceUrl);
 
                     if ($fingerprint !== null) {
                         $query->orWhere('source_fingerprint', $fingerprint);
                     }
-
-                    $query->orWhere(function ($titleQuery) use ($item) {
-                        $titleQuery
-                            ->where('source_name', (string) $item['source_name'])
-                            ->where('title', Str::limit((string) $item['title'], 500, ''));
-                    });
                 })
                 ->first();
+
+            if (! $update) {
+                $update = CountryUpdate::query()
+                    ->where('country_id', $country->id)
+                    ->where('source_name', (string) $item['source_name'])
+                    ->where('title', Str::limit((string) $item['title'], 500, ''))
+                    ->first();
+            }
 
             $htmlText = $saveDocuments ? $this->retrieveLegalText($sourceUrl) : '';
             $displayTitle = $this->displayTitleFor($item, $htmlText);
