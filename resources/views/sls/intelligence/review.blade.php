@@ -142,20 +142,30 @@
     @php($legislationHighlightTerms = $legislationHighlightTerms ?? [])
 
     <div class="stack">
-        <section class="review-summary">
-            <div class="panel stat">
-                <strong>{{ $totalMatchingUpdates }}</strong>
-                <span class="muted">matching captured items</span>
-            </div>
-            <div class="panel stat">
-                <strong>{{ $researchedCountries }}</strong>
-                <span class="muted">countries with a recorded agent run</span>
-            </div>
-            <div class="panel stat">
-                <strong>{{ $totalCountries }}</strong>
-                <span class="muted">countries in selected scope</span>
-            </div>
-        </section>
+        @if ($isLegislationView)
+            <section class="panel stack">
+                <div>
+                    <p class="eyebrow">Legislation Monitor</p>
+                    <h2>EU legislation captured from official sources</h2>
+                    <p class="muted">This view shows enacted or final-stage legislation captured from EUR-Lex. SLS stores the official source link for review first; full legal documents are saved and indexed only when a user chooses to pull them into the knowledge tools.</p>
+                </div>
+            </section>
+        @else
+            <section class="review-summary">
+                <div class="panel stat">
+                    <strong>{{ $totalMatchingUpdates }}</strong>
+                    <span class="muted">matching captured items</span>
+                </div>
+                <div class="panel stat">
+                    <strong>{{ $researchedCountries }}</strong>
+                    <span class="muted">countries with a recorded agent run</span>
+                </div>
+                <div class="panel stat">
+                    <strong>{{ $totalCountries }}</strong>
+                    <span class="muted">countries in selected scope</span>
+                </div>
+            </section>
+        @endif
 
         <section class="panel">
             <p class="eyebrow">Filters</p>
@@ -229,16 +239,6 @@
                 <button type="submit">Apply</button>
             </form>
         </section>
-
-        @if ($isLegislationView)
-            <section class="panel stack">
-                <div>
-                    <p class="eyebrow">Legislation Monitor</p>
-                    <h2>EU legislation captured from official sources</h2>
-                    <p class="muted">This view shows enacted or final-stage legislation captured from EUR-Lex. SLS stores the official source link for review first; full legal documents are saved and indexed only when a user chooses to pull them into the knowledge tools.</p>
-                </div>
-            </section>
-        @endif
 
         @unless ($isLegislationView)
         <section id="country-search" class="panel stack">
