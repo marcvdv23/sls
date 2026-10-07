@@ -86,7 +86,22 @@
         $sourceHost = strtolower((string) parse_url($sourceUrl, PHP_URL_HOST));
         $isPdfProxy = $sourceHost === 'idbdocs.iadb.org' || str_ends_with(strtolower($sourceUrl), '.pdf');
         $sourceButtonLabel = $isPdfProxy ? 'Open PDF' : 'Open original';
-        $title = $update->title_english ?: $update->title ?: $update->title_original;
+        $rawTitle = trim((string) ($update->title_english ?: $update->title ?: $update->title_original));
+        $isEurLexItem = filled($update->legal_document_code)
+            || str_contains(strtolower((string) $update->source_name), 'eur-lex')
+            || str_contains(strtolower($rawTitle), 'eng_cellar:')
+            || str_contains(strtolower($rawTitle), 'eu_law_all');
+        $title = $rawTitle;
+        if ($isEurLexItem) {
+            $cleanTitle = \App\Support\EurLexTitleCleaner::clean($rawTitle);
+            if ($cleanTitle === '' || \App\Support\EurLexTitleCleaner::isFallbackTitle($cleanTitle)) {
+                $summaryTitle = \App\Support\EurLexTitleCleaner::clean((string) ($update->summary_english ?: $update->summary));
+                $cleanTitle = $summaryTitle !== '' ? $summaryTitle : $cleanTitle;
+            }
+            if ($cleanTitle !== '' && ! \App\Support\EurLexTitleCleaner::isFallbackTitle($cleanTitle)) {
+                $title = $cleanTitle;
+            }
+        }
         $selectedProductIds = collect(old('product_ids', $mappedProductIds))->map(fn ($id) => (string) $id)->all();
     @endphp
 
