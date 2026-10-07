@@ -4088,11 +4088,13 @@ Route::get('/sls/intelligence/review', function (Request $request) use ($allMapC
             ->pluck('iso_code')
             ->all();
     } elseif ($region === 'global') {
-        $countryIsoCodes = Country::query()
-            ->whereRaw('LOWER(region) = ?', ['global'])
-            ->whereNotNull('iso_code')
-            ->pluck('iso_code')
-            ->all();
+        $countryIsoCodes = $focus === 'legislation'
+            ? ['EU']
+            : Country::query()
+                ->whereRaw('LOWER(region) = ?', ['global'])
+                ->whereNotNull('iso_code')
+                ->pluck('iso_code')
+                ->all();
     } else {
         $countryIsoCodes = $configuredCountries->pluck('iso')->all();
     }
