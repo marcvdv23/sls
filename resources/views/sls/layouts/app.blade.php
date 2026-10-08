@@ -102,7 +102,7 @@
                         ],
                     ] : ($slsBasicReviewerOnly ? [
                         'Review' => [
-                            ['Regulatory Radar', route('sls.intelligence.review', ['focus' => 'legislation', 'region' => 'global', 'retrieved' => 'current', 'country_q' => 'European Union']), 'sls.intelligence.review', 'REG'],
+                            ['Regulatory Radar', route('sls.intelligence.review', ['focus' => 'legislation', 'region' => 'global', 'retrieved' => 'all', 'country_q' => 'European Union']), 'sls.intelligence.review', 'REG'],
                             ['News & Tenders', route('sls.intelligence.review', ['focus' => 'all', 'region' => 'all', 'retrieved' => 'current']), 'sls.intelligence.review', 'REV'],
                             ['Keywords', route('sls.intelligence.keywords'), 'sls.intelligence.keywords*', '#'],
                             ['Opportunities', route('sls.opportunities.index'), 'sls.opportunities.*', 'OPP'],
@@ -119,7 +119,8 @@
                             ['Favorites', route('sls.intelligence.favorites'), 'sls.intelligence.favorites', 'FAV'],
                         ],
                         'Intelligence' => [
-                            [$slsReviewLabel, route('sls.intelligence.review'), 'sls.intelligence.review', 'REV'],
+                            ['Regulatory Radar', route('sls.intelligence.review', ['focus' => 'legislation', 'region' => 'global', 'retrieved' => 'all', 'country_q' => 'European Union']), 'sls.intelligence.review', 'REG'],
+                            ['News & Tenders', route('sls.intelligence.review', ['focus' => 'all', 'region' => 'all', 'retrieved' => 'current']), 'sls.intelligence.review', 'REV'],
                             ['Add Story', route('sls.intelligence.stories.create'), 'sls.intelligence.stories.*', '+'],
                             ['Opportunity Intake', route('sls.intelligence.opportunityIntake.create'), 'sls.intelligence.opportunityIntake.*', 'IN'],
                             ['Awarded Companies', route('sls.intelligence.awardedCompanies.index'), 'sls.intelligence.awardedCompanies.*', 'AWD'],
