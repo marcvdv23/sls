@@ -2436,7 +2436,7 @@ Route::get('/sls/intelligence/crawler-diagnostics', function (Request $request) 
         ? collect()
         : CountryUpdate::query()
             ->withoutGlobalScopes()
-            ->where('workspace_id', WorkspaceContext::id())
+            ->where('workspace_id', WorkspaceContext::currentWorkspaceId())
             ->whereIn('country_id', $countryIds)
             ->selectRaw("
                 country_id,
