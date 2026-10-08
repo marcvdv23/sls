@@ -1226,6 +1226,38 @@ return [
     ],
 
     'countries' => [
+        'AE' => [
+            'name' => 'United Arab Emirates',
+            'iso_code' => 'AE',
+            'region' => 'Asia',
+            'default_language_code' => 'en',
+            'social_security_administration_name' => 'General Pension and Social Security Authority',
+            'search_names' => [
+                'United Arab Emirates',
+                'UAE',
+                'Abu Dhabi',
+                'Dubai',
+                'GPSSA',
+                'General Pension and Social Security Authority',
+                'Abu Dhabi Pension Fund',
+            ],
+            'priority_queries' => [
+                '"UAE" "social insurance" pension',
+                '"Abu Dhabi" pension "social insurance"',
+                '"GPSSA" pension',
+                '"General Pension and Social Security Authority" pension',
+                'site:gulfnews.com UAE pension "social insurance"',
+                'site:gulfnews.com "Abu Dhabi" pension',
+                'site:khaleejtimes.com UAE pension "social insurance"',
+            ],
+            'sources' => [
+                ['name' => 'General Pension and Social Security Authority', 'domain' => 'gpssa.gov.ae', 'url' => 'https://gpssa.gov.ae/', 'source_class' => 'social_security_admin', 'focus' => 'social_security'],
+                ['name' => 'Abu Dhabi Pension Fund', 'domain' => 'pension.gov.ae', 'url' => 'https://www.pension.gov.ae/', 'source_class' => 'social_security_admin', 'focus' => 'social_security'],
+                ['name' => 'Gulf News UAE', 'domain' => 'gulfnews.com', 'url' => 'https://gulfnews.com/uae', 'source_class' => 'news', 'focus' => 'social_security'],
+                ['name' => 'Khaleej Times UAE', 'domain' => 'khaleejtimes.com', 'url' => 'https://www.khaleejtimes.com/uae', 'source_class' => 'news', 'focus' => 'social_security'],
+            ],
+        ],
+
         'AG' => [
             'name' => 'Antigua and Barbuda',
             'iso_code' => 'AG',

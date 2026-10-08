@@ -731,11 +731,12 @@ class CountryIntelligenceMonitor
     {
         $names = collect($countryConfig['search_names'] ?? [$countryConfig['name']])
             ->prepend((string) ($countryConfig['name'] ?? ''))
+            ->when(filled($countryConfig['social_security_administration_name'] ?? null), fn (Collection $names) => $names->push((string) $countryConfig['social_security_administration_name']))
             ->merge(config('country_intelligence.localized_country_names.' . ($countryConfig['iso_code'] ?? ''), []))
             ->map(fn (string $name) => trim($name))
             ->filter()
             ->unique()
-            ->take(3)
+            ->take(8)
             ->values();
 
         $focusConfig = ReviewFocuses::get($focus) ?? [];
@@ -763,8 +764,30 @@ class CountryIntelligenceMonitor
             ]);
         }
 
-        return $names
+        $priorityQueries = collect($countryConfig['priority_queries'] ?? [])
+            ->map(fn ($query) => trim((string) $query))
+            ->filter()
+            ->values();
+
+        $sourceDomains = collect($countryConfig['sources'] ?? [])
+            ->filter(fn (array $source) => $this->sourceMatchesFocus($source, $focus))
+            ->pluck('domain')
+            ->map(fn ($domain) => trim((string) $domain))
+            ->filter()
+            ->unique()
+            ->take(4)
+            ->values();
+
+        $sourceSpecificQueries = $sourceDomains
+            ->flatMap(fn (string $domain) => $names->take(3)->flatMap(
+                fn (string $name) => $terms->take(4)->map(fn (string $term) => 'site:' . $domain . ' "' . $name . '" "' . $term . '"')
+            ));
+
+        return $priorityQueries
+            ->merge($sourceSpecificQueries)
+            ->merge($names
             ->flatMap(fn (string $name) => $terms->map(fn (string $term) => '"' . $name . '" "' . $term . '"'))
+            )
             ->unique()
             ->values();
     }
