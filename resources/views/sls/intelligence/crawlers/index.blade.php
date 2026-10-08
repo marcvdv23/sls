@@ -5,6 +5,7 @@
 @section('page_title', 'Intelligence Crawlers')
 
 @section('topbar_actions')
+    <a class="button secondary" href="{{ route('sls.intelligence.crawlers.diagnostics') }}">Diagnostics</a>
     <a class="button secondary" href="{{ route('sls.intelligence.crawlerSettings') }}">General settings</a>
     <a class="button secondary" href="{{ route('sls.intelligence.sources') }}">Sources</a>
     <a class="button secondary" href="{{ route('sls.settings.reviewFocuses') }}">Review categories</a>

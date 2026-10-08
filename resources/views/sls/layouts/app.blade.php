@@ -129,6 +129,7 @@
                             ['World Map', route('sls.intelligence.world'), 'sls.intelligence.world', 'MAP'],
                             ['Sources', route('sls.intelligence.sources'), 'sls.intelligence.sources*', 'SRC'],
                             ['Intelligence Crawlers', route('sls.intelligence.crawlers.index'), 'sls.intelligence.crawlers.*', 'CRW'],
+                            ['Crawler Diagnostics', route('sls.intelligence.crawlers.diagnostics'), 'sls.intelligence.crawlers.diagnostics', 'DBG'],
                             ['SerpAPI Searches', route('sls.serpapiSearches.index'), 'sls.serpapiSearches.*', 'SERP'],
                             ['Keywords', route('sls.intelligence.keywords'), 'sls.intelligence.keywords*', '#'],
                             ['Source Contacts', route('sls.intelligence.contacts'), 'sls.intelligence.contacts', '@'],
@@ -177,6 +178,10 @@
                                         $navActive = $isRegulatoryReview;
                                     } elseif ($label === 'News & Tenders') {
                                         $navActive = $isReviewRoute && ! $isRegulatoryReview;
+                                    } elseif ($label === 'Intelligence Crawlers') {
+                                        $navActive = request()->routeIs('sls.intelligence.crawlers.index') || request()->routeIs('sls.intelligence.crawlers.show');
+                                    } elseif ($label === 'Crawler Diagnostics') {
+                                        $navActive = request()->routeIs('sls.intelligence.crawlers.diagnostics');
                                     }
                                 ?>
                                 <a class="nav-link {{ $navActive ? 'active' : '' }}" href="{{ $href }}" title="{{ $label }}">

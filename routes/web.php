@@ -2388,6 +2388,163 @@ Route::get('/sls/intelligence/crawlers', function () use ($intelligenceCrawlerSo
     ]);
 })->name('sls.intelligence.crawlers.index');
 
+Route::get('/sls/intelligence/crawler-diagnostics', function (Request $request) {
+    abort_unless(Schema::hasTable('country_monitor_runs'), 503, 'Country monitor runs have not been migrated yet.');
+
+    $days = max(1, min(365, (int) $request->query('days', 30)));
+    $focusFilter = (string) $request->query('focus', 'all');
+    $countryQuery = trim((string) $request->query('country', ''));
+    $minimumRuns = max(1, min(10000, (int) $request->query('min_runs', 25)));
+    $since = now()->subDays($days);
+
+    $focuses = CountryMonitorRun::query()
+        ->select('focus')
+        ->distinct()
+        ->orderBy('focus')
+        ->pluck('focus')
+        ->filter()
+        ->values();
+
+    $baseRunQuery = CountryMonitorRun::query()
+        ->where('started_at', '>=', $since)
+        ->when($focusFilter !== 'all', fn ($query) => $query->where('focus', $focusFilter))
+        ->when($countryQuery !== '', function ($query) use ($countryQuery) {
+            $query->whereHas('country', function ($country) use ($countryQuery) {
+                $country->where('name', 'like', '%' . $countryQuery . '%')
+                    ->orWhere('iso_code', 'like', '%' . $countryQuery . '%');
+            });
+        });
+
+    $summaryByFocus = (clone $baseRunQuery)
+        ->selectRaw('focus, status, COUNT(*) as runs, COALESCE(SUM(items_found), 0) as items_found, MAX(finished_at) as last_finished')
+        ->groupBy('focus', 'status')
+        ->orderBy('focus')
+        ->orderByDesc('items_found')
+        ->get();
+
+    $countryFocusStats = (clone $baseRunQuery)
+        ->with('country:id,name,iso_code,region')
+        ->selectRaw('country_id, focus, COUNT(*) as runs, COALESCE(SUM(items_found), 0) as items_found, MAX(finished_at) as last_finished')
+        ->groupBy('country_id', 'focus')
+        ->get()
+        ->filter(fn (CountryMonitorRun $row) => $row->country)
+        ->values();
+
+    $countryIds = $countryFocusStats->pluck('country_id')->filter()->unique()->values();
+
+    $storedCountsByCountry = $countryIds->isEmpty()
+        ? collect()
+        : CountryUpdate::query()
+            ->withoutGlobalScopes()
+            ->where('workspace_id', WorkspaceContext::id())
+            ->whereIn('country_id', $countryIds)
+            ->selectRaw("
+                country_id,
+                COUNT(*) as stored_total,
+                SUM(CASE WHEN review_status = 'rejected' THEN 1 ELSE 0 END) as rejected_total,
+                SUM(CASE WHEN review_status IN ('dropped', 'not_relevant') THEN 1 ELSE 0 END) as dropped_total,
+                SUM(CASE WHEN review_status IS NULL OR review_status NOT IN ('rejected', 'dropped', 'not_relevant') THEN 1 ELSE 0 END) as active_total
+            ")
+            ->groupBy('country_id')
+            ->get()
+            ->keyBy('country_id');
+
+    $sourceCountsByCountryIso = Schema::hasTable('intelligence_sources')
+        ? IntelligenceSource::query()
+            ->where('is_enabled', true)
+            ->whereNotNull('country_iso')
+            ->selectRaw('country_iso, COUNT(*) as sources')
+            ->groupBy('country_iso')
+            ->pluck('sources', 'country_iso')
+        : collect();
+
+    $latestRunsByCountryFocus = CountryMonitorRun::query()
+        ->with('country:id,name,iso_code')
+        ->where('started_at', '>=', $since)
+        ->when($focusFilter !== 'all', fn ($query) => $query->where('focus', $focusFilter))
+        ->latest('started_at')
+        ->limit(2000)
+        ->get()
+        ->unique(fn (CountryMonitorRun $run) => $run->country_id . '|' . $run->focus)
+        ->keyBy(fn (CountryMonitorRun $run) => $run->country_id . '|' . $run->focus);
+
+    $countryDiagnostics = $countryFocusStats
+        ->map(function (CountryMonitorRun $row) use ($storedCountsByCountry, $sourceCountsByCountryIso, $latestRunsByCountryFocus) {
+            $stored = $storedCountsByCountry->get($row->country_id);
+            $latestRun = $latestRunsByCountryFocus->get($row->country_id . '|' . $row->focus);
+            $countryIso = (string) ($row->country?->iso_code ?? '');
+            $sourcesChecked = collect($latestRun?->sources_checked ?? [])->filter()->values();
+            $configuredSources = (int) ($sourceCountsByCountryIso[$countryIso] ?? 0);
+            $itemsFound = (int) $row->items_found;
+            $runs = (int) $row->runs;
+            $activeTotal = (int) ($stored?->active_total ?? 0);
+            $rejectedTotal = (int) ($stored?->rejected_total ?? 0);
+
+            $warning = null;
+            if ($runs >= 25 && $itemsFound === 0 && $configuredSources === 0) {
+                $warning = 'No items and no country-specific sources configured';
+            } elseif ($runs >= 25 && $itemsFound === 0) {
+                $warning = 'Many runs but zero items';
+            } elseif ($itemsFound > 0 && $activeTotal === 0 && $rejectedTotal > 0) {
+                $warning = 'Items found, but all stored items are rejected/dropped';
+            }
+
+            return [
+                'country' => $row->country,
+                'focus' => (string) $row->focus,
+                'runs' => $runs,
+                'items_found' => $itemsFound,
+                'last_finished' => $row->last_finished,
+                'stored_total' => (int) ($stored?->stored_total ?? 0),
+                'active_total' => $activeTotal,
+                'rejected_total' => $rejectedTotal,
+                'dropped_total' => (int) ($stored?->dropped_total ?? 0),
+                'configured_sources' => $configuredSources,
+                'latest_sources_checked' => $sourcesChecked,
+                'warning' => $warning,
+                'health_score' => ($itemsFound * 10) + $activeTotal - ($runs >= 25 && $itemsFound === 0 ? 100 : 0) - ($configuredSources === 0 ? 30 : 0),
+            ];
+        })
+        ->values();
+
+    $zeroResultCountries = $countryDiagnostics
+        ->filter(fn (array $row) => $row['runs'] >= $minimumRuns && $row['items_found'] === 0)
+        ->sortByDesc('runs')
+        ->take(80)
+        ->values();
+
+    $productiveCountries = $countryDiagnostics
+        ->filter(fn (array $row) => $row['items_found'] > 0)
+        ->sortByDesc('items_found')
+        ->take(80)
+        ->values();
+
+    $needsCoverage = $countryDiagnostics
+        ->filter(fn (array $row) => $row['configured_sources'] === 0 && $row['runs'] >= $minimumRuns)
+        ->sortByDesc('runs')
+        ->take(80)
+        ->values();
+
+    $recentRuns = (clone $baseRunQuery)
+        ->with('country:id,name,iso_code')
+        ->latest('started_at')
+        ->limit(30)
+        ->get();
+
+    return view('sls.intelligence.crawlers.diagnostics', [
+        'days' => $days,
+        'focusFilter' => $focusFilter,
+        'countryQuery' => $countryQuery,
+        'minimumRuns' => $minimumRuns,
+        'focuses' => $focuses,
+        'summaryByFocus' => $summaryByFocus,
+        'zeroResultCountries' => $zeroResultCountries,
+        'productiveCountries' => $productiveCountries,
+        'needsCoverage' => $needsCoverage,
+        'recentRuns' => $recentRuns,
+    ]);
+})->name('sls.intelligence.crawlers.diagnostics');
+
 Route::get('/sls/intelligence/crawlers/{focusKey}', function (string $focusKey) use ($intelligenceCrawlerSourceMatches, $intelligenceCrawlerItemsByFocus, $intelligenceCrawlerReviewableItemsByFocus) {
     abort_if(! ReviewFocuses::tableReady(), 503, 'Review categories need to be migrated before intelligence crawlers can be shown.');
 
