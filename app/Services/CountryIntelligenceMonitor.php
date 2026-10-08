@@ -1714,8 +1714,19 @@ class CountryIntelligenceMonitor
                 && (float) ($item['relevance_score'] ?? 0) >= 2.0;
         }
 
-        return $this->hasSocialSecuritySubjectSignal($text)
-            && $item['relevance_score'] >= 2.0;
+        $titleText = Str::lower(implode(' ', [
+            $item['title'] ?? '',
+            $item['title_english'] ?? '',
+            $item['title_original'] ?? '',
+        ]));
+
+        if ($this->hasTenderSignal($text)) {
+            return $this->hasSocialSecuritySubjectSignal($text)
+                && (float) ($item['relevance_score'] ?? 0) >= 2.0;
+        }
+
+        return $this->hasSocialSecurityNewsTitleSignal($titleText)
+            && (float) ($item['relevance_score'] ?? 0) >= 2.0;
     }
 
     private function shouldSearchNewsAggregators(string $focus): bool
@@ -2315,6 +2326,33 @@ class CountryIntelligenceMonitor
             'inss',
             'social security board',
             'social security administration',
+        ]);
+    }
+
+    private function hasSocialSecurityNewsTitleSignal(string $text): bool
+    {
+        return Str::contains($text, [
+            'social security',
+            'social insurance',
+            'national insurance board',
+            'national insurance scheme',
+            'national insurance service',
+            'social protection',
+            'seguridad social',
+            'previdencia social',
+            'pension',
+            'pensions',
+            'pension fund',
+            'pension system',
+            'pension reform',
+            'pension payment',
+            'pension payments',
+            'provident fund',
+            'retirement benefits',
+            'contribution',
+            'contributions',
+            'general pension and social security authority',
+            'gpssa',
         ]);
     }
 
