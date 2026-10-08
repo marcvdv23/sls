@@ -2734,17 +2734,19 @@ foreach ($dailySlots as $slotIndex => $runTime) {
     ], 'sls-country-news-' . $slotIndex);
 }
 
-Schedule::call(function () use ($socialSecurityWorkspaceId) {
-    if ($socialSecurityWorkspaceId) {
-        WorkspaceContext::forceWorkspace($socialSecurityWorkspaceId);
-    }
+if (filter_var($crawlerSetting('social_protection_profile_enabled', false), FILTER_VALIDATE_BOOLEAN)) {
+    Schedule::call(function () use ($socialSecurityWorkspaceId) {
+        if ($socialSecurityWorkspaceId) {
+            WorkspaceContext::forceWorkspace($socialSecurityWorkspaceId);
+        }
 
-    app(SocialProtectionProfileMonitor::class)->run();
-})
-    ->name('sls-social-protection-profile-weekly')
-    ->weeklyOn((int) $crawlerSetting('social_protection_profile_weekly_day', 1), (string) $crawlerSetting('social_protection_profile_weekly_time', config('country_intelligence.social_protection_profile_weekly_time', '04:10')))
-    ->withoutOverlapping()
-    ->onOneServer();
+        app(SocialProtectionProfileMonitor::class)->run();
+    })
+        ->name('sls-social-protection-profile-weekly')
+        ->weeklyOn((int) $crawlerSetting('social_protection_profile_weekly_day', 1), (string) $crawlerSetting('social_protection_profile_weekly_time', config('country_intelligence.social_protection_profile_weekly_time', '04:10')))
+        ->withoutOverlapping()
+        ->onOneServer();
+}
 
 Schedule::call(function () use ($socialSecurityWorkspaceId) {
     if ($socialSecurityWorkspaceId) {
