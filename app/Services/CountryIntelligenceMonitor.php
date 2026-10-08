@@ -1827,8 +1827,9 @@ class CountryIntelligenceMonitor
 
         $countryNames = collect($countryConfig['search_names'] ?? [$countryConfig['name']])
             ->prepend((string) ($countryConfig['name'] ?? ''))
-            ->map(fn (string $name) => Str::lower(trim($name)))
-            ->filter(fn (string $name) => strlen($name) >= 4)
+            ->map(fn (string $name) => trim($name))
+            ->filter(fn (string $name) => strlen($name) >= 4 || preg_match('/^[A-Z]{2,6}$/', $name) === 1)
+            ->map(fn (string $name) => Str::lower($name))
             ->unique();
 
         if ($countryNames->contains(fn (string $name) => Str::contains($text, $name))) {

@@ -16,7 +16,7 @@ for ($hour = 0; $hour < 24; $hour++) {
 return [
     'verify_ssl' => env('COUNTRY_INTEL_VERIFY_SSL', false),
     'gdelt_endpoint' => env('COUNTRY_INTEL_GDELT_ENDPOINT', 'https://api.gdeltproject.org/api/v2/doc/doc'),
-    'gdelt_timespan' => env('COUNTRY_INTEL_GDELT_TIMESPAN', '30d'),
+    'gdelt_timespan' => env('COUNTRY_INTEL_GDELT_TIMESPAN', '90d'),
     'world_bank_procurement_endpoint' => env('WORLD_BANK_PROCUREMENT_ENDPOINT', 'https://search.worldbank.org/api/v2/procnotices'),
     'world_bank_recent_notice_days' => (int) env('WORLD_BANK_RECENT_NOTICE_DAYS', 45),
     'sam_gov_opportunities_endpoint' => env('SAM_GOV_OPPORTUNITIES_ENDPOINT', 'https://api.sam.gov/opportunities/v2/search'),
@@ -1242,6 +1242,8 @@ return [
                 'Abu Dhabi Pension Fund',
             ],
             'priority_queries' => [
+                'UAE "social insurance"',
+                'UAE "social insurance" pension',
                 '"UAE" "social insurance" pension',
                 '"Abu Dhabi" pension "social insurance"',
                 '"GPSSA" pension',
