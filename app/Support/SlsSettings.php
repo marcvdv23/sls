@@ -68,7 +68,7 @@ class SlsSettings
                 'label' => 'Workspace name',
                 'description' => 'Name shown for the active sales/intelligence workspace.',
                 'value_type' => 'string',
-                'default' => config('sls.workspace.name', 'Social Security Sales'),
+                'default' => config('sls.workspace.name', '2Interact'),
             ],
             'workspace.description' => [
                 'group' => 'Workspace',
@@ -82,14 +82,14 @@ class SlsSettings
                 'label' => 'Domain label',
                 'description' => 'Business domain label used in setup and intelligence screens.',
                 'value_type' => 'string',
-                'default' => config('sls.workspace.domain_label', 'Social Security and Public Sector Software'),
+                'default' => config('sls.workspace.domain_label', '2Interact Public Sector Software'),
             ],
             'workspace.opportunity_label' => [
                 'group' => 'Workspace',
                 'label' => 'Opportunity label',
                 'description' => 'Label for curated priority opportunities.',
                 'value_type' => 'string',
-                'default' => config('sls.workspace.opportunity_label', 'Curated social security opportunities'),
+                'default' => config('sls.workspace.opportunity_label', 'Curated 2Interact opportunities'),
             ],
             'workspace.review_label' => [
                 'group' => 'Workspace',

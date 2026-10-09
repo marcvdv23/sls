@@ -26,10 +26,10 @@ return [
 
     'workspace' => [
         'key' => env('SLS_WORKSPACE_KEY', 'social_security'),
-        'name' => env('SLS_WORKSPACE_NAME', 'Social Security Sales'),
-        'description' => env('SLS_WORKSPACE_DESCRIPTION', 'Social security, pensions, public sector HR/payroll, and related sales intelligence.'),
-        'domain_label' => env('SLS_WORKSPACE_DOMAIN_LABEL', 'Social Security and Public Sector Software'),
-        'opportunity_label' => env('SLS_WORKSPACE_OPPORTUNITY_LABEL', 'Curated social security opportunities'),
+        'name' => env('SLS_WORKSPACE_NAME', '2Interact'),
+        'description' => env('SLS_WORKSPACE_DESCRIPTION', '2Interact sales intelligence across social security, pensions, benefits, HR/payroll, risk, compliance, budgeting, HRMS/HCM, and related tenders.'),
+        'domain_label' => env('SLS_WORKSPACE_DOMAIN_LABEL', '2Interact Public Sector Software'),
+        'opportunity_label' => env('SLS_WORKSPACE_OPPORTUNITY_LABEL', 'Curated 2Interact opportunities'),
         'review_label' => env('SLS_WORKSPACE_REVIEW_LABEL', 'Review Desk'),
     ],
 

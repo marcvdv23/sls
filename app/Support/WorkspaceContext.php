@@ -117,9 +117,9 @@ class WorkspaceContext
             [
                 'entity_key' => config('sls.entity.key', '2interact'),
                 'entity_name' => config('sls.entity.display_name', config('sls.entity.name', '2interact')),
-                'name' => config('sls.workspace.name', 'Social Security Sales'),
+                'name' => config('sls.workspace.name', '2Interact'),
                 'description' => config('sls.workspace.description', 'Social security, pensions, public sector HR/payroll, and related sales intelligence.'),
-                'domain_label' => config('sls.workspace.domain_label', 'Social Security and Public Sector Software'),
+                'domain_label' => config('sls.workspace.domain_label', '2Interact Public Sector Software'),
                 'status' => 'active',
                 'is_default' => true,
                 'metadata' => ['source' => 'default_seed'],

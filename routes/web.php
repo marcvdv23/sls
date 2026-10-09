@@ -229,7 +229,7 @@ $workspaceMonitorConfigs = function (): array {
 
     return [
         'social-security-news' => [
-            'label' => 'Social Security and Pension News',
+            'label' => '2Interact News',
             'focuses' => ['social_security'],
             'review_focus' => 'social_security',
             'region' => $allRegion,
@@ -4112,7 +4112,7 @@ Route::post('/sls/intelligence/stories', function (Request $request) {
             ->with('status', 'This story URL was already captured. I opened the existing record instead.');
     }
 
-    $focusLabel = $focuses[$data['focus']]['label'] ?? 'Social Security Intelligence';
+    $focusLabel = $focuses[$data['focus']]['label'] ?? '2Interact Intelligence';
     $typeLabel = $data['item_type'] === 'tender' ? 'Manual tender/RFP item' : 'Manual news story';
     $sourceHost = parse_url($url, PHP_URL_HOST);
     $sourceName = filled($data['source_name'] ?? null)

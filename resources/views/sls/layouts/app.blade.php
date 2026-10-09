@@ -6,7 +6,7 @@
             $slsSelectableWorkspaces = \App\Support\WorkspaceContext::selectableWorkspaces();
             $slsPlatformName = \App\Support\SlsSettings::get('platform.name', config('sls.platform.name', 'SLS'));
             $slsEntityName = \App\Support\SlsSettings::get('entity.display_name', config('sls.entity.display_name', config('sls.entity.name', '2interact')));
-            $slsWorkspaceName = \App\Support\SlsSettings::get('workspace.name', config('sls.workspace.name', 'Social Security Sales'));
+            $slsWorkspaceName = \App\Support\SlsSettings::get('workspace.name', config('sls.workspace.name', '2Interact'));
             $slsReviewLabel = \App\Support\SlsSettings::get('workspace.review_label', config('sls.workspace.review_label', 'Review Desk'));
             $slsUser = auth()->user();
             $slsUserGroup = $slsUser?->group?->loadMissing('permissions');
