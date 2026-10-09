@@ -7,6 +7,7 @@ use App\Models\CountryMonitorRun;
 use App\Models\CountryTopic;
 use App\Models\CountryUpdate;
 use App\Support\CountryUpdateDedupeRules;
+use App\Support\ReviewFocuses;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
@@ -54,11 +55,16 @@ class TendersOnTimeImportService
             throw new RuntimeException('TendersOnTime API error: ' . (string) ($payload['message'] ?? 'Unknown error'));
         }
 
-        $items = collect($payload['data'] ?? [])
+        $parsedItems = collect($payload['data'] ?? [])
             ->filter(fn ($item) => is_array($item))
             ->map(fn (array $item) => $this->normalizeTender($item, $postingDate))
             ->filter(fn (array $item) => filled($item['source_url']) && filled($item['title']))
             ->values();
+        $items = $parsedItems
+            ->map(fn (array $item) => $this->withMatchedKeywords($item))
+            ->filter(fn (array $item) => $item['matched_keywords'] !== [])
+            ->values();
+        $filteredOut = $parsedItems->count() - $items->count();
 
         $stored = collect();
         $errors = [];
@@ -82,7 +88,9 @@ class TendersOnTimeImportService
             'endpoint' => $endpoint,
             'total_found' => (int) ($payload['total_found'] ?? $payload['total'] ?? $items->count()),
             'total_shown' => (int) ($payload['total_shown'] ?? $items->count()),
+            'items_parsed' => $parsedItems->count(),
             'items_found' => $items->count(),
+            'items_filtered_out' => $filteredOut,
             'stored_count' => $stored->count(),
             'errors' => $errors,
             'items' => $items->all(),
@@ -166,6 +174,137 @@ class TendersOnTimeImportService
             'relevance_score' => 82,
             'metadata' => $metadata,
         ];
+    }
+
+    private function withMatchedKeywords(array $item): array
+    {
+        $matched = $this->matchedKeywords($item);
+        $item['matched_keywords'] = $matched;
+
+        if ($matched !== []) {
+            $keywordLine = 'Matched 2Interact keyword(s): ' . implode(', ', $matched) . '.';
+            $item['summary'] = $keywordLine . ' ' . $item['summary'];
+            $item['summary_english'] = $keywordLine . ' ' . $item['summary_english'];
+        }
+
+        return $item;
+    }
+
+    private function matchedKeywords(array $item): array
+    {
+        $text = Str::lower(Str::ascii(implode(' ', array_filter([
+            $item['title'] ?? null,
+            $item['summary_english'] ?? null,
+            $item['country_name'] ?? null,
+            $item['metadata']['purchaser_name'] ?? null,
+            $item['metadata']['purchaser_country'] ?? null,
+            $item['metadata']['document_type'] ?? null,
+            $item['metadata']['bidding_type'] ?? null,
+            $item['metadata']['cpv'] ?? null,
+        ]))));
+
+        return $this->tenderKeywordTerms()
+            ->filter(fn (string $term) => $this->textMatchesTerm($text, $term))
+            ->take(10)
+            ->values()
+            ->all();
+    }
+
+    private function tenderKeywordTerms(): Collection
+    {
+        static $terms = null;
+
+        if ($terms instanceof Collection) {
+            return $terms;
+        }
+
+        $focusKeys = ['social_security', 'hrms_tenders', 'erms_tenders', 'ebpc_tenders'];
+        $fallback = collect(config('country_intelligence.focuses', []))
+            ->only($focusKeys)
+            ->flatMap(fn (array $focus) => $focus['strong_signals'] ?? []);
+
+        $focusTerms = collect($focusKeys)
+            ->flatMap(function (string $focusKey) {
+                try {
+                    return ReviewFocuses::get($focusKey)['strong_signals'] ?? [];
+                } catch (\Throwable) {
+                    return [];
+                }
+            });
+
+        $mustInclude = [
+            'national provident fund',
+            'national insurance',
+            'social security',
+            'social security administration',
+            'social security administration software',
+            'social insurance',
+            'benefits administration',
+            'pension administration',
+            'pension payroll',
+            'pensioner payroll',
+            'benefits management',
+            'payroll management',
+            'human resources information system',
+            'human resources management software',
+            'human capital management',
+            'enterprise resource planning',
+            'enterprise resources planning',
+            'compliance software',
+            'risk management software',
+            'budgeting software',
+            'budget management',
+            'time and attendance',
+            'leave management',
+            'scheduling software',
+            'recruitment management software',
+            'applicant tracking software',
+            'talent management',
+            'performance management',
+            'competency management',
+            'learning management',
+            'training management',
+            'succession planning',
+            'career planning',
+        ];
+
+        $terms = $focusTerms
+            ->merge($fallback)
+            ->merge($mustInclude)
+            ->map(fn ($term) => Str::lower(Str::ascii(trim((string) $term))))
+            ->filter()
+            ->reject(fn (string $term) => in_array($term, [
+                'bid',
+                'css',
+                'hcm',
+                'rfp',
+                'tender',
+                'tenders',
+                'government',
+                'procurement',
+                'human resource',
+                'human resources',
+                'request for proposal',
+                'expression of interest',
+            ], true))
+            ->unique()
+            ->sortByDesc(fn (string $term) => strlen($term))
+            ->values();
+
+        return $terms;
+    }
+
+    private function textMatchesTerm(string $text, string $term): bool
+    {
+        if ($term === '') {
+            return false;
+        }
+
+        if (in_array($term, ['erp', 'hris', 'hrms', 'ssas', 'erms', 'ebpc'], true)) {
+            return (bool) preg_match('/(?<![a-z0-9])' . preg_quote($term, '/') . '(?![a-z0-9])/i', $text);
+        }
+
+        return Str::contains($text, $term);
     }
 
     private function storeTender(array $item): CountryUpdate

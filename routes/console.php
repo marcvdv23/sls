@@ -779,17 +779,20 @@ Artisan::command('sls:tendersontime-import {--workspace=2interact : Workspace ke
     $this->line('Posting date: ' . $result['posting_date']);
     $this->line('Total found at API: ' . $result['total_found']);
     $this->line('Total shown by API: ' . $result['total_shown']);
-    $this->line('Items parsed: ' . $result['items_found']);
+    $this->line('Items parsed: ' . ($result['items_parsed'] ?? $result['items_found']));
+    $this->line('Items matching 2Interact keywords: ' . $result['items_found']);
+    $this->line('Items skipped without keyword match: ' . ($result['items_filtered_out'] ?? 0));
     $this->line('Items stored/updated: ' . $result['stored_count']);
     $this->line('Endpoint: ' . $result['endpoint']);
 
     foreach (array_slice($result['items'], 0, 20) as $item) {
         $this->line(sprintf(
-            '- %s | %s | %s | %s',
+            '- %s | %s | %s | %s%s',
             $item['publication_date'] ?? 'no date',
             $item['country_iso'] ?: $item['country_name'] ?: 'no country',
             $item['external_id'] ?: 'no id',
-            Str::limit((string) $item['title'], 160)
+            Str::limit((string) $item['title'], 160),
+            ($item['matched_keywords'] ?? []) !== [] ? ' | matched: ' . implode(', ', array_slice($item['matched_keywords'], 0, 5)) : ''
         ));
     }
 
