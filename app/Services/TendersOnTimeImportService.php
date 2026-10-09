@@ -23,6 +23,8 @@ class TendersOnTimeImportService
         ?string $username = null,
         ?string $key = null,
         int $timeoutSeconds = 45,
+        int $inspectRawLimit = 0,
+        bool $checkDocuments = false,
     ): array {
         $startedAt = now();
         $postingDate = Carbon::parse($date)->toDateString();
@@ -65,6 +67,13 @@ class TendersOnTimeImportService
             ->filter(fn (array $item) => $item['matched_keywords'] !== [])
             ->values();
         $filteredOut = $parsedItems->count() - $items->count();
+        $rawInspectionItems = $inspectRawLimit > 0
+            ? $parsedItems
+                ->take($inspectRawLimit)
+                ->map(fn (array $item) => $this->inspectTender($this->withMatchedKeywords($item), $checkDocuments, $timeoutSeconds))
+                ->values()
+                ->all()
+            : [];
 
         $stored = collect();
         $errors = [];
@@ -94,6 +103,7 @@ class TendersOnTimeImportService
             'stored_count' => $stored->count(),
             'errors' => $errors,
             'items' => $items->all(),
+            'raw_inspection_items' => $rawInspectionItems,
         ];
     }
 
@@ -305,6 +315,106 @@ class TendersOnTimeImportService
         }
 
         return Str::contains($text, $term);
+    }
+
+    private function inspectTender(array $item, bool $checkDocuments, int $timeoutSeconds): array
+    {
+        $metadata = $item['metadata'] ?? [];
+        $documents = collect($this->documentLinks($item))
+            ->map(function (array $document) use ($checkDocuments, $timeoutSeconds) {
+                if ($checkDocuments) {
+                    $document['check'] = $this->checkDocumentUrl((string) $document['url'], $timeoutSeconds);
+                }
+
+                return $document;
+            })
+            ->values()
+            ->all();
+
+        return [
+            'external_id' => $item['external_id'] ?? '',
+            'notice_number' => $metadata['notice_number'] ?? '',
+            'country_iso' => $item['country_iso'] ?? '',
+            'country_name' => $item['country_name'] ?? '',
+            'title' => $item['title'] ?? '',
+            'short_description' => $this->shortDescription((string) ($item['summary_english'] ?? '')),
+            'posting_date' => $metadata['posting_date'] ?? $item['publication_date'] ?? '',
+            'closing_date' => $metadata['closing_date'] ?? '',
+            'document_type' => $metadata['document_type'] ?? '',
+            'bidding_type' => $metadata['bidding_type'] ?? '',
+            'purchaser_name' => $metadata['purchaser_name'] ?? '',
+            'purchaser_country' => $metadata['purchaser_country'] ?? '',
+            'purchaser_email' => $metadata['purchaser_email'] ?? '',
+            'purchaser_website' => $metadata['purchaser_website'] ?? '',
+            'tender_value' => trim((string) ($metadata['tender_value'] ?? '') . ' ' . (string) ($metadata['currency'] ?? '')),
+            'financier' => $metadata['financier'] ?? '',
+            'cpv' => $metadata['cpv'] ?? '',
+            'source_url' => $item['source_url'] ?? '',
+            'matched_keywords' => $item['matched_keywords'] ?? [],
+            'documents' => $documents,
+        ];
+    }
+
+    private function documentLinks(array $item): array
+    {
+        $metadata = $item['metadata'] ?? [];
+        $links = [];
+
+        if (filled($metadata['notice_document'] ?? null)) {
+            $links[] = ['label' => 'notice_document', 'url' => (string) $metadata['notice_document']];
+        }
+
+        foreach (($metadata['additional_documents'] ?? []) as $index => $url) {
+            if (filled($url)) {
+                $links[] = ['label' => 'additional_document_' . ($index + 1), 'url' => (string) $url];
+            }
+        }
+
+        if ($links === [] && filled($item['source_url'] ?? null)) {
+            $links[] = ['label' => 'source_url', 'url' => (string) $item['source_url']];
+        }
+
+        return collect($links)
+            ->unique('url')
+            ->values()
+            ->all();
+    }
+
+    private function checkDocumentUrl(string $url, int $timeoutSeconds): array
+    {
+        try {
+            $response = Http::timeout(max(10, min($timeoutSeconds, 30)))->head($url);
+
+            if ($response->status() === 405) {
+                $response = Http::timeout(max(10, min($timeoutSeconds, 30)))
+                    ->withHeaders(['Range' => 'bytes=0-0'])
+                    ->get($url);
+            }
+
+            return [
+                'ok' => $response->successful(),
+                'status' => $response->status(),
+                'content_type' => (string) $response->header('content-type', ''),
+                'content_length' => (string) $response->header('content-length', ''),
+            ];
+        } catch (\Throwable $exception) {
+            return [
+                'ok' => false,
+                'status' => null,
+                'content_type' => '',
+                'content_length' => '',
+                'error' => Str::limit($exception->getMessage(), 180),
+            ];
+        }
+    }
+
+    private function shortDescription(string $summary): string
+    {
+        $summary = preg_replace('/\[TendersOnTime JSON\].*/s', '', $summary) ?? $summary;
+        $summary = preg_replace('/^\[Official tender source\]\s*TendersOnTime tender notice\.\s*/', '', $summary) ?? $summary;
+        $summary = preg_replace('/\s+/', ' ', $summary) ?? $summary;
+
+        return Str::limit(trim($summary), 500);
     }
 
     private function storeTender(array $item): CountryUpdate

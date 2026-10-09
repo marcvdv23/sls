@@ -732,7 +732,7 @@ Artisan::command('sls:eurlex-backfill {--workspace=sustainability_consulting : W
     return ($result['errors'] ?? []) === [] ? 0 : 1;
 })->purpose('Backfill EU legislation from EUR-Lex webservice into Review Desk and searchable law documents');
 
-Artisan::command('sls:tendersontime-import {--workspace=2interact : Workspace key to import into} {--date= : Posting date YYYY-MM-DD, defaults to yesterday} {--endpoint= : API endpoint override} {--username= : API username override} {--key= : API key override} {--timeout=45 : HTTP timeout seconds} {--dry-run : Fetch and parse without saving}', function (TendersOnTimeImportService $importer) {
+Artisan::command('sls:tendersontime-import {--workspace=2interact : Workspace key to import into} {--date= : Posting date YYYY-MM-DD, defaults to yesterday} {--endpoint= : API endpoint override} {--username= : API username override} {--key= : API key override} {--timeout=45 : HTTP timeout seconds} {--inspect=0 : Show this many raw API records in detail without storing skipped records} {--check-documents : With --inspect, check source/document URLs with HEAD requests} {--dry-run : Fetch and parse without saving}', function (TendersOnTimeImportService $importer) {
     $workspaceKey = trim((string) $this->option('workspace'));
     if (in_array(Str::lower($workspaceKey), ['2interact', '2_interact', 'social_security'], true)) {
         $workspaceKey = 'social_security';
@@ -767,6 +767,8 @@ Artisan::command('sls:tendersontime-import {--workspace=2interact : Workspace ke
             username: filled($this->option('username')) ? (string) $this->option('username') : null,
             key: filled($this->option('key')) ? (string) $this->option('key') : null,
             timeoutSeconds: max(10, (int) $this->option('timeout')),
+            inspectRawLimit: max(0, (int) $this->option('inspect')),
+            checkDocuments: (bool) $this->option('check-documents'),
         );
     } catch (Throwable $exception) {
         $this->error($exception->getMessage());
@@ -794,6 +796,36 @@ Artisan::command('sls:tendersontime-import {--workspace=2interact : Workspace ke
             Str::limit((string) $item['title'], 160),
             ($item['matched_keywords'] ?? []) !== [] ? ' | matched: ' . implode(', ', array_slice($item['matched_keywords'], 0, 5)) : ''
         ));
+    }
+
+    foreach ($result['raw_inspection_items'] ?? [] as $index => $item) {
+        $this->newLine();
+        $this->line('Raw API record #' . ($index + 1));
+        $this->line('  ID: ' . ($item['external_id'] ?: 'n/a'));
+        $this->line('  Notice number: ' . ($item['notice_number'] ?: 'n/a'));
+        $this->line('  Country: ' . trim(($item['country_iso'] ?: 'n/a') . ' ' . ($item['country_name'] ? '(' . $item['country_name'] . ')' : '')));
+        $this->line('  Title: ' . ($item['title'] ?: 'n/a'));
+        $this->line('  Short description: ' . ($item['short_description'] ?: 'n/a'));
+        $this->line('  Posting date: ' . ($item['posting_date'] ?: 'n/a'));
+        $this->line('  Closing date: ' . ($item['closing_date'] ?: 'n/a'));
+        $this->line('  Document type: ' . ($item['document_type'] ?: 'n/a'));
+        $this->line('  Bidding type: ' . ($item['bidding_type'] ?: 'n/a'));
+        $this->line('  Purchaser: ' . ($item['purchaser_name'] ?: 'n/a'));
+        $this->line('  Purchaser country: ' . ($item['purchaser_country'] ?: 'n/a'));
+        $this->line('  Purchaser email: ' . ($item['purchaser_email'] ?: 'n/a'));
+        $this->line('  Purchaser website: ' . ($item['purchaser_website'] ?: 'n/a'));
+        $this->line('  Tender value: ' . (trim((string) $item['tender_value']) ?: 'n/a'));
+        $this->line('  Financier: ' . ($item['financier'] ?: 'n/a'));
+        $this->line('  CPV: ' . ($item['cpv'] ?: 'n/a'));
+        $this->line('  Matched keywords: ' . (($item['matched_keywords'] ?? []) === [] ? 'none' : implode(', ', $item['matched_keywords'])));
+
+        foreach ($item['documents'] ?? [] as $document) {
+            $check = $document['check'] ?? null;
+            $status = is_array($check)
+                ? ' | status: ' . ($check['status'] ?? 'n/a') . ' | type: ' . ($check['content_type'] ?: 'n/a') . ' | bytes: ' . ($check['content_length'] ?: 'n/a')
+                : '';
+            $this->line('  Document ' . $document['label'] . ': ' . $document['url'] . $status);
+        }
     }
 
     foreach ($result['errors'] as $error) {
