@@ -213,7 +213,9 @@ class CountryUpdateClassifier
             return false;
         }
 
-        if (self::inferFocus($update) === null) {
+        $isTendersOnTime = Str::contains($sourceText, ['tendersontime', 'tenders on time']);
+
+        if (! $isTendersOnTime && self::inferFocus($update) === null) {
             return false;
         }
 
@@ -239,7 +241,7 @@ class CountryUpdateClassifier
             'procurement opportunity',
         ]);
 
-        if ($hasExplicitProcurementLanguage) {
+        if ($hasExplicitProcurementLanguage || $isTendersOnTime) {
             return true;
         }
 

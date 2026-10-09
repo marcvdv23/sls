@@ -15,6 +15,7 @@ use App\Services\SerpApiSearchService;
 use App\Services\SocialProtectionProfileMonitor;
 use App\Services\TenderAwardLookupService;
 use App\Services\TenderDocumentProcessor;
+use App\Services\TendersOnTimeImportService;
 use App\Services\TitleTranslationService;
 use App\Services\UniversityMarketCrawlerService;
 use App\Services\UniversitySurveyCrawlerService;
@@ -730,6 +731,66 @@ Artisan::command('sls:eurlex-backfill {--workspace=sustainability_consulting : W
 
     return ($result['errors'] ?? []) === [] ? 0 : 1;
 })->purpose('Backfill EU legislation from EUR-Lex webservice into Review Desk and searchable law documents');
+
+Artisan::command('sls:tendersontime-import {--workspace=sustainability_consulting : Workspace key to import into} {--date= : Posting date YYYY-MM-DD, defaults to yesterday} {--endpoint= : API endpoint override} {--username= : API username override} {--key= : API key override} {--timeout=45 : HTTP timeout seconds} {--dry-run : Fetch and parse without saving}', function (TendersOnTimeImportService $importer) {
+    $workspaceKey = (string) $this->option('workspace');
+    if (Schema::hasTable('workspaces')) {
+        $workspace = DB::table('workspaces')
+            ->where('workspace_key', $workspaceKey)
+            ->where('status', 'active')
+            ->first();
+
+        if (! $workspace) {
+            $this->error('Workspace not found or inactive: ' . $workspaceKey);
+
+            return 1;
+        }
+
+        WorkspaceContext::forceWorkspace((int) $workspace->id);
+    }
+
+    $date = (string) ($this->option('date') ?: now()->subDay()->toDateString());
+
+    try {
+        $result = $importer->import(
+            date: $date,
+            dryRun: (bool) $this->option('dry-run'),
+            endpoint: filled($this->option('endpoint')) ? (string) $this->option('endpoint') : null,
+            username: filled($this->option('username')) ? (string) $this->option('username') : null,
+            key: filled($this->option('key')) ? (string) $this->option('key') : null,
+            timeoutSeconds: max(10, (int) $this->option('timeout')),
+        );
+    } catch (Throwable $exception) {
+        $this->error($exception->getMessage());
+
+        return 1;
+    }
+
+    $this->info('TendersOnTime import completed.');
+    $this->line('Workspace: ' . $workspaceKey);
+    $this->line('Posting date: ' . $result['posting_date']);
+    $this->line('Total found at API: ' . $result['total_found']);
+    $this->line('Total shown by API: ' . $result['total_shown']);
+    $this->line('Items parsed: ' . $result['items_found']);
+    $this->line('Items stored/updated: ' . $result['stored_count']);
+    $this->line('Endpoint: ' . $result['endpoint']);
+
+    foreach (array_slice($result['items'], 0, 20) as $item) {
+        $this->line(sprintf(
+            '- %s | %s | %s | %s',
+            $item['publication_date'] ?? 'no date',
+            $item['country_iso'] ?: $item['country_name'] ?: 'no country',
+            $item['external_id'] ?: 'no id',
+            Str::limit((string) $item['title'], 160)
+        ));
+    }
+
+    foreach ($result['errors'] as $error) {
+        $this->warn($error);
+    }
+
+    return ($result['errors'] ?? []) === [] ? 0 : 1;
+})->purpose('Import daily tender notices from the TendersOnTime API into News & Tenders review');
 
 Artisan::command('sls:crawler-discovery-pilot {crawler_id} {--country= : Optional country name or ISO code} {--organizations=10 : Number of organizations} {--calls=10 : Maximum SerpAPI calls} {--results=5 : Results per query} {--batch-id= : Existing market_crawler_runs batch row to update} {--organization-ids= : Comma-separated staged organization IDs}', function (UniversityMarketCrawlerService $service) {
     $crawler = MarketCrawler::query()->findOrFail((int) $this->argument('crawler_id'));
@@ -2722,6 +2783,24 @@ $scheduleEurLexBackfillMonitor = function (string $runTime, array $options, stri
         ->onOneServer();
 };
 
+$scheduleTendersOnTimeImport = function (string $runTime, array $options, string $name): void {
+    Schedule::call(function () use ($options) {
+        if (filled($options['workspace_id'] ?? null)) {
+            WorkspaceContext::forceWorkspace((int) $options['workspace_id']);
+        }
+
+        app(TendersOnTimeImportService::class)->import(
+            date: now()->subDays(max(0, (int) ($options['lookback_days'] ?? 1)))->toDateString(),
+            dryRun: false,
+            endpoint: (string) ($options['endpoint'] ?? env('TENDERSONTIME_ENDPOINT', 'https://tmproject.tendersontime.org/tmpApi/tender-pull-json-2interact.php')),
+        );
+    })
+        ->name($name)
+        ->dailyAt($runTime)
+        ->withoutOverlapping()
+        ->onOneServer();
+};
+
 foreach ($dailySlots as $slotIndex => $runTime) {
     $scheduleCountryMonitor($runTime, [
         'cycle' => (int) $crawlerSetting('daily_batch_size', config('country_intelligence.daily_batch_size')),
@@ -2944,9 +3023,25 @@ try {
             ->where('status', 'active')
             ->orderBy('workspace_key')
             ->get(['id', 'workspace_key'])
-            ->each(function ($workspace) use ($scheduleEuLegislationMonitor, $scheduleEurLexBackfillMonitor, $workspaceCrawlerSetting, $workspaceTimeList): void {
+            ->each(function ($workspace) use ($scheduleEuLegislationMonitor, $scheduleEurLexBackfillMonitor, $scheduleTendersOnTimeImport, $workspaceCrawlerSetting, $workspaceTimeList): void {
                 $workspaceId = (int) $workspace->id;
                 $workspaceKey = (string) $workspace->workspace_key;
+                $tendersOnTimeEnabled = filter_var($workspaceCrawlerSetting($workspaceId, 'tendersontime_enabled', 'false'), FILTER_VALIDATE_BOOL);
+
+                if ($tendersOnTimeEnabled) {
+                    $tendersOnTimeSlots = $workspaceTimeList($workspaceId, 'tendersontime_import_slots', ['06:10']);
+                    $endpoint = (string) $workspaceCrawlerSetting($workspaceId, 'tendersontime_endpoint_url', env('TENDERSONTIME_ENDPOINT', 'https://tmproject.tendersontime.org/tmpApi/tender-pull-json-2interact.php'));
+                    $lookbackDays = max(0, (int) $workspaceCrawlerSetting($workspaceId, 'tendersontime_lookback_days', 1));
+
+                    foreach ($tendersOnTimeSlots as $slotIndex => $runTime) {
+                        $scheduleTendersOnTimeImport($runTime, [
+                            'workspace_id' => $workspaceId,
+                            'endpoint' => $endpoint,
+                            'lookback_days' => $lookbackDays,
+                        ], 'sls-workspace-' . Str::slug($workspaceKey) . '-tendersontime-' . $slotIndex);
+                    }
+                }
+
                 $hasEuLegislationMonitor = DB::table('review_focuses')
                     ->where('workspace_id', $workspaceId)
                     ->where('focus_key', 'legislation')

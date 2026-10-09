@@ -49,6 +49,11 @@
         .source-button-link { border: 0; background: transparent; color: var(--accent); cursor: pointer; font-weight: 900; padding: 0; text-align: left; }
         .source-button-link.danger { color: #dc2626; }
         .source-note { padding: 10px 14px; color: var(--text-secondary); }
+        .tender-details { padding: 12px 14px; background: var(--bg-secondary); border: 1px solid var(--border-subtle); border-radius: var(--radius-card); box-shadow: var(--card-shadow); }
+        .tender-details-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px 14px; margin-top: 8px; }
+        .tender-detail { display: grid; gap: 2px; }
+        .tender-detail span { color: var(--text-secondary); font-size: 11px; font-weight: 900; letter-spacing: .04em; text-transform: uppercase; }
+        .tender-doc-list { display: grid; gap: 5px; margin: 8px 0 0; padding: 0; list-style: none; }
         .tagged-orgs { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 14px; }
         .org-chip { display: inline-flex; gap: 8px; align-items: center; border: 1px solid var(--border-subtle); border-radius: 999px; padding: 5px 9px; background: var(--bg-primary); }
         .org-chip form { display: inline; }
@@ -103,6 +108,12 @@
             }
         }
         $selectedProductIds = collect(old('product_ids', $mappedProductIds))->map(fn ($id) => (string) $id)->all();
+        $tendersOnTimeMeta = null;
+        if (str_contains(strtolower((string) $update->source_name), 'tendersontime') && str_contains((string) $update->summary, '[TendersOnTime JSON]')) {
+            $metadataJson = trim((string) \Illuminate\Support\Str::after((string) $update->summary, '[TendersOnTime JSON]'));
+            $decodedMetadata = json_decode($metadataJson, true);
+            $tendersOnTimeMeta = is_array($decodedMetadata) ? $decodedMetadata : null;
+        }
     @endphp
 
     <div class="source-viewer-page">
@@ -139,6 +150,46 @@
             <div class="source-note" style="color:#dc2626;">
                 {{ $errors->first() }}
             </div>
+        @endif
+
+        @if ($tendersOnTimeMeta)
+            <section class="tender-details" aria-label="Tender details">
+                <p class="eyebrow">Tender Details</p>
+                <h2>{{ $tendersOnTimeMeta['document_type'] ?? 'Tender notice' }}</h2>
+                <div class="tender-details-grid">
+                    @foreach ([
+                        'Notice number' => $tendersOnTimeMeta['notice_number'] ?? null,
+                        'Posting date' => $tendersOnTimeMeta['posting_date'] ?? null,
+                        'Closing date' => $tendersOnTimeMeta['closing_date'] ?? null,
+                        'Bidding type' => $tendersOnTimeMeta['bidding_type'] ?? null,
+                        'Purchaser' => $tendersOnTimeMeta['purchaser_name'] ?? null,
+                        'Purchaser country' => $tendersOnTimeMeta['purchaser_country'] ?? null,
+                        'Email' => $tendersOnTimeMeta['purchaser_email'] ?? null,
+                        'Website' => $tendersOnTimeMeta['purchaser_website'] ?? null,
+                        'Value' => trim(($tendersOnTimeMeta['tender_value'] ?? '') . ' ' . ($tendersOnTimeMeta['currency'] ?? '')),
+                        'Financier' => $tendersOnTimeMeta['financier'] ?? null,
+                        'CPV' => $tendersOnTimeMeta['cpv'] ?? null,
+                    ] as $label => $value)
+                        @if (filled($value))
+                            <div class="tender-detail">
+                                <span>{{ $label }}</span>
+                                <strong>{{ $value }}</strong>
+                            </div>
+                        @endif
+                    @endforeach
+                </div>
+                @if (filled($tendersOnTimeMeta['purchaser_address'] ?? null))
+                    <p class="muted" style="margin-top:10px;">{{ $tendersOnTimeMeta['purchaser_address'] }}</p>
+                @endif
+                @php($documents = collect([$tendersOnTimeMeta['notice_document'] ?? null])->merge($tendersOnTimeMeta['additional_documents'] ?? [])->filter()->values())
+                @if ($documents->isNotEmpty())
+                    <ul class="tender-doc-list">
+                        @foreach ($documents as $documentUrl)
+                            <li><a href="{{ $documentUrl }}" target="_blank" rel="noopener noreferrer">{{ $loop->first ? 'Notice document' : 'Additional document ' . ($loop->iteration - 1) }}</a></li>
+                        @endforeach
+                    </ul>
+                @endif
+            </section>
         @endif
 
         <section class="source-workbench" aria-label="Source review actions">
