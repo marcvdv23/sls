@@ -118,7 +118,7 @@ class WorkspaceContext
                 'entity_key' => config('sls.entity.key', '2interact'),
                 'entity_name' => config('sls.entity.display_name', config('sls.entity.name', '2interact')),
                 'name' => config('sls.workspace.name', '2Interact'),
-                'description' => config('sls.workspace.description', 'Social security, pensions, public sector HR/payroll, and related sales intelligence.'),
+                'description' => config('sls.workspace.description', '2Interact sales intelligence across HRMS, SSAS, EBPC, and ERMS product lines.'),
                 'domain_label' => config('sls.workspace.domain_label', '2Interact Public Sector Software'),
                 'status' => 'active',
                 'is_default' => true,

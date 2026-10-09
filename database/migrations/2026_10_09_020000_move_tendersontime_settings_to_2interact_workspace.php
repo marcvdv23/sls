@@ -12,17 +12,19 @@ return new class extends Migration
             return;
         }
 
-        $workspaceId = DB::table('workspaces')
+        $twoInteractWorkspaceId = DB::table('workspaces')
             ->where('workspace_key', 'social_security')
             ->value('id');
 
-        if (! $workspaceId) {
+        if (! $twoInteractWorkspaceId) {
             return;
         }
 
-        $now = now();
+        $sustainabilityWorkspaceId = DB::table('workspaces')
+            ->where('workspace_key', 'sustainability_consulting')
+            ->value('id');
 
-        foreach ([
+        $settings = [
             [
                 'key' => 'tendersontime_enabled',
                 'value' => 'false',
@@ -51,11 +53,22 @@ return new class extends Migration
                 'label' => 'TendersOnTime posting-date lookback',
                 'description' => 'Number of days before the run date to request. Use 1 for the recommended final previous-day pull.',
             ],
-        ] as $setting) {
+        ];
+
+        $sustainabilityValues = collect();
+        if ($sustainabilityWorkspaceId) {
+            $sustainabilityValues = DB::table('crawler_settings')
+                ->where('workspace_id', $sustainabilityWorkspaceId)
+                ->whereIn('setting_key', collect($settings)->pluck('key')->all())
+                ->pluck('setting_value', 'setting_key');
+        }
+
+        $now = now();
+        foreach ($settings as $setting) {
             DB::table('crawler_settings')->updateOrInsert(
-                ['workspace_id' => $workspaceId, 'setting_key' => $setting['key']],
+                ['workspace_id' => $twoInteractWorkspaceId, 'setting_key' => $setting['key']],
                 [
-                    'setting_value' => $setting['value'],
+                    'setting_value' => (string) ($sustainabilityValues[$setting['key']] ?? $setting['value']),
                     'value_type' => $setting['type'],
                     'label' => $setting['label'],
                     'description' => $setting['description'],
@@ -63,6 +76,13 @@ return new class extends Migration
                     'updated_at' => $now,
                 ]
             );
+        }
+
+        if ($sustainabilityWorkspaceId) {
+            DB::table('crawler_settings')
+                ->where('workspace_id', $sustainabilityWorkspaceId)
+                ->whereIn('setting_key', collect($settings)->pluck('key')->all())
+                ->delete();
         }
     }
 
@@ -72,16 +92,16 @@ return new class extends Migration
             return;
         }
 
-        $workspaceId = DB::table('workspaces')
+        $twoInteractWorkspaceId = DB::table('workspaces')
             ->where('workspace_key', 'social_security')
             ->value('id');
 
-        if (! $workspaceId) {
+        if (! $twoInteractWorkspaceId) {
             return;
         }
 
         DB::table('crawler_settings')
-            ->where('workspace_id', $workspaceId)
+            ->where('workspace_id', $twoInteractWorkspaceId)
             ->whereIn('setting_key', [
                 'tendersontime_enabled',
                 'tendersontime_endpoint_url',

@@ -220,9 +220,12 @@ return [
     'focuses' => [
         'social_security' => [
             'label' => '2Interact Intelligence',
-            'description' => '2Interact workspace signals across social security, pensions, benefits, HR/payroll, HRMS/HCM, risk, compliance, budgeting, learning, recruitment, and related tender updates.',
+            'description' => '2Interact workspace signals across the HRMS, SSAS, EBPC, and ERMS product lines, including social security, pensions, benefits, HR/payroll, risk, compliance, budgeting, learning, recruitment, and related tender updates.',
             'terms' => [
                 '2interact',
+                'ssas',
+                'social security administration software',
+                'social security administration system',
                 'national provident fund',
                 'national provident funds',
                 'national provident fund system',
@@ -330,6 +333,9 @@ return [
             'strong_signals' => [
                 'national provident fund',
                 'national insurance',
+                'ssas',
+                'social security administration software',
+                'social security administration system',
                 'social security',
                 'social insurance',
                 'benefits administration',

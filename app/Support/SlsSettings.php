@@ -75,7 +75,7 @@ class SlsSettings
                 'label' => 'Workspace description',
                 'description' => 'Short internal explanation of this workspace focus.',
                 'value_type' => 'text',
-                'default' => config('sls.workspace.description', 'Social security, pensions, public sector HR/payroll, and related sales intelligence.'),
+                'default' => config('sls.workspace.description', '2Interact sales intelligence across HRMS, SSAS, EBPC, and ERMS product lines.'),
             ],
             'workspace.domain_label' => [
                 'group' => 'Workspace',

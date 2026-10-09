@@ -14,6 +14,9 @@ class CountryUpdateClassifier
         if (Str::contains($text, [
             'social security',
             'social security administration',
+            'social security administration software',
+            'social security administration system',
+            'ssas',
             'social insurance',
             'social protection',
             'national insurance',

@@ -26,7 +26,7 @@ return new class extends Migration
             ->where('id', $workspaceId)
             ->update([
                 'name' => '2Interact',
-                'description' => '2Interact sales intelligence across social security, pensions, benefits, HR/payroll, risk, compliance, budgeting, HRMS/HCM, and related tenders.',
+                'description' => '2Interact sales intelligence across HRMS, SSAS, EBPC, and ERMS product lines, including social security, pensions, benefits, HR/payroll, risk, compliance, budgeting, and related tenders.',
                 'domain_label' => '2Interact Public Sector Software',
                 'updated_at' => $now,
             ]);
@@ -34,7 +34,7 @@ return new class extends Migration
         if (Schema::hasTable('sls_settings')) {
             foreach ([
                 'workspace.name' => ['2Interact', 'Workspace', 'Workspace name', 'Name shown for the active sales/intelligence workspace.', 'string'],
-                'workspace.description' => ['2Interact sales intelligence across social security, pensions, benefits, HR/payroll, risk, compliance, budgeting, HRMS/HCM, and related tenders.', 'Workspace', 'Workspace description', 'Short internal explanation of this workspace focus.', 'text'],
+                'workspace.description' => ['2Interact sales intelligence across HRMS, SSAS, EBPC, and ERMS product lines, including social security, pensions, benefits, HR/payroll, risk, compliance, budgeting, and related tenders.', 'Workspace', 'Workspace description', 'Short internal explanation of this workspace focus.', 'text'],
                 'workspace.domain_label' => ['2Interact Public Sector Software', 'Workspace', 'Domain label', 'Business domain label used in setup and intelligence screens.', 'string'],
                 'workspace.opportunity_label' => ['Curated 2Interact opportunities', 'Workspace', 'Opportunity label', 'Label for curated priority opportunities.', 'string'],
                 'workspace.intelligence_monitor_label' => ['2Interact Intelligence Monitor', 'Workspace', 'Intelligence monitor label', 'Dashboard label for the broad workspace intelligence monitor.', 'string'],
@@ -56,7 +56,7 @@ return new class extends Migration
         }
 
         if (Schema::hasTable('review_focuses')) {
-            $this->updateFocus($workspaceId, 'social_security', '2Interact Intelligence', '2Interact workspace signals across social security, pensions, benefits, HR/payroll, HRMS/HCM, risk, compliance, budgeting, learning, recruitment, and related tender updates.', $this->twoInteractTerms(), $this->twoInteractStrongSignals());
+            $this->updateFocus($workspaceId, 'social_security', '2Interact Intelligence', '2Interact workspace signals across the HRMS, SSAS, EBPC, and ERMS product lines, including social security, pensions, benefits, HR/payroll, risk, compliance, budgeting, learning, recruitment, and related tender updates.', $this->twoInteractTerms(), $this->twoInteractStrongSignals());
             $this->mergeFocusTerms($workspaceId, 'hrms_tenders', $this->hrmsTerms(), $this->hrmsStrongSignals());
             $this->mergeFocusTerms($workspaceId, 'erms_tenders', $this->riskTerms(), $this->riskStrongSignals());
             $this->mergeFocusTerms($workspaceId, 'ebpc_tenders', $this->budgetTerms(), $this->budgetStrongSignals());
@@ -177,6 +177,10 @@ return new class extends Migration
     private function twoInteractTerms(): array
     {
         return [
+            '2interact',
+            'ssas',
+            'social security administration software',
+            'social security administration system',
             'national provident fund',
             'national insurance',
             'social security',
@@ -222,6 +226,9 @@ return new class extends Migration
         return [
             'national provident fund',
             'national insurance',
+            'ssas',
+            'social security administration software',
+            'social security administration system',
             'social security',
             'social insurance',
             'benefits administration',

@@ -732,8 +732,13 @@ Artisan::command('sls:eurlex-backfill {--workspace=sustainability_consulting : W
     return ($result['errors'] ?? []) === [] ? 0 : 1;
 })->purpose('Backfill EU legislation from EUR-Lex webservice into Review Desk and searchable law documents');
 
-Artisan::command('sls:tendersontime-import {--workspace=sustainability_consulting : Workspace key to import into} {--date= : Posting date YYYY-MM-DD, defaults to yesterday} {--endpoint= : API endpoint override} {--username= : API username override} {--key= : API key override} {--timeout=45 : HTTP timeout seconds} {--dry-run : Fetch and parse without saving}', function (TendersOnTimeImportService $importer) {
-    $workspaceKey = (string) $this->option('workspace');
+Artisan::command('sls:tendersontime-import {--workspace=2interact : Workspace key to import into} {--date= : Posting date YYYY-MM-DD, defaults to yesterday} {--endpoint= : API endpoint override} {--username= : API username override} {--key= : API key override} {--timeout=45 : HTTP timeout seconds} {--dry-run : Fetch and parse without saving}', function (TendersOnTimeImportService $importer) {
+    $workspaceKey = trim((string) $this->option('workspace'));
+    if (in_array(Str::lower($workspaceKey), ['2interact', '2_interact', 'social_security'], true)) {
+        $workspaceKey = 'social_security';
+    }
+
+    $workspaceName = '2Interact';
     if (Schema::hasTable('workspaces')) {
         $workspace = DB::table('workspaces')
             ->where('workspace_key', $workspaceKey)
@@ -747,6 +752,9 @@ Artisan::command('sls:tendersontime-import {--workspace=sustainability_consultin
         }
 
         WorkspaceContext::forceWorkspace((int) $workspace->id);
+        $workspaceName = filled($workspace->name ?? null)
+            ? (string) $workspace->name
+            : '2Interact';
     }
 
     $date = (string) ($this->option('date') ?: now()->subDay()->toDateString());
@@ -767,7 +775,7 @@ Artisan::command('sls:tendersontime-import {--workspace=sustainability_consultin
     }
 
     $this->info('TendersOnTime import completed.');
-    $this->line('Workspace: ' . $workspaceKey);
+    $this->line('Workspace: ' . $workspaceName);
     $this->line('Posting date: ' . $result['posting_date']);
     $this->line('Total found at API: ' . $result['total_found']);
     $this->line('Total shown by API: ' . $result['total_shown']);

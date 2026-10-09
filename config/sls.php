@@ -27,7 +27,7 @@ return [
     'workspace' => [
         'key' => env('SLS_WORKSPACE_KEY', 'social_security'),
         'name' => env('SLS_WORKSPACE_NAME', '2Interact'),
-        'description' => env('SLS_WORKSPACE_DESCRIPTION', '2Interact sales intelligence across social security, pensions, benefits, HR/payroll, risk, compliance, budgeting, HRMS/HCM, and related tenders.'),
+        'description' => env('SLS_WORKSPACE_DESCRIPTION', '2Interact sales intelligence across HRMS, SSAS, EBPC, and ERMS product lines, including social security, pensions, benefits, HR/payroll, risk, compliance, budgeting, and related tenders.'),
         'domain_label' => env('SLS_WORKSPACE_DOMAIN_LABEL', '2Interact Public Sector Software'),
         'opportunity_label' => env('SLS_WORKSPACE_OPPORTUNITY_LABEL', 'Curated 2Interact opportunities'),
         'review_label' => env('SLS_WORKSPACE_REVIEW_LABEL', 'Review Desk'),
