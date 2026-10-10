@@ -332,6 +332,16 @@ class TrackedCountrySourceDirectory
     private function nameMatchesSourceSlot(string $slotKey, string $name): bool
     {
         $name = $this->normalizeName($name);
+        $isCivilServicePension = Str::contains($name, [
+            'civil service',
+            'public service',
+            'public officers',
+            'public officer',
+            'public servants',
+            'public servant',
+            'government employees',
+            'government employee',
+        ]) && Str::contains($name, ['pension', 'retirement']);
 
         return match ($slotKey) {
             'social_security' => Str::contains($name, [
@@ -343,10 +353,10 @@ class TrackedCountrySourceDirectory
                 'pensions fund',
                 'retirement',
                 'caisse',
-            ]) && ! Str::contains($name, ['ministry', 'department of labour', 'department of labor']),
-            'pensions_civil_service' => Str::contains($name, ['civil service', 'public service', 'public officers']) && Str::contains($name, ['pension', 'retirement']),
+            ]) && ! $isCivilServicePension && ! Str::contains($name, ['ministry', 'department of labour', 'department of labor']),
+            'pensions_civil_service' => $isCivilServicePension,
             'pensions_military' => Str::contains($name, ['military', 'defence', 'defense', 'veteran', 'armed forces', 'police']) && Str::contains($name, ['pension', 'retirement']),
-            'pensions_private_sector' => Str::contains($name, ['private sector', 'national insurance', 'provident', 'pension', 'retirement']),
+            'pensions_private_sector' => ! $isCivilServicePension && Str::contains($name, ['private sector', 'national insurance', 'provident', 'pension', 'retirement']),
             'employment_injury' => Str::contains($name, ['employment injury', 'workers compensation', 'workers compensation', 'occupational injury', 'work injury', 'accident insurance']),
             'ministry_social_security' => Str::contains($name, ['ministry', 'department']) && Str::contains($name, ['social security', 'social protection', 'social affairs', 'social welfare', 'welfare']),
             'ministry_labor' => Str::contains($name, ['ministry']) && Str::contains($name, ['labor', 'labour', 'employment', 'manpower']),
