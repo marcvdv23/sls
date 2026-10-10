@@ -51,9 +51,6 @@
         .source-url-modal[hidden] { display:none; }
         .source-url-modal { position:fixed; inset:0; z-index:10000; display:flex; align-items:center; justify-content:center; padding:24px; background:rgba(15, 23, 42, .46); overflow:auto; }
         .source-url-dialog { position:relative; z-index:10001; width:min(560px, 100%); max-height:calc(100vh - 48px); overflow:auto; border-radius:8px; border:1px solid var(--border-subtle); background:var(--bg-primary); box-shadow:0 24px 70px rgba(15, 23, 42, .28); }
-        @media (max-height: 720px) {
-            .source-url-modal { align-items:flex-start; }
-        }
         .source-url-dialog header { display:flex; justify-content:space-between; gap:12px; padding:12px 14px; border-bottom:1px solid var(--border-subtle); }
         .source-url-dialog h3 { margin:0; font-size:1rem; }
         .source-url-dialog form { display:grid; gap:9px; padding:14px; }
@@ -312,7 +309,7 @@
                         <span>Organization name</span>
                         <label class="checkbox-field">
                             <input type="checkbox" name="organization_nonexistent" value="1">
-                            Confirmed non-existence
+                            Confirmed Non-Existence
                         </label>
                     </div>
                     <input type="text" name="organization_name" list="source-url-suggestions" placeholder="Official organization name" autocomplete="off">
@@ -324,7 +321,7 @@
                         <span>General</span>
                         <label class="checkbox-field">
                             <input type="checkbox" name="general_url_nonexistent" value="1">
-                            Confirmed none exists
+                            Confirmed Non-Existence
                         </label>
                     </div>
                     <input type="url" name="general_url" placeholder="https://example.gov">
@@ -334,7 +331,7 @@
                         <span>Press</span>
                         <label class="checkbox-field">
                             <input type="checkbox" name="press_url_nonexistent" value="1">
-                            Confirmed none exists
+                            Confirmed Non-Existence
                         </label>
                     </div>
                     <input type="url" name="press_url" placeholder="https://example.gov/news">
@@ -344,7 +341,7 @@
                         <span>Tenders</span>
                         <label class="checkbox-field">
                             <input type="checkbox" name="tenders_url_nonexistent" value="1">
-                            Confirmed none exists
+                            Confirmed Non-Existence
                         </label>
                     </div>
                     <input type="url" name="tenders_url" placeholder="https://example.gov/procurement">
@@ -405,6 +402,7 @@
         (() => {
             const modal = document.getElementById('source-url-modal');
             const form = document.getElementById('source-url-form');
+            const dialog = modal?.querySelector('.source-url-dialog');
             const title = document.getElementById('source-url-title');
             const country = document.getElementById('source-url-country');
             const status = document.getElementById('source-url-status');
@@ -500,6 +498,10 @@
                     }
                     modal.hidden = false;
                     requestAnimationFrame(() => {
+                        modal.scrollTop = 0;
+                        if (dialog) {
+                            dialog.scrollTop = 0;
+                        }
                         form.elements.organization_name.focus({ preventScroll: true });
                     });
                 });
