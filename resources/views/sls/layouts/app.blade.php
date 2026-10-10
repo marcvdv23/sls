@@ -80,7 +80,7 @@
                 <div style="margin:10px 12px 18px;color:#536173;font-size:12px;line-height:1.35;">
                     <strong style="display:block;color:#111827;font-size:13px;">{{ $slsEntityName }}</strong>
                     <span>{{ $slsWorkspaceName }}</span>
-                    @if ($slsCurrentWorkspace)
+                    @if ($slsCurrentWorkspace && ! $slsSourceMaintenanceOnly)
                         <form method="post" action="{{ route('sls.workspaces.current') }}" style="display:grid;gap:5px;margin-top:10px;">
                             @csrf
                             <label for="workspace-selector" style="font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#8a96a8;">Workspace</label>
@@ -98,7 +98,7 @@
                 @php
                     $navSections = $slsSourceMaintenanceOnly ? [
                         'Work' => [
-                            ['Source Maintenance', route('sls.sourceMaintenance.index'), 'sls.sourceMaintenance.*', 'SRC'],
+                            ['Market Research Sources', route('sls.sourceMaintenance.index'), 'sls.sourceMaintenance.*', 'SRC'],
                         ],
                     ] : ($slsBasicReviewerOnly ? [
                         'Review' => [
@@ -145,7 +145,7 @@
                         ],
                         'Setup' => [
                             ['Workspace Settings', route('sls.settings.workspace'), 'sls.settings.workspace*', 'SET'],
-                            ['Source Maintenance', route('sls.sourceMaintenance.index'), 'sls.sourceMaintenance.*', 'SRC'],
+                            ['Market Research Sources', route('sls.sourceMaintenance.index'), 'sls.sourceMaintenance.*', 'SRC'],
                             ['Products & Services', route('sls.settings.products'), 'sls.settings.products*', 'PRD'],
                             ['Review Categories', route('sls.settings.reviewFocuses'), 'sls.settings.reviewFocuses*', 'REV'],
                             ['Priority Opportunities', route('sls.settings.priorityOpportunities'), 'sls.settings.priorityOpportunities*', 'PRI'],

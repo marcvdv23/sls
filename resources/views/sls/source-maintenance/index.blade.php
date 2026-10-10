@@ -1,8 +1,8 @@
 @extends('sls.layouts.app')
 
-@section('title', 'Source Maintenance')
+@section('title', 'Market Research Sources')
 @section('eyebrow', 'Setup')
-@section('page_title', 'Source Maintenance')
+@section('page_title', 'Market Research Sources')
 
 @push('head')
     <style>
@@ -20,12 +20,14 @@
         .country-col { width:190px; }
         .iso-col { width:62px; }
         .region-col { width:135px; }
-        .source-col { width:42%; }
-        .url-col { width:32%; }
+        .source-col { width:36%; }
+        .url-col { width:38%; }
         .source-name-list { display:grid; gap:4px; }
         .source-row { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:8px; align-items:start; padding:4px 0; border-bottom:1px solid var(--border-subtle); }
         .source-row:last-child { border-bottom:0; }
         .source-title { font-weight:800; overflow-wrap:anywhere; }
+        .source-slot { display:block; color:var(--text-secondary); font-size:.72rem; font-weight:800; letter-spacing:.05em; text-transform:uppercase; }
+        .source-description { display:block; color:var(--text-secondary); font-size:.78rem; margin-top:2px; }
         .source-urls { display:grid; gap:3px; color:var(--text-secondary); font-size:.78rem; overflow-wrap:anywhere; }
         .source-urls a { color:var(--accent-primary); font-weight:700; text-decoration:none; }
         .source-urls a:hover { text-decoration:underline; }
@@ -43,18 +45,14 @@
     </style>
 @endpush
 
-@section('topbar_actions')
-    <a class="button secondary" href="{{ route('sls.sourceMaintenance.index') }}">Refresh</a>
-@endsection
-
 @section('content')
     <div class="source-maintenance-page">
         <section class="panel stack">
             <div class="source-maintenance-head">
                 <div>
                     <p class="eyebrow">Tracked Countries And Organizations</p>
-                    <h2>Maintain official organization URLs</h2>
-                    <p class="muted">This page is limited to reviewing the tracked country list and updating organization URLs used by the crawlers.</p>
+                    <h2>Maintain source organization URLs</h2>
+                    <p class="muted">This page is limited to the official source organizations used for social security intelligence. Each country has the same required source slots and only URL fields can be updated here.</p>
                 </div>
             </div>
 
@@ -90,7 +88,7 @@
                             <th class="country-col">Country</th>
                             <th class="iso-col">ISO</th>
                             <th class="region-col">Region</th>
-                            <th class="source-col">Organization</th>
+                            <th class="source-col">Source organization slot</th>
                             <th class="url-col">URLs</th>
                         </tr>
                     </thead>
@@ -98,7 +96,7 @@
                         @foreach ($countries as $country)
                             <tr
                                 data-tracked-country-row
-                                data-search-text="{{ strtolower($country->name . ' ' . ($country->social_security_administration_names ?? collect())->implode(' ')) }}"
+                                data-search-text="{{ strtolower($country->name . ' ' . ($country->social_security_administration_links ?? collect())->map(fn ($source) => trim(($source['slot_label'] ?? '') . ' ' . ($source['name'] ?? '')))->implode(' ')) }}"
                                 data-region="{{ $country->region }}"
                                 data-language="{{ strtoupper($country->default_language_code ?? 'n/a') }}"
                             >
@@ -110,16 +108,24 @@
                                         <div class="source-name-list">
                                             @foreach (($country->social_security_administration_links ?? collect()) as $admin)
                                                 <div class="source-row">
-                                                    <span class="source-title">{{ $admin['name'] }}</span>
+                                                    <span>
+                                                        <span class="source-slot">{{ $admin['slot_label'] ?? 'Source organization' }}</span>
+                                                        <span class="source-title">{{ $admin['name'] }}</span>
+                                                        @if (filled($admin['description'] ?? null))
+                                                            <span class="source-description">{{ $admin['description'] }}</span>
+                                                        @endif
+                                                    </span>
                                                     <button
                                                         class="source-url-edit secondary"
                                                         type="button"
                                                         title="Edit URLs"
-                                                        aria-label="Edit URLs for {{ $admin['name'] }}"
+                                                        aria-label="Edit URLs for {{ $admin['slot_label'] ?? $admin['name'] }}"
                                                         data-country-iso="{{ strtoupper($country->iso_code ?? '') }}"
                                                         data-country-name="{{ $country->name }}"
                                                         data-region="{{ $country->region }}"
                                                         data-organization-name="{{ $admin['name'] }}"
+                                                        data-source-category="{{ $admin['source_category'] ?? 'social_security_administration' }}"
+                                                        data-source-label="{{ $admin['slot_label'] ?? $admin['name'] }}"
                                                         data-product-id="{{ $admin['product_id'] ?? optional($products->first())->id }}"
                                                         data-general-url="{{ $admin['general_url'] ?? '' }}"
                                                         data-press-url="{{ $admin['press_url'] ?? '' }}"
@@ -136,7 +142,10 @@
                                     <div class="source-name-list">
                                         @foreach (($country->social_security_administration_links ?? collect()) as $admin)
                                             <div class="source-urls">
-                                                <strong>{{ $admin['name'] }}</strong>
+                                                <strong>{{ $admin['slot_label'] ?? $admin['name'] }}</strong>
+                                                @if (($admin['slot_label'] ?? null) && ($admin['name'] ?? null) && $admin['slot_label'] !== $admin['name'])
+                                                    <span>Organization: {{ $admin['name'] }}</span>
+                                                @endif
                                                 @if (filled($admin['general_url'] ?? null))
                                                     <span>General: <a href="{{ $admin['general_url'] }}" target="_blank" rel="noreferrer">{{ $admin['general_url'] }}</a></span>
                                                 @else
@@ -177,14 +186,9 @@
                 <input type="hidden" name="country_name">
                 <input type="hidden" name="region">
                 <input type="hidden" name="organization_name">
-                <label>
-                    Product
-                    <select name="product_id" required>
-                        @foreach ($products as $product)
-                            <option value="{{ $product->id }}">{{ $product->name }}</option>
-                        @endforeach
-                    </select>
-                </label>
+                <input type="hidden" name="source_category">
+                <input type="hidden" name="source_label">
+                <input type="hidden" name="product_id" value="{{ optional($products->first())->id }}">
                 <label>
                     General
                     <input type="url" name="general_url" placeholder="https://example.gov">
@@ -259,13 +263,15 @@
             document.querySelectorAll('.source-url-edit').forEach((button) => {
                 button.addEventListener('click', () => {
                     status.textContent = '';
-                    title.textContent = button.dataset.organizationName || 'Edit organization URLs';
+                    title.textContent = button.dataset.sourceLabel || button.dataset.organizationName || 'Edit organization URLs';
                     country.textContent = [button.dataset.countryName, button.dataset.countryIso].filter(Boolean).join(' | ');
                     form.elements.country_iso.value = button.dataset.countryIso || '';
                     form.elements.country_name.value = button.dataset.countryName || '';
                     form.elements.region.value = button.dataset.region || '';
                     form.elements.organization_name.value = button.dataset.organizationName || '';
-                    form.elements.product_id.value = button.dataset.productId || form.elements.product_id.options[0]?.value || '';
+                    form.elements.source_category.value = button.dataset.sourceCategory || 'social_security_administration';
+                    form.elements.source_label.value = button.dataset.sourceLabel || button.dataset.organizationName || '';
+                    form.elements.product_id.value = button.dataset.productId || form.elements.product_id.value || '';
                     form.elements.general_url.value = button.dataset.generalUrl || '';
                     form.elements.press_url.value = button.dataset.pressUrl || '';
                     form.elements.tenders_url.value = button.dataset.tendersUrl || '';

@@ -17,7 +17,7 @@ return new class extends Migration
         DB::table('permission_forms')->updateOrInsert(
             ['key' => 'source_maintenance'],
             [
-                'label' => 'Source Maintenance',
+                'label' => 'Market Research Sources',
                 'category' => 'Setup',
                 'description' => 'Restricted page for maintaining tracked country and organization URLs only.',
                 'created_at' => $now,
@@ -37,16 +37,24 @@ return new class extends Migration
             );
         }
 
-        $groupId = DB::table('user_groups')->where('slug', 'source-maintenance')->value('id');
+        $groupId = DB::table('user_groups')->where('slug', 'market-researcher')->value('id')
+            ?: DB::table('user_groups')->where('slug', 'source-maintenance')->value('id');
 
         if (! $groupId) {
             $groupId = DB::table('user_groups')->insertGetId([
-                'name' => 'Source Maintenance',
-                'slug' => 'source-maintenance',
-                'description' => 'Can only view the source maintenance page and update organization URLs.',
+                'name' => 'Market Researcher',
+                'slug' => 'market-researcher',
+                'description' => 'Can only view the market research source page and update organization URLs.',
                 'is_system' => true,
                 'is_admin' => false,
                 'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+        } else {
+            DB::table('user_groups')->where('id', $groupId)->update([
+                'name' => 'Market Researcher',
+                'slug' => 'market-researcher',
+                'description' => 'Can only view the market research source page and update organization URLs.',
                 'updated_at' => $now,
             ]);
         }
@@ -79,7 +87,8 @@ return new class extends Migration
             return;
         }
 
-        $groupId = DB::table('user_groups')->where('slug', 'source-maintenance')->value('id');
+        $groupId = DB::table('user_groups')->where('slug', 'market-researcher')->value('id')
+            ?: DB::table('user_groups')->where('slug', 'source-maintenance')->value('id');
 
         if ($groupId) {
             DB::table('user_group_permissions')->where('user_group_id', $groupId)->delete();

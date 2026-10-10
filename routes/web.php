@@ -713,6 +713,8 @@ Route::post('/sls/tracked-countries/admin-urls', function (Request $request) use
         'country_name' => ['required', 'string', 'max:255'],
         'region' => ['nullable', 'string', 'max:120'],
         'organization_name' => ['required', 'string', 'max:255'],
+        'source_category' => ['nullable', 'string', 'max:120'],
+        'source_label' => ['nullable', 'string', 'max:255'],
         'product_id' => ['nullable', 'integer', 'exists:products,id'],
         'general_url' => ['nullable', 'string', 'max:1000'],
         'press_url' => ['nullable', 'string', 'max:1000'],
@@ -756,6 +758,12 @@ Route::post('/sls/tracked-countries/admin-urls', function (Request $request) use
     $iso = Str::upper(trim((string) $data['country_iso']));
     $name = trim((string) $data['organization_name']);
     $nameNormalized = $normalizeName($name);
+    $sourceSlotsBySubcategory = TrackedCountrySourceDirectory::sourceOrganizationSlotsBySubcategory();
+    $sourceCategory = (string) ($data['source_category'] ?? 'social_security_administration');
+    $sourceCategory = array_key_exists($sourceCategory, $sourceSlotsBySubcategory)
+        ? $sourceCategory
+        : 'social_security_administration';
+    $sourceLabel = trim((string) ($data['source_label'] ?? ($sourceSlotsBySubcategory[$sourceCategory]['label'] ?? $name)));
     $country = Country::query()->where('iso_code', $iso)->first();
     $defaultProduct = $defaultSlsProduct();
     $product = filled($data['product_id'] ?? null)
@@ -777,8 +785,7 @@ Route::post('/sls/tracked-countries/admin-urls', function (Request $request) use
 
     $organization = MarketOrganization::query()
         ->where('country_iso', $iso)
-        ->where('organization_subcategory', 'social_security_administration')
-        ->where('name_normalized', $nameNormalized)
+        ->where('organization_subcategory', $sourceCategory)
         ->when(Schema::hasColumn('market_organizations', 'product_id'), function ($query) use ($defaultProduct, $productId) {
             $query->where(function ($inner) use ($defaultProduct, $productId) {
                 $inner->where('product_id', $productId);
@@ -790,9 +797,26 @@ Route::post('/sls/tracked-countries/admin-urls', function (Request $request) use
         })
         ->first();
 
+    if (! $organization && $sourceCategory === 'social_security_administration') {
+        $organization = MarketOrganization::query()
+            ->where('country_iso', $iso)
+            ->where('organization_subcategory', 'social_security_administration')
+            ->where('name_normalized', $nameNormalized)
+            ->when(Schema::hasColumn('market_organizations', 'product_id'), function ($query) use ($defaultProduct, $productId) {
+                $query->where(function ($inner) use ($defaultProduct, $productId) {
+                    $inner->where('product_id', $productId);
+
+                    if ($productId !== null && $defaultProduct?->id === $productId) {
+                        $inner->orWhereNull('product_id');
+                    }
+                });
+            })
+            ->first();
+    }
+
     if (! $organization) {
         $organization = new MarketOrganization([
-            'source_fingerprint' => hash('sha256', 'manual-organization-url|' . $productKey . '|' . $iso . '|' . $nameNormalized),
+            'source_fingerprint' => hash('sha256', 'manual-organization-url|' . $productKey . '|' . $iso . '|' . $sourceCategory),
         ]);
     }
 
@@ -802,7 +826,7 @@ Route::post('/sls/tracked-countries/admin-urls', function (Request $request) use
         'name_normalized' => $nameNormalized,
         'organization_type' => 'government_agency',
         'industry' => 'government',
-        'organization_subcategory' => 'social_security_administration',
+        'organization_subcategory' => $sourceCategory,
         'country' => $country?->name ?: $data['country_name'],
         'country_raw' => $data['country_name'],
         'country_iso' => $iso,
@@ -817,7 +841,7 @@ Route::post('/sls/tracked-countries/admin-urls', function (Request $request) use
         'lead_source' => 'manual_social_security_admin_url',
         'notes' => trim(collect([
             $organization->notes,
-            'Manual dashboard URL review updated ' . now()->toDateTimeString() . ' for ' . ($product?->name ?: 'unmapped product') . '.',
+            'Manual source URL review updated ' . now()->toDateTimeString() . ' for ' . $sourceLabel . ' / ' . ($product?->name ?: 'unmapped product') . '.',
         ])->filter()->unique()->implode("\n")) ?: null,
         'last_crawler_name' => $crawler->name,
     ];
@@ -837,7 +861,7 @@ Route::post('/sls/tracked-countries/admin-urls', function (Request $request) use
 })->name('sls.trackedCountries.adminUrls.update');
 
 Route::post('/sls/tracked-countries/admin-urls/delete', function (Request $request) use ($ensureSourceMaintenanceAccess) {
-    $ensureSourceMaintenanceAccess('update');
+    $ensureSourceMaintenanceAccess('delete');
 
     $data = $request->validate([
         'country_iso' => ['required', 'string', 'max:8'],
