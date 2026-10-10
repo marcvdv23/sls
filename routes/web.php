@@ -865,6 +865,54 @@ Route::post('/sls/tracked-countries/admin-urls', function (Request $request) use
     ]);
 })->name('sls.trackedCountries.adminUrls.update');
 
+Route::post('/sls/tracked-countries/admin-urls/reset', function (Request $request) use ($defaultSlsProduct, $ensureSourceMaintenanceAccess) {
+    $ensureSourceMaintenanceAccess('update');
+
+    $data = $request->validate([
+        'country_iso' => ['required', 'string', 'max:8'],
+        'source_category' => ['required', 'string', 'max:120'],
+        'product_id' => ['nullable', 'integer', 'exists:products,id'],
+    ]);
+
+    $iso = Str::upper(trim((string) $data['country_iso']));
+    $sourceSlotsBySubcategory = TrackedCountrySourceDirectory::sourceOrganizationSlotsBySubcategory();
+    $sourceCategory = (string) $data['source_category'];
+
+    if (! array_key_exists($sourceCategory, $sourceSlotsBySubcategory)) {
+        return response()->json([
+            'message' => 'Unknown source slot.',
+        ], 422);
+    }
+
+    $defaultProduct = $defaultSlsProduct();
+    $product = filled($data['product_id'] ?? null)
+        ? Product::query()->find((int) $data['product_id'])
+        : $defaultProduct;
+    $productId = $product?->id;
+
+    $organizations = MarketOrganization::query()
+        ->where('country_iso', $iso)
+        ->where('organization_subcategory', $sourceCategory)
+        ->when(Schema::hasColumn('market_organizations', 'product_id'), function ($query) use ($defaultProduct, $productId) {
+            $query->where(function ($inner) use ($defaultProduct, $productId) {
+                $inner->where('product_id', $productId);
+
+                if ($productId !== null && $defaultProduct?->id === $productId) {
+                    $inner->orWhereNull('product_id');
+                }
+            });
+        });
+
+    $deleted = $organizations->delete();
+
+    return response()->json([
+        'ok' => true,
+        'country_iso' => $iso,
+        'source_category' => $sourceCategory,
+        'deleted' => $deleted,
+    ]);
+})->name('sls.trackedCountries.adminUrls.reset');
+
 Route::post('/sls/tracked-countries/admin-urls/delete', function (Request $request) use ($ensureSourceMaintenanceAccess) {
     $ensureSourceMaintenanceAccess('delete');
 

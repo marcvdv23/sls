@@ -48,6 +48,8 @@
         .source-url-dialog input,
         .source-url-dialog select { width:100%; box-sizing:border-box; }
         .source-url-dialog .form-status { min-height:1.2em; color:var(--accent-danger); font-size:.82rem; }
+        .source-url-reset { border-color:var(--accent-danger); color:var(--accent-danger); background:transparent; }
+        .source-url-reset:hover { background:rgba(220, 38, 38, .08); }
     </style>
 @endpush
 
@@ -243,6 +245,7 @@
                     <input type="url" name="tenders_url" placeholder="https://example.gov/procurement">
                 </label>
                 <div class="toolbar" style="justify-content:space-between;">
+                    <button class="secondary tiny source-url-reset" type="button" id="source-url-reset">Reset slot</button>
                     <span class="form-status" id="source-url-status"></span>
                     <button class="button tiny" type="submit">Save URLs</button>
                 </div>
@@ -299,6 +302,7 @@
             const country = document.getElementById('source-url-country');
             const status = document.getElementById('source-url-status');
             const suggestions = document.getElementById('source-url-suggestions');
+            const resetButton = document.getElementById('source-url-reset');
             const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
 
             if (!modal || !form) {
@@ -320,6 +324,14 @@
                     form.elements.general_url.value = button.dataset.generalUrl || '';
                     form.elements.press_url.value = button.dataset.pressUrl || '';
                     form.elements.tenders_url.value = button.dataset.tendersUrl || '';
+                    if (resetButton) {
+                        resetButton.disabled = !(
+                            button.dataset.organizationName
+                            || button.dataset.generalUrl
+                            || button.dataset.pressUrl
+                            || button.dataset.tendersUrl
+                        );
+                    }
                     if (suggestions) {
                         let names = [];
                         try {
@@ -378,6 +390,43 @@
                     window.location.reload();
                 } catch (error) {
                     status.textContent = error.message || 'Could not save URLs.';
+                }
+            });
+
+            resetButton?.addEventListener('click', async () => {
+                const label = form.elements.source_label.value || 'this source slot';
+                if (!confirm(`Reset ${label}? This clears the assigned organization and URLs for this country slot.`)) {
+                    return;
+                }
+
+                status.textContent = 'Resetting...';
+                resetButton.disabled = true;
+
+                try {
+                    const payload = {
+                        country_iso: form.elements.country_iso.value,
+                        source_category: form.elements.source_category.value,
+                        product_id: form.elements.product_id.value,
+                    };
+                    const response = await fetch('{{ route('sls.trackedCountries.adminUrls.reset') }}', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json',
+                            'X-CSRF-TOKEN': csrf,
+                        },
+                        body: JSON.stringify(payload),
+                    });
+                    const body = await response.json().catch(() => ({}));
+
+                    if (!response.ok) {
+                        throw new Error(body.message || 'Could not reset this source slot.');
+                    }
+
+                    window.location.reload();
+                } catch (error) {
+                    status.textContent = error.message || 'Could not reset this source slot.';
+                    resetButton.disabled = false;
                 }
             });
 
