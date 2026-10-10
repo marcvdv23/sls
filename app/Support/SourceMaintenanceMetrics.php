@@ -16,7 +16,8 @@ class SourceMaintenanceMetrics
     public function calculate(Collection $countries): array
     {
         $sourceSlotCount = 0;
-        $definedOrganizationCount = 0;
+        $realOrganizationCount = 0;
+        $confirmedNonexistentOrganizationCount = 0;
         $urlCount = 0;
         $confirmedNonexistentUrlCount = 0;
         $completeSourceSlotCount = 0;
@@ -39,8 +40,12 @@ class SourceMaintenanceMetrics
                     $link['tenders_url_nonexistent_confirmed_at'] ?? null,
                 ])->filter(fn ($confirmedAt) => filled($confirmedAt))->count();
 
-                if ($hasOrganization || $organizationConfirmedNonexistent) {
-                    $definedOrganizationCount += 1;
+                if ($hasOrganization) {
+                    $realOrganizationCount += 1;
+                }
+
+                if ($organizationConfirmedNonexistent) {
+                    $confirmedNonexistentOrganizationCount += 1;
                 }
 
                 $urlCount += $urls->count();
@@ -52,16 +57,19 @@ class SourceMaintenanceMetrics
             }
         }
 
+        $handledOrganizationCount = $realOrganizationCount + $confirmedNonexistentOrganizationCount;
         $targetUrlCount = $sourceSlotCount * 3;
-        $missingOrganizationCount = max(0, $sourceSlotCount - $definedOrganizationCount);
+        $missingOrganizationCount = max(0, $sourceSlotCount - $handledOrganizationCount);
         $missingUrlCount = max(0, $targetUrlCount - $urlCount - $confirmedNonexistentUrlCount);
         $completionBasis = $sourceSlotCount + $targetUrlCount;
-        $completionValue = $definedOrganizationCount + $urlCount + $confirmedNonexistentUrlCount;
+        $completionValue = $handledOrganizationCount + $urlCount + $confirmedNonexistentUrlCount;
 
         return [
             'country_count' => $countries->count(),
             'source_slot_count' => $sourceSlotCount,
-            'defined_organization_count' => $definedOrganizationCount,
+            'defined_organization_count' => $handledOrganizationCount,
+            'real_organization_count' => $realOrganizationCount,
+            'confirmed_nonexistent_organization_count' => $confirmedNonexistentOrganizationCount,
             'missing_organization_count' => $missingOrganizationCount,
             'url_count' => $urlCount,
             'confirmed_nonexistent_url_count' => $confirmedNonexistentUrlCount,
@@ -83,26 +91,35 @@ class SourceMaintenanceMetrics
 
         $snapshotDate = ($date ?: now())->toDateString();
         $now = now();
+        $values = [
+            'country_count' => (int) ($metrics['country_count'] ?? 0),
+            'source_slot_count' => (int) ($metrics['source_slot_count'] ?? 0),
+            'defined_organization_count' => (int) ($metrics['defined_organization_count'] ?? 0),
+            'missing_organization_count' => (int) ($metrics['missing_organization_count'] ?? 0),
+            'url_count' => (int) ($metrics['url_count'] ?? 0),
+            'target_url_count' => (int) ($metrics['target_url_count'] ?? 0),
+            'missing_url_count' => (int) ($metrics['missing_url_count'] ?? 0),
+            'complete_source_slot_count' => (int) ($metrics['complete_source_slot_count'] ?? 0),
+            'completion_percent' => (float) ($metrics['completion_percent'] ?? 0),
+            'metrics' => json_encode($metrics),
+            'created_at' => $now,
+            'updated_at' => $now,
+        ];
+
+        if (Schema::hasColumn('source_maintenance_metric_snapshots', 'confirmed_nonexistent_organization_count')) {
+            $values['confirmed_nonexistent_organization_count'] = (int) ($metrics['confirmed_nonexistent_organization_count'] ?? 0);
+        }
+
+        if (Schema::hasColumn('source_maintenance_metric_snapshots', 'confirmed_nonexistent_url_count')) {
+            $values['confirmed_nonexistent_url_count'] = (int) ($metrics['confirmed_nonexistent_url_count'] ?? 0);
+        }
 
         DB::table('source_maintenance_metric_snapshots')->updateOrInsert(
             [
                 'workspace_id' => $workspaceId,
                 'snapshot_date' => $snapshotDate,
             ],
-            [
-                'country_count' => (int) ($metrics['country_count'] ?? 0),
-                'source_slot_count' => (int) ($metrics['source_slot_count'] ?? 0),
-                'defined_organization_count' => (int) ($metrics['defined_organization_count'] ?? 0),
-                'missing_organization_count' => (int) ($metrics['missing_organization_count'] ?? 0),
-                'url_count' => (int) ($metrics['url_count'] ?? 0),
-                'target_url_count' => (int) ($metrics['target_url_count'] ?? 0),
-                'missing_url_count' => (int) ($metrics['missing_url_count'] ?? 0),
-                'complete_source_slot_count' => (int) ($metrics['complete_source_slot_count'] ?? 0),
-                'completion_percent' => (float) ($metrics['completion_percent'] ?? 0),
-                'metrics' => json_encode($metrics),
-                'created_at' => $now,
-                'updated_at' => $now,
-            ],
+            $values,
         );
     }
 

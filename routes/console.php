@@ -2674,10 +2674,12 @@ Artisan::command('sls:source-maintenance-snapshot {--workspace= : Optional works
         $metrics->recordDailySnapshot((int) $workspace->id, $snapshot);
 
         $this->line(sprintf(
-            '%s | %d URL(s) | %d missing organization name(s) | %d missing URL(s) | %.1f%% complete',
+            '%s | %d URL(s) | %d confirmed non-existent URL(s) | %d missing organization name(s) | %d confirmed non-existent organization(s) | %d missing URL(s) | %.1f%% complete',
             $workspace->workspace_key,
             (int) $snapshot['url_count'],
+            (int) $snapshot['confirmed_nonexistent_url_count'],
             (int) $snapshot['missing_organization_count'],
+            (int) $snapshot['confirmed_nonexistent_organization_count'],
             (int) $snapshot['missing_url_count'],
             (float) $snapshot['completion_percent'],
         ));

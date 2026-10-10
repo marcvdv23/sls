@@ -16,7 +16,7 @@
         .tracked-country-filters select { width:170px; }
         .tracked-country-filters label.checkbox-field { display:flex; flex-direction:row; align-items:center; gap:7px; min-height:34px; padding:0 4px; text-transform:none; letter-spacing:0; font-size:.84rem; color:var(--text-primary); }
         .tracked-country-filters label.checkbox-field input { width:auto; min-height:0; }
-        .source-metric-grid { display:grid; grid-template-columns:repeat(4, minmax(150px, 1fr)); gap:10px; }
+        .source-metric-grid { display:grid; grid-template-columns:repeat(6, minmax(130px, 1fr)); gap:10px; }
         .source-metric-card { border:1px solid var(--border-subtle); border-radius:8px; padding:12px; background:var(--bg-primary); }
         .source-metric-card strong { display:block; font-size:1.45rem; line-height:1.1; }
         .source-metric-card span { color:var(--text-secondary); font-size:.82rem; }
@@ -89,7 +89,11 @@
             <div class="source-metric-grid" aria-label="Source maintenance counters">
                 <div class="source-metric-card">
                     <strong>{{ number_format((int) ($sourceMetrics['url_count'] ?? 0)) }}</strong>
-                    <span>URLs captured of {{ number_format((int) ($sourceMetrics['target_url_count'] ?? 0)) }} target URLs</span>
+                    <span>URLs captured</span>
+                </div>
+                <div class="source-metric-card">
+                    <strong>{{ number_format((int) ($sourceMetrics['confirmed_nonexistent_url_count'] ?? 0)) }}</strong>
+                    <span>URLs confirmed non-existent</span>
                 </div>
                 <div class="source-metric-card">
                     <strong>{{ number_format((int) ($sourceMetrics['missing_organization_count'] ?? 0)) }}</strong>
@@ -98,6 +102,10 @@
                 <div class="source-metric-card">
                     <strong>{{ number_format((int) ($sourceMetrics['missing_url_count'] ?? 0)) }}</strong>
                     <span>missing URLs across General, Press, and Procurement</span>
+                </div>
+                <div class="source-metric-card">
+                    <strong>{{ number_format((int) ($sourceMetrics['confirmed_nonexistent_organization_count'] ?? 0)) }}</strong>
+                    <span>organizations confirmed non-existent</span>
                 </div>
                 <div class="source-metric-card">
                     <strong>{{ number_format((float) ($sourceMetrics['completion_percent'] ?? 0), 1) }}%</strong>
@@ -115,7 +123,7 @@
                         <span
                             class="source-trend-bar"
                             style="height:{{ max(2, min(100, (float) $point->completion_percent)) }}%;"
-                            title="{{ \Carbon\Carbon::parse($point->snapshot_date)->format('Y-m-d') }}: {{ number_format((float) $point->completion_percent, 1) }}% complete, {{ number_format((int) $point->missing_organization_count) }} missing names, {{ number_format((int) $point->missing_url_count) }} missing URLs"
+                            title="{{ \Carbon\Carbon::parse($point->snapshot_date)->format('Y-m-d') }}: {{ number_format((float) $point->completion_percent, 1) }}% complete, {{ number_format((int) $point->missing_organization_count) }} missing names, {{ number_format((int) $point->missing_url_count) }} missing URLs, {{ number_format((int) ($point->confirmed_nonexistent_organization_count ?? 0)) }} confirmed non-existent organizations, {{ number_format((int) ($point->confirmed_nonexistent_url_count ?? 0)) }} confirmed non-existent URLs"
                         ></span>
                     @empty
                         <span class="muted">Progress tracking starts after the daily snapshot runs.</span>
