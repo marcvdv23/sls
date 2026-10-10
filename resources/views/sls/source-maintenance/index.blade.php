@@ -27,11 +27,10 @@
         .maintenance-table { min-width:1180px; table-layout:fixed; }
         .maintenance-table td,
         .maintenance-table th { padding:7px 9px; vertical-align:top; }
-        .country-col { width:190px; }
-        .iso-col { width:62px; }
-        .region-col { width:135px; }
-        .source-col { width:36%; }
-        .url-col { width:38%; }
+        .country-col { width:175px; }
+        .country-meta { display:block; margin-top:2px; color:var(--text-secondary); font-size:.78rem; }
+        .source-col { width:44%; }
+        .url-col { width:44%; }
         .source-name-list { display:grid; gap:4px; }
         .source-slot-grid-cell { padding:0; }
         .source-slot-grid { display:grid; }
@@ -165,8 +164,6 @@
                     <thead>
                         <tr>
                             <th class="country-col">Country</th>
-                            <th class="iso-col">ISO</th>
-                            <th class="region-col">Region</th>
                             <th class="source-col">Source organization slot</th>
                             <th class="url-col">URLs</th>
                         </tr>
@@ -182,6 +179,7 @@
                             >
                                 <td class="country-col">
                                     <strong>{{ $country->name }}</strong>
+                                    <span class="country-meta">{{ strtoupper($country->iso_code ?? 'n/a') }} / {{ $country->region }}</span>
                                     <span class="country-progress">
                                         <span>{{ $country->complete_source_count ?? 0 }}/{{ $country->total_source_count ?? 0 }} source slots identified</span>
                                         @if (($country->missing_source_count ?? 0) > 0)
@@ -191,8 +189,6 @@
                                         @endif
                                     </span>
                                 </td>
-                                <td class="mono iso-col">{{ strtoupper($country->iso_code ?? 'n/a') }}</td>
-                                <td class="region-col">{{ $country->region }}</td>
                                 <td class="source-slot-grid-cell" colspan="2">
                                     @if (($country->social_security_administration_links ?? collect())->isNotEmpty())
                                         <div class="source-slot-grid">
@@ -282,7 +278,7 @@
                             </tr>
                         @endforeach
                         <tr data-tracked-country-empty hidden>
-                            <td colspan="5" class="muted">No tracked countries match these filters.</td>
+                            <td colspan="3" class="muted">No tracked countries match these filters.</td>
                         </tr>
                     </tbody>
                 </table>
