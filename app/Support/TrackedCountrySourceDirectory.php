@@ -179,6 +179,9 @@ class TrackedCountrySourceDirectory
                     ->values();
                 $unlinkedNames = $names
                     ->reject(fn (string $name) => $linkedNameKeys->contains($this->normalizeName($name)))
+                    ->map(fn (string $name) => SocialSecurityAdminNameCleaner::repairMojibake($name))
+                    ->reject(fn (string $name) => SocialSecurityAdminNameCleaner::isStillMojibake($name))
+                    ->unique(fn (string $name) => $this->normalizeName($name))
                     ->values();
                 $missingSourceCount = $links
                     ->filter(fn (array $link) => blank($link['name'] ?? null) && blank($link['organization_nonexistent_confirmed_at'] ?? null))

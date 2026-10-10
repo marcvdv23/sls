@@ -145,7 +145,7 @@ class SocialSecurityAdminNameCleaner
         }
 
         if (! preg_match('/(?:Ãƒ|Ã‚|Ã¢|Ã†|Æ’|â‚¬|Â¢|â€ž)/u', $value)) {
-            return trim($value);
+            return self::cleanKnownInstitutionName(trim($value));
         }
 
         for ($i = 0; $i < 4; $i++) {
@@ -162,8 +162,33 @@ class SocialSecurityAdminNameCleaner
             }
         }
 
-        return trim($value);
+        return self::cleanKnownInstitutionName(trim($value));
     }
+
+    public static function isStillMojibake(string $value): bool
+    {
+        return preg_match('/(?:Ã|Â|Æ’|â‚¬|â€|Ã¢|Ã†|�)/u', $value) === 1;
+    }
+
+    private static function cleanKnownInstitutionName(string $value): string
+    {
+        if ($value === '') {
+            return $value;
+        }
+
+        $normalized = self::normalize($value);
+
+        if (
+            str_starts_with($normalized, 'caisse nationale de s')
+            && str_contains($normalized, 'social')
+            && self::isStillMojibake($value)
+        ) {
+            return 'Caisse Nationale de Sécurité Sociale';
+        }
+
+        return $value;
+    }
+
     /**
      * @param array<int,string> $countryAliases
      */
