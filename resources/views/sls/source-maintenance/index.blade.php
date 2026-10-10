@@ -417,6 +417,7 @@
                 return;
             }
 
+            document.body.appendChild(modal);
             restoreStoredScroll();
 
             const checkboxPairs = [
