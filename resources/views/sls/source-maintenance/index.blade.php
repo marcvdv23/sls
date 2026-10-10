@@ -141,7 +141,7 @@
                     <select id="tracked-region-filter">
                         <option value="">All regions</option>
                         @foreach ($trackedRegions as $region)
-                            <option value="{{ $region }}">{{ $region }}</option>
+                            <option value="{{ $region }}" @selected($region === 'Africa')>{{ $region }}</option>
                         @endforeach
                     </select>
                 </label>
@@ -388,6 +388,8 @@
                 control?.addEventListener('input', applyFilters);
                 control?.addEventListener('change', applyFilters);
             });
+
+            applyFilters();
         })();
     </script>
     <script>
