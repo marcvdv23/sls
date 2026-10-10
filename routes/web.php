@@ -693,7 +693,7 @@ Route::post('/sls/source-maintenance/import', function (Request $request, Source
     $filename = now()->format('Ymd-His') . '-' . Str::slug(pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME) ?: 'source-maintenance-import') . '.csv';
     $storedPath = $file->storeAs('source-maintenance-imports', $filename);
     $path = Storage::disk('local')->path($storedPath);
-    $dryRun = $request->boolean('dry_run', true);
+    $dryRun = $request->boolean('dry_run', false);
     $allowOverwrite = $request->boolean('overwrite');
 
     try {

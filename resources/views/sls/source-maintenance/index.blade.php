@@ -207,6 +207,7 @@
                         </select>
                     </label>
                     <label class="checkbox-field">
+                        <input type="hidden" name="dry_run" value="0">
                         <input type="checkbox" name="dry_run" value="1" checked>
                         Dry run only
                     </label>
