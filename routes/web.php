@@ -75,6 +75,7 @@ use App\Support\PriorityOpportunityConfig;
 use App\Support\ReviewFocuses;
 use App\Support\SerpApiSearchConfig;
 use App\Support\SlsSettings;
+use App\Support\SourceMaintenanceMetrics;
 use App\Support\SocialSecurityAdminNameCleaner;
 use App\Support\TitleLanguage;
 use App\Support\TrackedCountrySourceDirectory;
@@ -641,13 +642,17 @@ $ensureSourceMaintenanceAccess = function (string $action = 'view') {
     abort_unless(app(\App\Services\AccessControlService::class)->can($user, 'source_maintenance', $action), 403);
 };
 
-Route::get('/sls/source-maintenance', function (TrackedCountrySourceDirectory $directory) use ($defaultSlsProduct, $ensureSourceMaintenanceAccess, $orderedProducts) {
+Route::get('/sls/source-maintenance', function (TrackedCountrySourceDirectory $directory, SourceMaintenanceMetrics $metrics) use ($defaultSlsProduct, $ensureSourceMaintenanceAccess, $orderedProducts) {
     $ensureSourceMaintenanceAccess('view');
 
     $countries = $directory->countries($defaultSlsProduct());
+    $sourceMetrics = $metrics->calculate($countries);
+    $metrics->recordDailySnapshot(WorkspaceContext::currentWorkspaceId(), $sourceMetrics);
 
     return view('sls.source-maintenance.index', [
         'countries' => $countries,
+        'sourceMetrics' => $sourceMetrics,
+        'sourceMetricHistory' => $metrics->history(WorkspaceContext::currentWorkspaceId()),
         'trackedRegions' => $countries->pluck('region')->filter()->unique()->sort()->values(),
         'trackedLanguages' => $countries->pluck('default_language_code')->filter()->map(fn ($code) => strtoupper($code))->unique()->sort()->values(),
         'products' => $orderedProducts(),

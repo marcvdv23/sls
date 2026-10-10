@@ -16,6 +16,14 @@
         .tracked-country-filters select { width:170px; }
         .tracked-country-filters label.checkbox-field { display:flex; flex-direction:row; align-items:center; gap:7px; min-height:34px; padding:0 4px; text-transform:none; letter-spacing:0; font-size:.84rem; color:var(--text-primary); }
         .tracked-country-filters label.checkbox-field input { width:auto; min-height:0; }
+        .source-metric-grid { display:grid; grid-template-columns:repeat(4, minmax(150px, 1fr)); gap:10px; }
+        .source-metric-card { border:1px solid var(--border-subtle); border-radius:8px; padding:12px; background:var(--bg-primary); }
+        .source-metric-card strong { display:block; font-size:1.45rem; line-height:1.1; }
+        .source-metric-card span { color:var(--text-secondary); font-size:.82rem; }
+        .source-trend { display:grid; gap:8px; margin-top:10px; }
+        .source-trend-bars { display:flex; align-items:end; gap:5px; min-height:96px; padding:10px 8px 0; border:1px solid var(--border-subtle); border-radius:8px; background:var(--bg-secondary); overflow-x:auto; }
+        .source-trend-bar { flex:0 0 13px; min-height:2px; border-radius:4px 4px 0 0; background:var(--accent-primary); opacity:.88; }
+        .source-trend-caption { display:flex; justify-content:space-between; gap:12px; color:var(--text-secondary); font-size:.78rem; }
         .maintenance-table { min-width:1180px; table-layout:fixed; }
         .maintenance-table td,
         .maintenance-table th { padding:7px 9px; vertical-align:top; }
@@ -57,6 +65,15 @@
 @endpush
 
 @section('content')
+    @php
+        $sourceMetrics = $sourceMetrics ?? [];
+        $sourceMetricHistory = collect($sourceMetricHistory ?? []);
+        $latestMetric = $sourceMetricHistory->last();
+        $firstMetric = $sourceMetricHistory->first();
+        $completionDelta = $latestMetric && $firstMetric
+            ? round((float) $latestMetric->completion_percent - (float) $firstMetric->completion_percent, 2)
+            : 0;
+    @endphp
     <div class="source-maintenance-page">
         <section class="panel stack">
             <div class="source-maintenance-head">
@@ -64,6 +81,43 @@
                     <p class="eyebrow">Tracked Countries And Organizations</p>
                     <h2>Maintain source organization URLs</h2>
                     <p class="muted">This page is limited to the official source organizations used for social security intelligence. Each country has the same required source slots; researchers fill missing organization names and the General, Press, and Procurement URLs.</p>
+                </div>
+            </div>
+
+            <div class="source-metric-grid" aria-label="Source maintenance counters">
+                <div class="source-metric-card">
+                    <strong>{{ number_format((int) ($sourceMetrics['url_count'] ?? 0)) }}</strong>
+                    <span>URLs captured of {{ number_format((int) ($sourceMetrics['target_url_count'] ?? 0)) }} target URLs</span>
+                </div>
+                <div class="source-metric-card">
+                    <strong>{{ number_format((int) ($sourceMetrics['missing_organization_count'] ?? 0)) }}</strong>
+                    <span>missing organization names</span>
+                </div>
+                <div class="source-metric-card">
+                    <strong>{{ number_format((int) ($sourceMetrics['missing_url_count'] ?? 0)) }}</strong>
+                    <span>missing URLs across General, Press, and Procurement</span>
+                </div>
+                <div class="source-metric-card">
+                    <strong>{{ number_format((float) ($sourceMetrics['completion_percent'] ?? 0), 1) }}%</strong>
+                    <span>complete toward {{ number_format((int) ($sourceMetrics['source_slot_count'] ?? 0)) }} organization slots</span>
+                </div>
+            </div>
+
+            <div class="source-trend">
+                <div class="source-trend-caption">
+                    <span>Daily progress trend{{ $sourceMetricHistory->isNotEmpty() ? ' since ' . \Carbon\Carbon::parse($sourceMetricHistory->first()->snapshot_date)->format('M j') : '' }}</span>
+                    <span>{{ $completionDelta >= 0 ? '+' : '' }}{{ number_format($completionDelta, 1) }} percentage points</span>
+                </div>
+                <div class="source-trend-bars" aria-label="Daily completion trend">
+                    @forelse ($sourceMetricHistory as $point)
+                        <span
+                            class="source-trend-bar"
+                            style="height:{{ max(2, min(100, (float) $point->completion_percent)) }}%;"
+                            title="{{ \Carbon\Carbon::parse($point->snapshot_date)->format('Y-m-d') }}: {{ number_format((float) $point->completion_percent, 1) }}% complete, {{ number_format((int) $point->missing_organization_count) }} missing names, {{ number_format((int) $point->missing_url_count) }} missing URLs"
+                        ></span>
+                    @empty
+                        <span class="muted">Progress tracking starts after the daily snapshot runs.</span>
+                    @endforelse
                 </div>
             </div>
 

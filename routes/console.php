@@ -39,7 +39,9 @@ use Illuminate\Support\Str;
 use App\Support\CountryUpdateClassifier;
 use App\Support\CountryUpdateDedupeRules;
 use App\Support\CountryUpdateNoiseRules;
+use App\Support\SourceMaintenanceMetrics;
 use App\Support\TitleLanguage;
+use App\Support\TrackedCountrySourceDirectory;
 use App\Support\WorkspaceContext;
 use Carbon\Carbon;
 
@@ -2645,6 +2647,45 @@ Artisan::command('sls:monitor-runs {--workspace= : Workspace key, such as social
     return 0;
 })->purpose('Show recent country intelligence monitor runs for one workspace');
 
+Artisan::command('sls:source-maintenance-snapshot {--workspace= : Optional workspace key; omit to snapshot every active workspace}', function (TrackedCountrySourceDirectory $directory, SourceMaintenanceMetrics $metrics) {
+    if (! Schema::hasTable('workspaces')) {
+        $this->warn('Workspace table is not available.');
+
+        return 0;
+    }
+
+    $workspaceKey = trim((string) $this->option('workspace'));
+    $workspaces = DB::table('workspaces')
+        ->where('status', 'active')
+        ->when($workspaceKey !== '', fn ($query) => $query->where('workspace_key', $workspaceKey))
+        ->orderBy('workspace_key')
+        ->get(['id', 'workspace_key', 'name']);
+
+    if ($workspaces->isEmpty()) {
+        $this->warn($workspaceKey !== '' ? 'Workspace not found: ' . $workspaceKey : 'No active workspaces found.');
+
+        return 0;
+    }
+
+    foreach ($workspaces as $workspace) {
+        WorkspaceContext::forceWorkspace((int) $workspace->id);
+        $countries = $directory->countries();
+        $snapshot = $metrics->calculate($countries);
+        $metrics->recordDailySnapshot((int) $workspace->id, $snapshot);
+
+        $this->line(sprintf(
+            '%s | %d URL(s) | %d missing organization name(s) | %d missing URL(s) | %.1f%% complete',
+            $workspace->workspace_key,
+            (int) $snapshot['url_count'],
+            (int) $snapshot['missing_organization_count'],
+            (int) $snapshot['missing_url_count'],
+            (float) $snapshot['completion_percent'],
+        ));
+    }
+
+    return 0;
+})->purpose('Record daily source maintenance completion counters for progress tracking');
+
 $crawlerSetting = function (string $key, mixed $default = null): mixed {
     try {
         if (! Schema::hasTable('crawler_settings')) {
@@ -2672,6 +2713,13 @@ Schedule::command('sls:cleanup-serpapi-search-runs', [
 ])
     ->name('sls-serpapi-search-cleanup-daily')
     ->dailyAt((string) $crawlerSetting('serpapi_search_cleanup_time', env('SLS_SERPAPI_SEARCH_CLEANUP_TIME', '03:45')))
+    ->timezone((string) $crawlerSetting('daily_backup_timezone', env('SLS_DAILY_BACKUP_TIMEZONE', 'America/Chicago')))
+    ->withoutOverlapping()
+    ->onOneServer();
+
+Schedule::command('sls:source-maintenance-snapshot')
+    ->name('sls-source-maintenance-snapshot-daily')
+    ->dailyAt((string) $crawlerSetting('source_maintenance_snapshot_time', env('SLS_SOURCE_MAINTENANCE_SNAPSHOT_TIME', '02:20')))
     ->timezone((string) $crawlerSetting('daily_backup_timezone', env('SLS_DAILY_BACKUP_TIMEZONE', 'America/Chicago')))
     ->withoutOverlapping()
     ->onOneServer();
