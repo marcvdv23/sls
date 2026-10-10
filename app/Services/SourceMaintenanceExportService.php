@@ -17,7 +17,9 @@ class SourceMaintenanceExportService
      */
     public function rows(Product $product, string $mode = 'missing'): array
     {
-        $mode = $mode === 'all' ? 'all' : 'missing';
+        $mode = in_array($mode, ['all', 'missing', 'missing_core', 'missing_auxiliary'], true)
+            ? $mode
+            : 'missing_core';
         $headers = [
             'country_iso',
             'country',
@@ -95,9 +97,16 @@ class SourceMaintenanceExportService
                         $tendersNonexistentAt,
                     ],
                     'is_missing' => $missingOrganization || $missingGeneral || $missingPress || $missingTenders,
+                    'is_missing_core' => $missingOrganization || $missingGeneral,
+                    'is_missing_auxiliary' => ! $missingOrganization && ! $missingGeneral && ($missingPress || $missingTenders),
                 ];
             })
-            ->filter(fn (array $item) => $mode === 'all' || $item['is_missing'])
+            ->filter(fn (array $item) => match ($mode) {
+                'all' => true,
+                'missing_core' => $item['is_missing_core'],
+                'missing_auxiliary' => $item['is_missing_auxiliary'],
+                default => $item['is_missing'],
+            })
             ->map(fn (array $item) => $item['row'])
             ->values();
     }

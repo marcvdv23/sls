@@ -13,6 +13,7 @@ use App\Services\SourceContactExtractionService;
 use App\Services\SerpApiSourceDiscoveryService;
 use App\Services\SerpApiSearchService;
 use App\Services\SocialProtectionProfileMonitor;
+use App\Services\SourceMaintenanceExportService;
 use App\Services\SourceMaintenanceImportService;
 use App\Services\TenderAwardLookupService;
 use App\Services\TenderDocumentProcessor;
@@ -53,7 +54,7 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
-Artisan::command('sls:source-maintenance-missing {--workspace=} {--product=SSAS} {--output=}', function () {
+Artisan::command('sls:source-maintenance-missing {--workspace=} {--product=SSAS} {--mode=missing_core} {--output=}', function () {
     $workspaceKey = trim((string) ($this->option('workspace') ?? ''));
     if ($workspaceKey !== '') {
         $workspace = DB::table('workspaces')
@@ -83,67 +84,10 @@ Artisan::command('sls:source-maintenance-missing {--workspace=} {--product=SSAS}
         return 1;
     }
 
-    $slots = TrackedCountrySourceDirectory::sourceOrganizationSlotsBySubcategory();
-    $countries = collect(config('country_intelligence.monitored_countries', []));
-    $records = MarketOrganization::query()
-        ->whereIn('organization_subcategory', array_keys($slots))
-        ->whereNotNull('country_iso')
-        ->when(Schema::hasColumn('market_organizations', 'product_id'), fn ($query) => $query->where(fn ($inner) => $inner
-            ->where('product_id', $product->id)
-            ->orWhereNull('product_id')))
-        ->get()
-        ->keyBy(fn (MarketOrganization $organization) => strtoupper((string) $organization->country_iso) . '|' . (string) $organization->organization_subcategory);
-
-    $headers = [
-        'country_iso',
-        'country',
-        'region',
-        'source_category',
-        'source_label',
-        'organization_name',
-        'general_url',
-        'press_url',
-        'tenders_url',
-        'missing_organization',
-        'missing_general_url',
-        'missing_press_url',
-        'missing_tenders_url',
-    ];
-    $rows = [$headers];
-
-    foreach ($countries as $iso => $countryConfig) {
-        $iso = strtoupper((string) ($countryConfig['iso_code'] ?? $iso));
-        $countryName = (string) ($countryConfig['name'] ?? $iso);
-        $region = (string) ($countryConfig['region'] ?? '');
-
-        foreach ($slots as $subcategory => $slot) {
-            $record = $records->get($iso . '|' . $subcategory);
-            $organizationMissing = ! $record || (blank($record->name) && blank($record->organization_nonexistent_confirmed_at));
-            $generalMissing = ! $record || (blank($record->website_url) && blank($record->website_url_nonexistent_confirmed_at));
-            $pressMissing = ! $record || (blank($record->news_page_url) && blank($record->news_page_url_nonexistent_confirmed_at));
-            $tendersMissing = ! $record || (blank($record->procurement_page_url) && blank($record->procurement_page_url_nonexistent_confirmed_at));
-
-            if (! $organizationMissing && ! $generalMissing && ! $pressMissing && ! $tendersMissing) {
-                continue;
-            }
-
-            $rows[] = [
-                $iso,
-                $countryName,
-                $region,
-                $subcategory,
-                $slot['label'] ?? $subcategory,
-                $record?->name ?? '',
-                $record?->website_url ?? '',
-                $record?->news_page_url ?? '',
-                $record?->procurement_page_url ?? '',
-                $organizationMissing ? 'yes' : 'no',
-                $generalMissing ? 'yes' : 'no',
-                $pressMissing ? 'yes' : 'no',
-                $tendersMissing ? 'yes' : 'no',
-            ];
-        }
-    }
+    $mode = (string) ($this->option('mode') ?: 'missing_core');
+    $mode = in_array($mode, ['missing_core', 'missing_auxiliary', 'missing', 'all'], true) ? $mode : 'missing_core';
+    $export = app(SourceMaintenanceExportService::class)->rows($product, $mode);
+    $rows = array_merge([$export['headers']], $export['rows']);
 
     $outputPath = trim((string) ($this->option('output') ?? ''));
     $handle = $outputPath !== '' ? fopen($outputPath, 'wb') : fopen('php://temp', 'wb+');
@@ -159,17 +103,18 @@ Artisan::command('sls:source-maintenance-missing {--workspace=} {--product=SSAS}
 
     if ($outputPath !== '') {
         fclose($handle);
-        $this->info('Missing source maintenance CSV written to ' . $outputPath);
+        $this->info('Source maintenance CSV written to ' . $outputPath);
     } else {
         rewind($handle);
         $this->line(stream_get_contents($handle));
         fclose($handle);
     }
 
-    $this->info('Missing rows: ' . max(count($rows) - 1, 0));
+    $this->info('Export mode: ' . $mode);
+    $this->info('Rows: ' . max(count($rows) - 1, 0));
 
     return 0;
-})->purpose('Export missing market research source organization fields without changing data');
+})->purpose('Export market research source organization fields without changing data');
 
 Artisan::command('sls:source-maintenance-import {path} {--workspace=} {--product=SSAS} {--dry-run} {--overwrite}', function (string $path) {
     if (! is_file($path)) {

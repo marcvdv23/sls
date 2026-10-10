@@ -727,7 +727,7 @@ Route::get('/sls/source-maintenance/export', function (Request $request, SourceM
 
     $data = $request->validate([
         'product_id' => ['nullable', 'integer', 'exists:products,id'],
-        'mode' => ['nullable', Rule::in(['missing', 'all'])],
+        'mode' => ['nullable', Rule::in(['missing_core', 'missing_auxiliary', 'missing', 'all'])],
     ]);
 
     $product = filled($data['product_id'] ?? null)
@@ -736,8 +736,8 @@ Route::get('/sls/source-maintenance/export', function (Request $request, SourceM
 
     abort_unless($product, 404);
 
-    $mode = (string) ($data['mode'] ?? 'missing');
-    $mode = $mode === 'all' ? 'all' : 'missing';
+    $mode = (string) ($data['mode'] ?? 'missing_core');
+    $mode = in_array($mode, ['missing_core', 'missing_auxiliary', 'missing', 'all'], true) ? $mode : 'missing_core';
     $export = $exporter->rows($product, $mode);
     $filename = 'source-maintenance-' . Str::slug($product->name ?: $product->code ?: 'product') . '-' . $mode . '-' . now()->format('Ymd-His') . '.csv';
 

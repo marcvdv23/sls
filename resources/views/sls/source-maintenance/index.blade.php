@@ -178,7 +178,9 @@
                     <label>
                         Export rows
                         <select name="mode">
-                            <option value="missing">Missing only</option>
+                            <option value="missing_core">Missing organization or General URL</option>
+                            <option value="missing_auxiliary">Missing Press or Procurement only</option>
+                            <option value="missing">Any missing field</option>
                             <option value="all">All records</option>
                         </select>
                     </label>
