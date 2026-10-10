@@ -756,7 +756,7 @@ Route::post('/sls/tracked-countries/admin-urls', function (Request $request) use
     }
 
     $iso = Str::upper(trim((string) $data['country_iso']));
-    $name = trim((string) $data['organization_name']);
+    $name = SocialSecurityAdminNameCleaner::repairMojibake(trim((string) $data['organization_name']));
     if ($name === '') {
         return response()->json([
             'message' => 'Please enter the official organization name for this source slot.',

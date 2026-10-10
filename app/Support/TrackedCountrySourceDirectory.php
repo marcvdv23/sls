@@ -22,6 +22,12 @@ class TrackedCountrySourceDirectory
             'description' => 'Main social security administration or fund.',
         ],
         [
+            'key' => 'ministry_social_security',
+            'label' => 'Ministry of Social Security',
+            'subcategory' => 'ministry_social_security',
+            'description' => 'Ministry responsible for social security, social protection, welfare, or social affairs.',
+        ],
+        [
             'key' => 'pensions_civil_service',
             'label' => 'Pensions - civil service',
             'subcategory' => 'pensions_civil_service',
@@ -275,6 +281,10 @@ class TrackedCountrySourceDirectory
             $displayName = $manual?->name ?: ($matchedName ?: null);
         }
 
+        $displayName = filled($displayName)
+            ? SocialSecurityAdminNameCleaner::repairMojibake(trim((string) $displayName))
+            : null;
+
         $generalUrl = $manual?->website_url
             ?: $source?->url
             ?: $candidate?->marketOrganization?->website_url
@@ -328,6 +338,7 @@ class TrackedCountrySourceDirectory
             'pensions_military' => Str::contains($name, ['military', 'defence', 'defense', 'veteran', 'armed forces', 'police']) && Str::contains($name, ['pension', 'retirement']),
             'pensions_private_sector' => Str::contains($name, ['private sector', 'national insurance', 'provident', 'pension', 'retirement']),
             'employment_injury' => Str::contains($name, ['employment injury', 'workers compensation', 'workers compensation', 'occupational injury', 'work injury', 'accident insurance']),
+            'ministry_social_security' => Str::contains($name, ['ministry', 'department']) && Str::contains($name, ['social security', 'social protection', 'social affairs', 'social welfare', 'welfare']),
             'ministry_labor' => Str::contains($name, ['ministry']) && Str::contains($name, ['labor', 'labour', 'employment', 'manpower']),
             'ministry_finance' => Str::contains($name, ['ministry']) && Str::contains($name, ['finance', 'treasury', 'economy', 'budget']),
             'ministry_civil_service' => Str::contains($name, ['ministry', 'department']) && Str::contains($name, ['civil service', 'public service', 'public administration']),

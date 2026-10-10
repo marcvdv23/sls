@@ -227,6 +227,7 @@
                 <label>
                     Organization name
                     <input type="text" name="organization_name" list="source-url-suggestions" placeholder="Official organization name" required>
+                    <span class="muted">Start typing to reuse an existing unassigned organization for this country, or enter a new official name.</span>
                 </label>
                 <datalist id="source-url-suggestions"></datalist>
                 <label>
