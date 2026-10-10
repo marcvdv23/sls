@@ -24,6 +24,16 @@
         .source-trend-bars { display:flex; align-items:end; gap:5px; min-height:96px; padding:10px 8px 0; border:1px solid var(--border-subtle); border-radius:8px; background:var(--bg-secondary); overflow-x:auto; }
         .source-trend-bar { flex:0 0 13px; min-height:2px; border-radius:4px 4px 0 0; background:var(--accent-primary); opacity:.88; }
         .source-trend-caption { display:flex; justify-content:space-between; gap:12px; color:var(--text-secondary); font-size:.78rem; }
+        .source-import-panel { display:grid; gap:10px; margin-top:12px; padding:12px; border:1px solid var(--border-subtle); border-radius:8px; background:var(--bg-secondary); }
+        .source-import-form { display:grid; grid-template-columns:minmax(230px, 1fr) minmax(150px, 190px) auto auto auto; gap:8px; align-items:end; }
+        .source-import-form label { display:grid; gap:4px; color:var(--text-secondary); font-size:.7rem; font-weight:800; letter-spacing:.05em; text-transform:uppercase; }
+        .source-import-form input,
+        .source-import-form select { min-height:34px; border:1px solid var(--border-subtle); border-radius:7px; background:var(--bg-primary); color:var(--text-primary); font:inherit; font-size:.84rem; padding:4px 8px; }
+        .source-import-form label.checkbox-field { display:flex; flex-direction:row; align-items:center; gap:7px; min-height:34px; padding:0 4px; text-transform:none; letter-spacing:0; font-size:.84rem; color:var(--text-primary); }
+        .source-import-form label.checkbox-field input { width:auto; min-height:0; }
+        .source-import-result { display:grid; gap:4px; margin-top:4px; color:var(--text-secondary); font-size:.78rem; }
+        .source-import-result code { color:var(--text-primary); }
+        .source-import-result pre { max-height:180px; overflow:auto; margin:4px 0 0; padding:8px; border:1px solid var(--border-subtle); border-radius:7px; background:var(--bg-primary); white-space:pre-wrap; }
         .maintenance-table { min-width:1180px; table-layout:fixed; }
         .maintenance-table td,
         .maintenance-table th { padding:7px 9px; vertical-align:top; }
@@ -130,6 +140,48 @@
                         <span class="muted">Progress tracking starts after the daily snapshot runs.</span>
                     @endforelse
                 </div>
+            </div>
+
+            <div class="source-import-panel">
+                <div>
+                    <p class="eyebrow">CSV Import</p>
+                    <h3 style="margin:0;">Upload verified source rows</h3>
+                    <p class="muted">Import only fills blank organization names and blank URLs by default. Run a dry run first, then upload the same CSV again with dry run unchecked when the preview looks right.</p>
+                </div>
+                <form class="source-import-form" method="post" action="{{ route('sls.sourceMaintenance.import') }}" enctype="multipart/form-data">
+                    @csrf
+                    <label>
+                        Verified CSV
+                        <input type="file" name="source_csv" accept=".csv,text/csv,text/plain" required>
+                    </label>
+                    <label>
+                        Product
+                        <select name="product_id">
+                            @foreach ($products as $product)
+                                <option value="{{ $product->id }}">{{ $product->name }}</option>
+                            @endforeach
+                        </select>
+                    </label>
+                    <label class="checkbox-field">
+                        <input type="checkbox" name="dry_run" value="1" checked>
+                        Dry run only
+                    </label>
+                    <label class="checkbox-field">
+                        <input type="checkbox" name="overwrite" value="1">
+                        Overwrite existing
+                    </label>
+                    <button class="button tiny" type="submit">Upload CSV</button>
+                </form>
+                @if (session('source_import_result'))
+                    @php($importResult = session('source_import_result'))
+                    <div class="source-import-result">
+                        <span>Uploaded file saved on the server as <code>{{ $importResult['stored_path'] ?? 'source-maintenance-imports' }}</code>.</span>
+                        @if (($importResult['message_count'] ?? 0) > 0)
+                            <span>Showing {{ count($importResult['messages'] ?? []) }} of {{ $importResult['message_count'] }} import action(s).</span>
+                            <pre>{{ implode("\n", $importResult['messages'] ?? []) }}</pre>
+                        @endif
+                    </div>
+                @endif
             </div>
 
             <div class="tracked-country-filters">

@@ -63,6 +63,7 @@ use App\Services\OpportunityEmailDraftService;
 use App\Services\IntelligenceSourceCheckerService;
 use App\Services\JournalistDiscoveryService;
 use App\Services\SourceContactExtractionService;
+use App\Services\SourceMaintenanceImportService;
 use App\Services\SocialSecurityAdminDocumentService;
 use App\Services\SerpApiSearchService;
 use App\Services\TenderAwardLookupService;
@@ -658,6 +659,59 @@ Route::get('/sls/source-maintenance', function (TrackedCountrySourceDirectory $d
         'products' => $orderedProducts(),
     ]);
 })->name('sls.sourceMaintenance.index');
+
+Route::post('/sls/source-maintenance/import', function (Request $request, SourceMaintenanceImportService $importer) use ($defaultSlsProduct, $ensureSourceMaintenanceAccess) {
+    $ensureSourceMaintenanceAccess('update');
+
+    $data = $request->validate([
+        'source_csv' => ['required', 'file', 'max:5120'],
+        'product_id' => ['nullable', 'integer', 'exists:products,id'],
+        'dry_run' => ['nullable', 'boolean'],
+        'overwrite' => ['nullable', 'boolean'],
+    ]);
+
+    $product = filled($data['product_id'] ?? null)
+        ? Product::query()->find((int) $data['product_id'])
+        : $defaultSlsProduct();
+
+    if (! $product) {
+        return redirect()
+            ->route('sls.sourceMaintenance.index')
+            ->with('error', 'Could not identify the product for this import.');
+    }
+
+    $file = $request->file('source_csv');
+    $filename = now()->format('Ymd-His') . '-' . Str::slug(pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME) ?: 'source-maintenance-import') . '.csv';
+    $storedPath = $file->storeAs('source-maintenance-imports', $filename);
+    $path = Storage::disk('local')->path($storedPath);
+    $dryRun = $request->boolean('dry_run', true);
+    $allowOverwrite = $request->boolean('overwrite');
+
+    try {
+        $result = $importer->import($path, $product, $dryRun, $allowOverwrite);
+    } catch (\InvalidArgumentException $exception) {
+        return redirect()
+            ->route('sls.sourceMaintenance.index')
+            ->with('error', $exception->getMessage());
+    }
+
+    $prefix = $dryRun ? 'Dry run completed' : 'Source maintenance import completed';
+    $status = "{$prefix}. Created: {$result['created']}; updated: {$result['updated']}; skipped: {$result['skipped']}.";
+    if (! $allowOverwrite) {
+        $status .= ' Existing names, URLs, and Confirmed Non-Existence entries were protected.';
+    }
+
+    return redirect()
+        ->route('sls.sourceMaintenance.index')
+        ->with('status', $status)
+        ->with('source_import_result', [
+            'stored_path' => $storedPath,
+            'dry_run' => $dryRun,
+            'overwrite' => $allowOverwrite,
+            'messages' => collect($result['messages'])->take(30)->values()->all(),
+            'message_count' => count($result['messages']),
+        ]);
+})->name('sls.sourceMaintenance.import');
 
 Route::post('/sls/intelligence/map-items/{update}/opened', function (CountryUpdate $update) {
     abort_if($update->review_status === 'rejected', 404);
