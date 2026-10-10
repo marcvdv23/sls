@@ -757,6 +757,11 @@ Route::post('/sls/tracked-countries/admin-urls', function (Request $request) use
 
     $iso = Str::upper(trim((string) $data['country_iso']));
     $name = trim((string) $data['organization_name']);
+    if ($name === '') {
+        return response()->json([
+            'message' => 'Please enter the official organization name for this source slot.',
+        ], 422);
+    }
     $nameNormalized = $normalizeName($name);
     $sourceSlotsBySubcategory = TrackedCountrySourceDirectory::sourceOrganizationSlotsBySubcategory();
     $sourceCategory = (string) ($data['source_category'] ?? 'social_security_administration');

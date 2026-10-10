@@ -163,6 +163,18 @@ class TrackedCountrySourceDirectory
                         $defaultProduct,
                     ))
                     ->values();
+                $linkedNameKeys = $links
+                    ->pluck('name')
+                    ->filter()
+                    ->map(fn (string $name) => $this->normalizeName($name))
+                    ->unique()
+                    ->values();
+                $unlinkedNames = $names
+                    ->reject(fn (string $name) => $linkedNameKeys->contains($this->normalizeName($name)))
+                    ->values();
+                $missingSourceCount = $links
+                    ->filter(fn (array $link) => blank($link['name'] ?? null))
+                    ->count();
 
                 return (object) [
                     'name' => $countryName,
@@ -171,6 +183,10 @@ class TrackedCountrySourceDirectory
                     'default_language_code' => $databaseCountry?->default_language_code ?? $countryConfig['default_language_code'] ?? 'en',
                     'social_security_administration_names' => $names,
                     'social_security_administration_links' => $links,
+                    'unlinked_source_organization_names' => $unlinkedNames,
+                    'missing_source_count' => $missingSourceCount,
+                    'complete_source_count' => $links->count() - $missingSourceCount,
+                    'total_source_count' => $links->count(),
                     'social_protection_profile_url' => $databaseCountry?->social_protection_profile_url
                         ?: 'https://www.social-protection.org/gimi/gess/ShowCountryProfile.action?iso=' . $iso,
                     'social_protection_profile_checked_at' => $databaseCountry?->social_protection_profile_checked_at,
@@ -238,11 +254,11 @@ class TrackedCountrySourceDirectory
 
         $source = null;
         $candidate = null;
-        $displayName = $manual?->name ?: $slotLabel;
+        $matchedName = $adminNames->first(fn (string $name) => $this->nameMatchesSourceSlot($slotKey, $name));
+        $displayName = $manual?->name ?: ($matchedName ?: null);
 
         if ($subcategory === 'social_security_administration') {
-            $preferredAdminName = $adminNames->first(fn (string $name) => $this->nameMatchesSourceSlot($slotKey, $name))
-                ?: $adminNames->first();
+            $preferredAdminName = $matchedName ?: $adminNames->first();
 
             if ($preferredAdminName) {
                 $displayName = $manual?->name ?: $preferredAdminName;
@@ -256,7 +272,7 @@ class TrackedCountrySourceDirectory
             $source ??= $sourceRecords->first();
             $candidate ??= $candidateRecords->first();
         } else {
-            $displayName = $manual?->name ?: $slotLabel;
+            $displayName = $manual?->name ?: ($matchedName ?: null);
         }
 
         $generalUrl = $manual?->website_url
@@ -270,6 +286,7 @@ class TrackedCountrySourceDirectory
             'source_category' => $subcategory,
             'description' => (string) ($slot['description'] ?? ''),
             'name' => $displayName,
+            'is_defined' => filled($displayName),
             'url' => $generalUrl,
             'general_url' => $generalUrl,
             'press_url' => $manual?->news_page_url ?: $candidate?->marketOrganization?->news_page_url,
