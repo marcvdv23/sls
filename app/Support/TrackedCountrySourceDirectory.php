@@ -113,6 +113,9 @@ class TrackedCountrySourceDirectory
         $manualSourceOrganizations = MarketOrganization::query()
             ->whereIn('organization_subcategory', $sourceOrganizationSubcategories->all())
             ->whereNotNull('country_iso')
+            ->when(Schema::hasColumn('market_organizations', 'product_id') && $defaultProduct, fn ($query) => $query->where(function ($inner) use ($defaultProduct) {
+                $inner->where('product_id', $defaultProduct->id)->orWhereNull('product_id');
+            }))
             ->get()
             ->groupBy(fn (MarketOrganization $organization) => strtoupper((string) $organization->country_iso));
         $manualAdminNameSuppressions = Schema::hasTable('social_security_admin_name_suppressions')
@@ -140,9 +143,6 @@ class TrackedCountrySourceDirectory
                 ])
                     ->merge($sourceAdminRecords->get($iso, collect())->pluck('name'))
                     ->merge($adminCandidates->get($iso, collect())->pluck('organization_name'))
-                    ->merge($manualSourceOrganizations->get($iso, collect())
-                        ->filter(fn (MarketOrganization $organization) => blank($organization->organization_nonexistent_confirmed_at))
-                        ->pluck('name'))
                     ->filter()
                     ->flatMap(fn (string $name) => preg_split('/\s+\/\s+/', $name) ?: [])
                     ->map(fn (string $name) => SocialSecurityAdminNameCleaner::repairMojibake(trim($name)))
@@ -257,18 +257,16 @@ class TrackedCountrySourceDirectory
         $subcategory = (string) $slot['subcategory'];
         $slotLabel = (string) $slot['label'];
         $slotKey = (string) $slot['key'];
-        $slotNameKey = $this->normalizeName($slotLabel);
         $manual = $manualOrganizations
-            ->first(fn (MarketOrganization $organization) => (string) $organization->organization_subcategory === $subcategory)
-            ?: $manualOrganizations->first(fn (MarketOrganization $organization) => $this->normalizeName((string) $organization->name) === $slotNameKey)
-            ?: $manualOrganizations->first(fn (MarketOrganization $organization) => $this->nameMatchesSourceSlot($slotKey, (string) $organization->name));
+            ->first(fn (MarketOrganization $organization) => (string) $organization->organization_subcategory === $subcategory);
 
         $source = null;
         $candidate = null;
-        $matchedName = $adminNames->first(fn (string $name) => $this->nameMatchesSourceSlot($slotKey, $name));
-        $displayName = $manual?->name ?: ($matchedName ?: null);
+        $matchedName = null;
+        $displayName = $manual?->name;
 
         if ($subcategory === 'social_security_administration') {
+            $matchedName = $adminNames->first(fn (string $name) => $this->nameMatchesSourceSlot($slotKey, $name));
             $preferredAdminName = $matchedName ?: $adminNames->first();
 
             if ($preferredAdminName) {
@@ -283,7 +281,7 @@ class TrackedCountrySourceDirectory
             $source ??= $sourceRecords->first();
             $candidate ??= $candidateRecords->first();
         } else {
-            $displayName = $manual?->name ?: ($matchedName ?: null);
+            $displayName = $manual?->name;
         }
 
         $organizationNonexistentConfirmedAt = $manual?->organization_nonexistent_confirmed_at;
