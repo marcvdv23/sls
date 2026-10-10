@@ -717,13 +717,17 @@ Route::post('/sls/tracked-countries/admin-urls', function (Request $request) use
         'country_iso' => ['required', 'string', 'max:8'],
         'country_name' => ['required', 'string', 'max:255'],
         'region' => ['nullable', 'string', 'max:120'],
-        'organization_name' => ['required', 'string', 'max:255'],
+        'organization_name' => ['nullable', 'string', 'max:255'],
+        'organization_nonexistent' => ['nullable', 'boolean'],
         'source_category' => ['nullable', 'string', 'max:120'],
         'source_label' => ['nullable', 'string', 'max:255'],
         'product_id' => ['nullable', 'integer', 'exists:products,id'],
         'general_url' => ['nullable', 'string', 'max:1000'],
+        'general_url_nonexistent' => ['nullable', 'boolean'],
         'press_url' => ['nullable', 'string', 'max:1000'],
+        'press_url_nonexistent' => ['nullable', 'boolean'],
         'tenders_url' => ['nullable', 'string', 'max:1000'],
+        'tenders_url_nonexistent' => ['nullable', 'boolean'],
     ]);
 
     $normalizeUrl = function (?string $url): ?string {
@@ -751,6 +755,12 @@ Route::post('/sls/tracked-countries/admin-urls', function (Request $request) use
         'press_url' => $normalizeUrl($data['press_url'] ?? null),
         'tenders_url' => $normalizeUrl($data['tenders_url'] ?? null),
     ];
+    $nonexistent = [
+        'organization' => $request->boolean('organization_nonexistent'),
+        'general_url' => $request->boolean('general_url_nonexistent'),
+        'press_url' => $request->boolean('press_url_nonexistent'),
+        'tenders_url' => $request->boolean('tenders_url_nonexistent'),
+    ];
 
     foreach ($urls as $field => $url) {
         if (filled($data[$field] ?? null) && $url === null) {
@@ -760,20 +770,31 @@ Route::post('/sls/tracked-countries/admin-urls', function (Request $request) use
         }
     }
 
+    foreach ($urls as $field => $url) {
+        if ($url !== null && $nonexistent[$field]) {
+            return response()->json([
+                'message' => 'Do not enter a URL and mark it as confirmed non-existent at the same time.',
+            ], 422);
+        }
+    }
+
     $iso = Str::upper(trim((string) $data['country_iso']));
     $name = SocialSecurityAdminNameCleaner::repairMojibake(trim((string) $data['organization_name']));
-    if ($name === '') {
+    if ($name === '' && ! $nonexistent['organization']) {
         return response()->json([
-            'message' => 'Please enter the official organization name for this source slot.',
+            'message' => 'Please enter the official organization name, or mark the organization as confirmed non-existent.',
         ], 422);
     }
-    $nameNormalized = $normalizeName($name);
     $sourceSlotsBySubcategory = TrackedCountrySourceDirectory::sourceOrganizationSlotsBySubcategory();
     $sourceCategory = (string) ($data['source_category'] ?? 'social_security_administration');
     $sourceCategory = array_key_exists($sourceCategory, $sourceSlotsBySubcategory)
         ? $sourceCategory
         : 'social_security_administration';
     $sourceLabel = trim((string) ($data['source_label'] ?? ($sourceSlotsBySubcategory[$sourceCategory]['label'] ?? $name)));
+    if ($name === '' && $nonexistent['organization']) {
+        $name = 'Confirmed non-existence - ' . ($sourceLabel ?: $sourceCategory);
+    }
+    $nameNormalized = $normalizeName($name);
     $country = Country::query()->where('iso_code', $iso)->first();
     $defaultProduct = $defaultSlsProduct();
     $product = filled($data['product_id'] ?? null)
@@ -837,6 +858,7 @@ Route::post('/sls/tracked-countries/admin-urls', function (Request $request) use
         'organization_type' => 'government_agency',
         'industry' => 'government',
         'organization_subcategory' => $sourceCategory,
+        'organization_nonexistent_confirmed_at' => $nonexistent['organization'] ? now() : null,
         'country' => $country?->name ?: $data['country_name'],
         'country_raw' => $data['country_name'],
         'country_iso' => $iso,
@@ -844,8 +866,11 @@ Route::post('/sls/tracked-countries/admin-urls', function (Request $request) use
         'region' => $country?->region ?: ($data['region'] ?? null),
         'website_url' => $urls['general_url'],
         'website_domain' => $domainFromUrl($urls['general_url']),
+        'website_url_nonexistent_confirmed_at' => $nonexistent['general_url'] ? now() : null,
         'news_page_url' => $urls['press_url'],
+        'news_page_url_nonexistent_confirmed_at' => $nonexistent['press_url'] ? now() : null,
         'procurement_page_url' => $urls['tenders_url'],
+        'procurement_page_url_nonexistent_confirmed_at' => $nonexistent['tenders_url'] ? now() : null,
         'status' => 'active',
         'lead_status' => $organization->lead_status ?: 'researching',
         'lead_source' => 'manual_social_security_admin_url',

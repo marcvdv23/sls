@@ -18,6 +18,7 @@ class SourceMaintenanceMetrics
         $sourceSlotCount = 0;
         $definedOrganizationCount = 0;
         $urlCount = 0;
+        $confirmedNonexistentUrlCount = 0;
         $completeSourceSlotCount = 0;
 
         foreach ($countries as $country) {
@@ -26,19 +27,26 @@ class SourceMaintenanceMetrics
 
             foreach ($links as $link) {
                 $hasOrganization = filled($link['name'] ?? null);
+                $organizationConfirmedNonexistent = filled($link['organization_nonexistent_confirmed_at'] ?? null);
                 $urls = collect([
                     $link['general_url'] ?? null,
                     $link['press_url'] ?? null,
                     $link['tenders_url'] ?? null,
                 ])->filter(fn ($url) => filled($url));
+                $confirmedNonexistentUrls = collect([
+                    $link['general_url_nonexistent_confirmed_at'] ?? null,
+                    $link['press_url_nonexistent_confirmed_at'] ?? null,
+                    $link['tenders_url_nonexistent_confirmed_at'] ?? null,
+                ])->filter(fn ($confirmedAt) => filled($confirmedAt))->count();
 
-                if ($hasOrganization) {
+                if ($hasOrganization || $organizationConfirmedNonexistent) {
                     $definedOrganizationCount += 1;
                 }
 
                 $urlCount += $urls->count();
+                $confirmedNonexistentUrlCount += $confirmedNonexistentUrls;
 
-                if ($hasOrganization && $urls->count() === 3) {
+                if (($hasOrganization || $organizationConfirmedNonexistent) && ($urls->count() + $confirmedNonexistentUrls) === 3) {
                     $completeSourceSlotCount += 1;
                 }
             }
@@ -46,9 +54,9 @@ class SourceMaintenanceMetrics
 
         $targetUrlCount = $sourceSlotCount * 3;
         $missingOrganizationCount = max(0, $sourceSlotCount - $definedOrganizationCount);
-        $missingUrlCount = max(0, $targetUrlCount - $urlCount);
+        $missingUrlCount = max(0, $targetUrlCount - $urlCount - $confirmedNonexistentUrlCount);
         $completionBasis = $sourceSlotCount + $targetUrlCount;
-        $completionValue = $definedOrganizationCount + $urlCount;
+        $completionValue = $definedOrganizationCount + $urlCount + $confirmedNonexistentUrlCount;
 
         return [
             'country_count' => $countries->count(),
@@ -56,6 +64,7 @@ class SourceMaintenanceMetrics
             'defined_organization_count' => $definedOrganizationCount,
             'missing_organization_count' => $missingOrganizationCount,
             'url_count' => $urlCount,
+            'confirmed_nonexistent_url_count' => $confirmedNonexistentUrlCount,
             'target_url_count' => $targetUrlCount,
             'missing_url_count' => $missingUrlCount,
             'complete_source_slot_count' => $completeSourceSlotCount,

@@ -56,6 +56,8 @@
         .source-url-dialog h3 { margin:0; font-size:1rem; }
         .source-url-dialog form { display:grid; gap:12px; padding:16px; }
         .source-url-dialog label { display:grid; gap:5px; color:var(--text-secondary); font-size:.78rem; font-weight:800; text-transform:uppercase; }
+        .source-url-dialog label.checkbox-field { display:flex; flex-direction:row; align-items:center; gap:8px; text-transform:none; letter-spacing:0; color:var(--text-primary); }
+        .source-url-dialog label.checkbox-field input { width:auto; }
         .source-url-dialog input,
         .source-url-dialog select { width:100%; box-sizing:border-box; }
         .source-url-dialog .form-status { min-height:1.2em; color:var(--accent-danger); font-size:.82rem; }
@@ -193,8 +195,13 @@
                                                             <span class="source-slot">{{ $admin['slot_label'] ?? 'Source organization' }}</span>
                                                             @if (filled($admin['name'] ?? null))
                                                                 <span class="source-title">{{ $admin['name'] }}</span>
+                                                            @elseif (filled($admin['organization_nonexistent_confirmed_at'] ?? null))
+                                                                <span class="source-title">Confirmed non-existent</span>
                                                             @else
                                                                 <span class="source-title missing">Missing - add organization name</span>
+                                                            @endif
+                                                            @if (filled($admin['organization_nonexistent_confirmed_at'] ?? null))
+                                                                <span class="source-description">Confirmed {{ \Carbon\Carbon::parse($admin['organization_nonexistent_confirmed_at'])->format('Y-m-d') }}</span>
                                                             @endif
                                                             @if (filled($admin['description'] ?? null))
                                                                 <span class="source-description">{{ $admin['description'] }}</span>
@@ -216,25 +223,37 @@
                                                             data-general-url="{{ $admin['general_url'] ?? '' }}"
                                                             data-press-url="{{ $admin['press_url'] ?? '' }}"
                                                             data-tenders-url="{{ $admin['tenders_url'] ?? '' }}"
+                                                            data-organization-nonexistent="{{ filled($admin['organization_nonexistent_confirmed_at'] ?? null) ? '1' : '0' }}"
+                                                            data-general-url-nonexistent="{{ filled($admin['general_url_nonexistent_confirmed_at'] ?? null) ? '1' : '0' }}"
+                                                            data-press-url-nonexistent="{{ filled($admin['press_url_nonexistent_confirmed_at'] ?? null) ? '1' : '0' }}"
+                                                            data-tenders-url-nonexistent="{{ filled($admin['tenders_url_nonexistent_confirmed_at'] ?? null) ? '1' : '0' }}"
                                                         >Edit</button>
                                                     </div>
                                                     <div class="source-urls">
                                                         <strong>{{ $admin['slot_label'] ?? $admin['name'] }}</strong>
-                                                        @if (blank($admin['name'] ?? null))
+                                                        @if (filled($admin['organization_nonexistent_confirmed_at'] ?? null))
+                                                            <span>Organization: confirmed non-existent {{ \Carbon\Carbon::parse($admin['organization_nonexistent_confirmed_at'])->format('Y-m-d') }}</span>
+                                                        @elseif (blank($admin['name'] ?? null))
                                                             <span>Organization: not identified</span>
                                                         @elseif (($admin['slot_label'] ?? null) && ($admin['name'] ?? null) && $admin['slot_label'] !== $admin['name'])
                                                             <span>Organization: {{ $admin['name'] }}</span>
                                                         @endif
                                                         @if (filled($admin['general_url'] ?? null))
                                                             <span>General: <a href="{{ $admin['general_url'] }}" target="_blank" rel="noreferrer">{{ $admin['general_url'] }}</a></span>
+                                                        @elseif (filled($admin['general_url_nonexistent_confirmed_at'] ?? null))
+                                                            <span>General: confirmed non-existent {{ \Carbon\Carbon::parse($admin['general_url_nonexistent_confirmed_at'])->format('Y-m-d') }}</span>
                                                         @else
                                                             <span>General: not set</span>
                                                         @endif
                                                         @if (filled($admin['press_url'] ?? null))
                                                             <span>Press: <a href="{{ $admin['press_url'] }}" target="_blank" rel="noreferrer">{{ $admin['press_url'] }}</a></span>
+                                                        @elseif (filled($admin['press_url_nonexistent_confirmed_at'] ?? null))
+                                                            <span>Press: confirmed non-existent {{ \Carbon\Carbon::parse($admin['press_url_nonexistent_confirmed_at'])->format('Y-m-d') }}</span>
                                                         @endif
                                                         @if (filled($admin['tenders_url'] ?? null))
                                                             <span>Tenders: <a href="{{ $admin['tenders_url'] }}" target="_blank" rel="noreferrer">{{ $admin['tenders_url'] }}</a></span>
+                                                        @elseif (filled($admin['tenders_url_nonexistent_confirmed_at'] ?? null))
+                                                            <span>Tenders: confirmed non-existent {{ \Carbon\Carbon::parse($admin['tenders_url_nonexistent_confirmed_at'])->format('Y-m-d') }}</span>
                                                         @endif
                                                     </div>
                                                 </div>
@@ -281,21 +300,37 @@
                 <input type="hidden" name="product_id" value="{{ optional($products->first())->id }}">
                 <label>
                     Organization name
-                    <input type="text" name="organization_name" list="source-url-suggestions" placeholder="Official organization name" autocomplete="off" required>
+                    <input type="text" name="organization_name" list="source-url-suggestions" placeholder="Official organization name" autocomplete="off">
                     <span class="muted">Start typing to reuse an existing unassigned organization for this country, or enter a new official name.</span>
+                </label>
+                <label class="checkbox-field">
+                    <input type="checkbox" name="organization_nonexistent" value="1">
+                    Confirmed non-existence of this organization
                 </label>
                 <datalist id="source-url-suggestions"></datalist>
                 <label>
                     General
                     <input type="url" name="general_url" placeholder="https://example.gov">
                 </label>
+                <label class="checkbox-field">
+                    <input type="checkbox" name="general_url_nonexistent" value="1">
+                    Confirmed no general URL exists
+                </label>
                 <label>
                     Press
                     <input type="url" name="press_url" placeholder="https://example.gov/news">
                 </label>
+                <label class="checkbox-field">
+                    <input type="checkbox" name="press_url_nonexistent" value="1">
+                    Confirmed no press URL exists
+                </label>
                 <label>
                     Tenders
                     <input type="url" name="tenders_url" placeholder="https://example.gov/procurement">
+                </label>
+                <label class="checkbox-field">
+                    <input type="checkbox" name="tenders_url_nonexistent" value="1">
+                    Confirmed no procurement URL exists
                 </label>
                 <div class="toolbar" style="justify-content:space-between;">
                     <button class="secondary tiny source-url-reset" type="button" id="source-url-reset">Reset slot</button>
@@ -362,6 +397,32 @@
                 return;
             }
 
+            const checkboxPairs = [
+                ['organization_nonexistent', 'organization_name'],
+                ['general_url_nonexistent', 'general_url'],
+                ['press_url_nonexistent', 'press_url'],
+                ['tenders_url_nonexistent', 'tenders_url'],
+            ];
+
+            const syncNonexistentControls = () => {
+                checkboxPairs.forEach(([checkboxName, inputName]) => {
+                    const checkbox = form.elements[checkboxName];
+                    const input = form.elements[inputName];
+                    if (!checkbox || !input) {
+                        return;
+                    }
+
+                    input.disabled = checkbox.checked;
+                    if (checkbox.checked) {
+                        input.value = '';
+                    }
+                });
+            };
+
+            checkboxPairs.forEach(([checkboxName]) => {
+                form.elements[checkboxName]?.addEventListener('change', syncNonexistentControls);
+            });
+
             document.querySelectorAll('.source-url-edit').forEach((button) => {
                 button.addEventListener('click', () => {
                     status.textContent = '';
@@ -377,12 +438,21 @@
                     form.elements.general_url.value = button.dataset.generalUrl || '';
                     form.elements.press_url.value = button.dataset.pressUrl || '';
                     form.elements.tenders_url.value = button.dataset.tendersUrl || '';
+                    form.elements.organization_nonexistent.checked = button.dataset.organizationNonexistent === '1';
+                    form.elements.general_url_nonexistent.checked = button.dataset.generalUrlNonexistent === '1';
+                    form.elements.press_url_nonexistent.checked = button.dataset.pressUrlNonexistent === '1';
+                    form.elements.tenders_url_nonexistent.checked = button.dataset.tendersUrlNonexistent === '1';
+                    syncNonexistentControls();
                     if (resetButton) {
                         resetButton.disabled = !(
                             button.dataset.organizationName
                             || button.dataset.generalUrl
                             || button.dataset.pressUrl
                             || button.dataset.tendersUrl
+                            || button.dataset.organizationNonexistent === '1'
+                            || button.dataset.generalUrlNonexistent === '1'
+                            || button.dataset.pressUrlNonexistent === '1'
+                            || button.dataset.tendersUrlNonexistent === '1'
                         );
                     }
                     if (suggestions) {

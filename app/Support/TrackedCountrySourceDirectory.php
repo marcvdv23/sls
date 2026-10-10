@@ -140,7 +140,9 @@ class TrackedCountrySourceDirectory
                 ])
                     ->merge($sourceAdminRecords->get($iso, collect())->pluck('name'))
                     ->merge($adminCandidates->get($iso, collect())->pluck('organization_name'))
-                    ->merge($manualSourceOrganizations->get($iso, collect())->pluck('name'))
+                    ->merge($manualSourceOrganizations->get($iso, collect())
+                        ->filter(fn (MarketOrganization $organization) => blank($organization->organization_nonexistent_confirmed_at))
+                        ->pluck('name'))
                     ->filter()
                     ->flatMap(fn (string $name) => preg_split('/\s+\/\s+/', $name) ?: [])
                     ->map(fn (string $name) => SocialSecurityAdminNameCleaner::repairMojibake(trim($name)))
@@ -179,7 +181,7 @@ class TrackedCountrySourceDirectory
                     ->reject(fn (string $name) => $linkedNameKeys->contains($this->normalizeName($name)))
                     ->values();
                 $missingSourceCount = $links
-                    ->filter(fn (array $link) => blank($link['name'] ?? null))
+                    ->filter(fn (array $link) => blank($link['name'] ?? null) && blank($link['organization_nonexistent_confirmed_at'] ?? null))
                     ->count();
 
                 return (object) [
@@ -281,7 +283,8 @@ class TrackedCountrySourceDirectory
             $displayName = $manual?->name ?: ($matchedName ?: null);
         }
 
-        $displayName = filled($displayName)
+        $organizationNonexistentConfirmedAt = $manual?->organization_nonexistent_confirmed_at;
+        $displayName = blank($organizationNonexistentConfirmedAt) && filled($displayName)
             ? SocialSecurityAdminNameCleaner::repairMojibake(trim((string) $displayName))
             : null;
 
@@ -297,10 +300,14 @@ class TrackedCountrySourceDirectory
             'description' => (string) ($slot['description'] ?? ''),
             'name' => $displayName,
             'is_defined' => filled($displayName),
+            'organization_nonexistent_confirmed_at' => $organizationNonexistentConfirmedAt,
             'url' => $generalUrl,
             'general_url' => $generalUrl,
             'press_url' => $manual?->news_page_url ?: $candidate?->marketOrganization?->news_page_url,
             'tenders_url' => $manual?->procurement_page_url ?: $candidate?->marketOrganization?->procurement_page_url,
+            'general_url_nonexistent_confirmed_at' => $manual?->website_url_nonexistent_confirmed_at,
+            'press_url_nonexistent_confirmed_at' => $manual?->news_page_url_nonexistent_confirmed_at,
+            'tenders_url_nonexistent_confirmed_at' => $manual?->procurement_page_url_nonexistent_confirmed_at,
             'product_id' => $manual?->product_id ?: $defaultProduct?->id,
             'country_iso' => $iso,
             'country_name' => $countryName,
