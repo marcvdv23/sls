@@ -400,10 +400,15 @@
             const suggestions = document.getElementById('source-url-suggestions');
             const resetButton = document.getElementById('source-url-reset');
             const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+            const scrollStorageKey = 'sls.sourceMaintenance.scroll';
+            let openerButton = null;
+            let openerScroll = { x: 0, y: 0 };
 
             if (!modal || !form) {
                 return;
             }
+
+            restoreStoredScroll();
 
             const checkboxPairs = [
                 ['organization_nonexistent', 'organization_name'],
@@ -433,6 +438,11 @@
 
             document.querySelectorAll('.source-url-edit').forEach((button) => {
                 button.addEventListener('click', () => {
+                    openerButton = button;
+                    openerScroll = {
+                        x: window.scrollX || window.pageXOffset || 0,
+                        y: window.scrollY || window.pageYOffset || 0,
+                    };
                     status.textContent = '';
                     title.textContent = button.dataset.sourceLabel || button.dataset.organizationName || 'Edit organization URLs';
                     country.textContent = [button.dataset.countryName, button.dataset.countryIso].filter(Boolean).join(' | ');
@@ -478,7 +488,7 @@
                         });
                     }
                     modal.hidden = false;
-                    form.elements.organization_name.focus();
+                    form.elements.organization_name.focus({ preventScroll: true });
                 });
             });
 
@@ -518,6 +528,7 @@
                         throw new Error(body.message || 'Could not save URLs.');
                     }
 
+                    storeCurrentScroll();
                     window.location.reload();
                 } catch (error) {
                     status.textContent = error.message || 'Could not save URLs.';
@@ -554,6 +565,7 @@
                         throw new Error(body.message || 'Could not reset this source slot.');
                     }
 
+                    storeCurrentScroll();
                     window.location.reload();
                 } catch (error) {
                     status.textContent = error.message || 'Could not reset this source slot.';
@@ -564,6 +576,40 @@
             function closeModal() {
                 modal.hidden = true;
                 status.textContent = '';
+                restoreOpenerPosition();
+            }
+
+            function restoreOpenerPosition() {
+                window.scrollTo(openerScroll.x, openerScroll.y);
+                openerButton?.focus({ preventScroll: true });
+            }
+
+            function storeCurrentScroll() {
+                try {
+                    window.sessionStorage?.setItem(scrollStorageKey, JSON.stringify({
+                        x: openerScroll.x,
+                        y: openerScroll.y,
+                    }));
+                } catch (error) {
+                    // Browser storage can be disabled; the save still works without scroll restore.
+                }
+            }
+
+            function restoreStoredScroll() {
+                try {
+                    const raw = window.sessionStorage?.getItem(scrollStorageKey);
+                    if (!raw) {
+                        return;
+                    }
+
+                    window.sessionStorage.removeItem(scrollStorageKey);
+                    const position = JSON.parse(raw);
+                    requestAnimationFrame(() => {
+                        window.scrollTo(Number(position.x || 0), Number(position.y || 0));
+                    });
+                } catch (error) {
+                    // Ignore malformed or blocked storage.
+                }
             }
         })();
     </script>
