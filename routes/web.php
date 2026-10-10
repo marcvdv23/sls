@@ -657,6 +657,7 @@ Route::get('/sls/source-maintenance', function (TrackedCountrySourceDirectory $d
         'trackedRegions' => $countries->pluck('region')->filter()->unique()->sort()->values(),
         'trackedLanguages' => $countries->pluck('default_language_code')->filter()->map(fn ($code) => strtoupper($code))->unique()->sort()->values(),
         'products' => $orderedProducts(),
+        'defaultSourceProduct' => $defaultSlsProduct(),
     ]);
 })->name('sls.sourceMaintenance.index');
 
