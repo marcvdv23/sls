@@ -20,7 +20,9 @@ use App\Services\TitleTranslationService;
 use App\Services\UniversityMarketCrawlerService;
 use App\Services\UniversitySurveyCrawlerService;
 use App\Models\MarketCrawler;
+use App\Models\MarketOrganization;
 use App\Models\MarketOrganizationContact;
+use App\Models\Product;
 use App\Models\SlsOperationRun;
 use App\Models\UniversitySurveyTarget;
 use App\Models\DemoSession;
@@ -40,6 +42,7 @@ use App\Support\CountryUpdateClassifier;
 use App\Support\CountryUpdateDedupeRules;
 use App\Support\CountryUpdateNoiseRules;
 use App\Support\SourceMaintenanceMetrics;
+use App\Support\SocialSecurityAdminNameCleaner;
 use App\Support\TitleLanguage;
 use App\Support\TrackedCountrySourceDirectory;
 use App\Support\WorkspaceContext;
@@ -48,6 +51,347 @@ use Carbon\Carbon;
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
+
+Artisan::command('sls:source-maintenance-missing {--workspace=} {--product=SSAS} {--output=}', function () {
+    $workspaceKey = trim((string) ($this->option('workspace') ?? ''));
+    if ($workspaceKey !== '') {
+        $workspace = DB::table('workspaces')
+            ->where('workspace_key', $workspaceKey)
+            ->orWhere('name', $workspaceKey)
+            ->orWhere('entity_name', $workspaceKey)
+            ->first();
+
+        if (! $workspace) {
+            $this->error('Workspace not found: ' . $workspaceKey);
+
+            return 1;
+        }
+
+        WorkspaceContext::forceWorkspace((int) $workspace->id);
+    }
+
+    $productKey = trim((string) ($this->option('product') ?: 'SSAS'));
+    $product = Product::query()
+        ->where('code', $productKey)
+        ->orWhere('name', $productKey)
+        ->first();
+
+    if (! $product) {
+        $this->error('Product not found: ' . $productKey);
+
+        return 1;
+    }
+
+    $slots = TrackedCountrySourceDirectory::sourceOrganizationSlotsBySubcategory();
+    $countries = collect(config('country_intelligence.monitored_countries', []));
+    $records = MarketOrganization::query()
+        ->whereIn('organization_subcategory', array_keys($slots))
+        ->whereNotNull('country_iso')
+        ->when(Schema::hasColumn('market_organizations', 'product_id'), fn ($query) => $query->where(fn ($inner) => $inner
+            ->where('product_id', $product->id)
+            ->orWhereNull('product_id')))
+        ->get()
+        ->keyBy(fn (MarketOrganization $organization) => strtoupper((string) $organization->country_iso) . '|' . (string) $organization->organization_subcategory);
+
+    $headers = [
+        'country_iso',
+        'country',
+        'region',
+        'source_category',
+        'source_label',
+        'organization_name',
+        'general_url',
+        'press_url',
+        'tenders_url',
+        'missing_organization',
+        'missing_general_url',
+        'missing_press_url',
+        'missing_tenders_url',
+    ];
+    $rows = [$headers];
+
+    foreach ($countries as $iso => $countryConfig) {
+        $iso = strtoupper((string) ($countryConfig['iso_code'] ?? $iso));
+        $countryName = (string) ($countryConfig['name'] ?? $iso);
+        $region = (string) ($countryConfig['region'] ?? '');
+
+        foreach ($slots as $subcategory => $slot) {
+            $record = $records->get($iso . '|' . $subcategory);
+            $organizationMissing = ! $record || (blank($record->name) && blank($record->organization_nonexistent_confirmed_at));
+            $generalMissing = ! $record || (blank($record->website_url) && blank($record->website_url_nonexistent_confirmed_at));
+            $pressMissing = ! $record || (blank($record->news_page_url) && blank($record->news_page_url_nonexistent_confirmed_at));
+            $tendersMissing = ! $record || (blank($record->procurement_page_url) && blank($record->procurement_page_url_nonexistent_confirmed_at));
+
+            if (! $organizationMissing && ! $generalMissing && ! $pressMissing && ! $tendersMissing) {
+                continue;
+            }
+
+            $rows[] = [
+                $iso,
+                $countryName,
+                $region,
+                $subcategory,
+                $slot['label'] ?? $subcategory,
+                $record?->name ?? '',
+                $record?->website_url ?? '',
+                $record?->news_page_url ?? '',
+                $record?->procurement_page_url ?? '',
+                $organizationMissing ? 'yes' : 'no',
+                $generalMissing ? 'yes' : 'no',
+                $pressMissing ? 'yes' : 'no',
+                $tendersMissing ? 'yes' : 'no',
+            ];
+        }
+    }
+
+    $outputPath = trim((string) ($this->option('output') ?? ''));
+    $handle = $outputPath !== '' ? fopen($outputPath, 'wb') : fopen('php://temp', 'wb+');
+    if (! $handle) {
+        $this->error('Could not open output.');
+
+        return 1;
+    }
+
+    foreach ($rows as $row) {
+        fputcsv($handle, $row);
+    }
+
+    if ($outputPath !== '') {
+        fclose($handle);
+        $this->info('Missing source maintenance CSV written to ' . $outputPath);
+    } else {
+        rewind($handle);
+        $this->line(stream_get_contents($handle));
+        fclose($handle);
+    }
+
+    $this->info('Missing rows: ' . max(count($rows) - 1, 0));
+
+    return 0;
+})->purpose('Export missing market research source organization fields without changing data');
+
+Artisan::command('sls:source-maintenance-import {path} {--workspace=} {--product=SSAS} {--dry-run} {--overwrite}', function (string $path) {
+    if (! is_file($path)) {
+        $this->error('CSV not found: ' . $path);
+
+        return 1;
+    }
+
+    $workspaceKey = trim((string) ($this->option('workspace') ?? ''));
+    if ($workspaceKey !== '') {
+        $workspace = DB::table('workspaces')
+            ->where('workspace_key', $workspaceKey)
+            ->orWhere('name', $workspaceKey)
+            ->orWhere('entity_name', $workspaceKey)
+            ->first();
+
+        if (! $workspace) {
+            $this->error('Workspace not found: ' . $workspaceKey);
+
+            return 1;
+        }
+
+        WorkspaceContext::forceWorkspace((int) $workspace->id);
+    }
+
+    $productKey = trim((string) ($this->option('product') ?: 'SSAS'));
+    $product = Product::query()
+        ->where('code', $productKey)
+        ->orWhere('name', $productKey)
+        ->first();
+
+    if (! $product) {
+        $this->error('Product not found: ' . $productKey);
+
+        return 1;
+    }
+
+    $slots = TrackedCountrySourceDirectory::sourceOrganizationSlotsBySubcategory();
+    $crawler = MarketCrawler::firstOrCreate(
+        ['crawler_key' => 'social_security_organization'],
+        [
+            'name' => 'Social security organization crawler',
+            'crawler_type' => 'social_security_contact_crawler',
+            'description' => 'Finds official social security organization websites, media/press pages, procurement pages, leadership, and public contacts.',
+            'is_enabled' => true,
+        ],
+    );
+    $normalizeName = fn (string $name): string => Str::of(Str::ascii($name))->lower()->replaceMatches('/[^a-z0-9]+/', ' ')->trim()->toString();
+    $normalizeUrl = function (?string $url): ?string {
+        $url = trim((string) $url);
+        if ($url === '') {
+            return null;
+        }
+
+        if (! Str::startsWith(Str::lower($url), ['http://', 'https://'])) {
+            $url = 'https://' . $url;
+        }
+
+        return filter_var($url, FILTER_VALIDATE_URL) ? $url : null;
+    };
+    $domainFromUrl = function (?string $url): ?string {
+        $host = $url ? parse_url($url, PHP_URL_HOST) : null;
+
+        return $host ? Str::of($host)->lower()->replaceStart('www.', '')->toString() : null;
+    };
+    $truthy = fn ($value): bool => in_array(Str::lower(trim((string) $value)), ['1', 'true', 'yes', 'y'], true);
+    $allowOverwrite = (bool) $this->option('overwrite');
+    $dryRun = (bool) $this->option('dry-run');
+
+    $handle = fopen($path, 'rb');
+    if (! $handle) {
+        $this->error('Could not open CSV: ' . $path);
+
+        return 1;
+    }
+
+    $headers = fgetcsv($handle);
+    if (! is_array($headers)) {
+        $this->error('CSV is empty.');
+
+        return 1;
+    }
+
+    $headers = array_map(fn ($header) => Str::of((string) $header)->lower()->trim()->replace(' ', '_')->toString(), $headers);
+    $required = ['country_iso', 'source_category'];
+    foreach ($required as $column) {
+        if (! in_array($column, $headers, true)) {
+            $this->error('Missing required CSV column: ' . $column);
+
+            return 1;
+        }
+    }
+
+    $created = 0;
+    $updated = 0;
+    $skipped = 0;
+    $lineNumber = 1;
+
+    while (($values = fgetcsv($handle)) !== false) {
+        $lineNumber++;
+        $row = array_combine($headers, array_pad($values, count($headers), ''));
+        if (! is_array($row)) {
+            $skipped++;
+            $this->warn("Skipping line {$lineNumber}: could not read row.");
+            continue;
+        }
+
+        $iso = Str::upper(trim((string) ($row['country_iso'] ?? '')));
+        $sourceCategory = trim((string) ($row['source_category'] ?? ''));
+        if ($iso === '' || ! array_key_exists($sourceCategory, $slots)) {
+            $skipped++;
+            $this->warn("Skipping line {$lineNumber}: invalid country_iso or source_category.");
+            continue;
+        }
+
+        $country = Country::query()->where('iso_code', $iso)->first();
+        $countryName = trim((string) ($row['country'] ?? '')) ?: ($country?->name ?: $iso);
+        $region = trim((string) ($row['region'] ?? '')) ?: $country?->region;
+        $organizationName = SocialSecurityAdminNameCleaner::repairMojibake(trim((string) ($row['organization_name'] ?? '')));
+        $organizationNonexistent = $truthy($row['organization_nonexistent'] ?? false);
+        $generalNonexistent = $truthy($row['general_url_nonexistent'] ?? false);
+        $pressNonexistent = $truthy($row['press_url_nonexistent'] ?? false);
+        $tendersNonexistent = $truthy($row['tenders_url_nonexistent'] ?? false);
+        $generalUrl = $normalizeUrl($row['general_url'] ?? null);
+        $pressUrl = $normalizeUrl($row['press_url'] ?? null);
+        $tendersUrl = $normalizeUrl($row['tenders_url'] ?? null);
+
+        $organization = MarketOrganization::query()
+            ->where('country_iso', $iso)
+            ->where('organization_subcategory', $sourceCategory)
+            ->when(Schema::hasColumn('market_organizations', 'product_id'), fn ($query) => $query->where(fn ($inner) => $inner
+                ->where('product_id', $product->id)
+                ->orWhereNull('product_id')))
+            ->first();
+
+        $isNew = ! $organization;
+        $organization ??= new MarketOrganization([
+            'source_fingerprint' => hash('sha256', 'manual-source-maintenance-import|' . $product->id . '|' . $iso . '|' . $sourceCategory),
+        ]);
+
+        $changes = [
+            'market_crawler_id' => $organization->market_crawler_id ?: $crawler->id,
+            'organization_type' => $organization->organization_type ?: 'government_agency',
+            'industry' => $organization->industry ?: 'government',
+            'organization_subcategory' => $sourceCategory,
+            'country' => $organization->country ?: $countryName,
+            'country_raw' => $organization->country_raw ?: $countryName,
+            'country_iso' => $iso,
+            'country_resolution_status' => $organization->country_resolution_status ?: 'resolved',
+            'region' => $organization->region ?: $region,
+            'status' => $organization->status ?: 'active',
+            'lead_status' => $organization->lead_status ?: 'researching',
+            'lead_source' => 'manual_social_security_admin_url',
+            'last_crawler_name' => $crawler->name,
+        ];
+
+        if (Schema::hasColumn('market_organizations', 'product_id')) {
+            $changes['product_id'] = $product->id;
+        }
+
+        $canSetOrganization = $allowOverwrite || (blank($organization->name) && blank($organization->organization_nonexistent_confirmed_at));
+        if ($canSetOrganization && $organizationName !== '') {
+            $changes['name'] = Str::limit($organizationName, 255, '');
+            $changes['name_normalized'] = $normalizeName($organizationName);
+            $changes['organization_nonexistent_confirmed_at'] = null;
+        } elseif ($canSetOrganization && $organizationNonexistent) {
+            $label = $slots[$sourceCategory]['label'] ?? $sourceCategory;
+            $changes['name'] = 'Confirmed non-existence - ' . $label;
+            $changes['name_normalized'] = $normalizeName($changes['name']);
+            $changes['organization_nonexistent_confirmed_at'] = now();
+        }
+
+        foreach ([
+            ['website_url', 'website_url_nonexistent_confirmed_at', $generalUrl, $generalNonexistent],
+            ['news_page_url', 'news_page_url_nonexistent_confirmed_at', $pressUrl, $pressNonexistent],
+            ['procurement_page_url', 'procurement_page_url_nonexistent_confirmed_at', $tendersUrl, $tendersNonexistent],
+        ] as [$urlColumn, $nonexistentColumn, $url, $nonexistent]) {
+            $canSetUrl = $allowOverwrite || (blank($organization->{$urlColumn}) && blank($organization->{$nonexistentColumn}));
+            if (! $canSetUrl) {
+                continue;
+            }
+
+            if ($url !== null) {
+                $changes[$urlColumn] = $url;
+                $changes[$nonexistentColumn] = null;
+            } elseif ($nonexistent) {
+                $changes[$urlColumn] = null;
+                $changes[$nonexistentColumn] = now();
+            }
+        }
+
+        if (array_key_exists('website_url', $changes)) {
+            $changes['website_domain'] = $domainFromUrl($changes['website_url']);
+        }
+
+        $dirtyChanges = collect($changes)
+            ->reject(fn ($value, $key) => ! $isNew && (string) ($organization->{$key} ?? '') === (string) ($value ?? ''))
+            ->all();
+
+        if ($dirtyChanges === []) {
+            $skipped++;
+            continue;
+        }
+
+        if ($dryRun) {
+            $this->line(($isNew ? 'Would create' : 'Would update') . " {$iso} {$sourceCategory}: " . implode(', ', array_keys($dirtyChanges)));
+        } else {
+            $organization->fill($changes)->save();
+        }
+
+        $isNew ? $created++ : $updated++;
+    }
+
+    fclose($handle);
+
+    $prefix = $dryRun ? 'Dry run completed.' : 'Source maintenance import completed.';
+    $this->info("{$prefix} Created: {$created}; updated: {$updated}; skipped: {$skipped}.");
+    if (! $allowOverwrite) {
+        $this->info('Overwrite guard was active: existing names, URLs, and non-existence confirmations were not changed.');
+    }
+
+    return 0;
+})->purpose('Safely import researched source maintenance names and URLs without overwriting completed fields');
 
 Artisan::command('sls:backup-local', function () {
     $isWindows = PHP_OS_FAMILY === 'Windows';
