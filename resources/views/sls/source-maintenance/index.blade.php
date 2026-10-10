@@ -49,8 +49,8 @@
         .source-urls a:hover { text-decoration:underline; }
         .source-url-edit { width:34px; height:30px; min-height:30px; padding:0; border-radius:6px; font-size:.76rem; }
         .source-url-modal[hidden] { display:none; }
-        .source-url-modal { position:fixed; inset:0; z-index:10000; display:flex; align-items:center; justify-content:center; padding:24px; background:rgba(15, 23, 42, .46); overflow:auto; }
-        .source-url-dialog { position:relative; z-index:10001; width:min(560px, 100%); max-height:calc(100vh - 48px); overflow:auto; border-radius:8px; border:1px solid var(--border-subtle); background:var(--bg-primary); box-shadow:0 24px 70px rgba(15, 23, 42, .28); }
+        .source-url-modal { position:fixed; inset:0; z-index:10000; display:block; padding:24px; background:rgba(15, 23, 42, .46); }
+        .source-url-dialog { position:fixed; top:50%; left:50%; z-index:10001; width:min(560px, calc(100vw - 48px)); max-height:calc(100vh - 48px); overflow:auto; transform:translate(-50%, -50%); border-radius:8px; border:1px solid var(--border-subtle); background:var(--bg-primary); box-shadow:0 24px 70px rgba(15, 23, 42, .28); overscroll-behavior:contain; }
         .source-url-dialog header { display:flex; justify-content:space-between; gap:12px; padding:12px 14px; border-bottom:1px solid var(--border-subtle); }
         .source-url-dialog h3 { margin:0; font-size:1rem; }
         .source-url-dialog form { display:grid; gap:9px; padding:14px; }
