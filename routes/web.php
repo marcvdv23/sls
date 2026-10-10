@@ -649,13 +649,20 @@ Route::get('/sls/source-maintenance', function (TrackedCountrySourceDirectory $d
 
     $countries = $directory->countries($defaultSlsProduct());
     $sourceMetrics = $metrics->calculate($countries);
+    $trackedRegions = $countries->pluck('region')->filter()->unique()->sort()->values();
+    $sourceMetricsByRegion = collect(['' => $sourceMetrics])
+        ->merge($trackedRegions->mapWithKeys(
+            fn (string $region) => [$region => $metrics->calculate($countries->where('region', $region)->values())],
+        ));
+
     $metrics->recordDailySnapshot(WorkspaceContext::currentWorkspaceId(), $sourceMetrics);
 
     return view('sls.source-maintenance.index', [
         'countries' => $countries,
         'sourceMetrics' => $sourceMetrics,
+        'sourceMetricsByRegion' => $sourceMetricsByRegion,
         'sourceMetricHistory' => $metrics->history(WorkspaceContext::currentWorkspaceId()),
-        'trackedRegions' => $countries->pluck('region')->filter()->unique()->sort()->values(),
+        'trackedRegions' => $trackedRegions,
         'trackedLanguages' => $countries->pluck('default_language_code')->filter()->map(fn ($code) => strtoupper($code))->unique()->sort()->values(),
         'products' => $orderedProducts(),
         'defaultSourceProduct' => $defaultSlsProduct(),

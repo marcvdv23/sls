@@ -16,6 +16,9 @@
         .tracked-country-filters select { width:170px; }
         .tracked-country-filters label.checkbox-field { display:flex; flex-direction:row; align-items:center; gap:7px; min-height:34px; padding:0 4px; text-transform:none; letter-spacing:0; font-size:.84rem; color:var(--text-primary); }
         .tracked-country-filters label.checkbox-field input { width:auto; min-height:0; }
+        .source-metric-toolbar { display:flex; justify-content:flex-end; align-items:end; gap:10px; }
+        .source-metric-toolbar label { display:grid; gap:4px; color:var(--text-secondary); font-size:.7rem; font-weight:800; letter-spacing:.05em; text-transform:uppercase; }
+        .source-metric-toolbar select { min-height:34px; width:190px; border:1px solid var(--border-subtle); border-radius:7px; background:var(--bg-secondary); color:var(--text-primary); font:inherit; font-size:.84rem; padding:4px 8px; }
         .source-metric-grid { display:grid; grid-template-columns:repeat(6, minmax(130px, 1fr)); gap:10px; }
         .source-metric-card { border:1px solid var(--border-subtle); border-radius:8px; padding:12px; background:var(--bg-primary); }
         .source-metric-card strong { display:block; font-size:1.45rem; line-height:1.1; }
@@ -100,30 +103,42 @@
                 </div>
             </div>
 
+            <div class="source-metric-toolbar" aria-label="Source maintenance counter filter">
+                <label>
+                    Counter region
+                    <select id="source-metric-region-filter">
+                        <option value="">All regions</option>
+                        @foreach ($trackedRegions as $region)
+                            <option value="{{ $region }}">{{ $region }}</option>
+                        @endforeach
+                    </select>
+                </label>
+            </div>
+
             <div class="source-metric-grid" aria-label="Source maintenance counters">
                 <div class="source-metric-card">
-                    <strong>{{ number_format((int) ($sourceMetrics['url_count'] ?? 0)) }}</strong>
+                    <strong data-source-metric-value="url_count">{{ number_format((int) ($sourceMetrics['url_count'] ?? 0)) }}</strong>
                     <span>URLs captured</span>
                 </div>
                 <div class="source-metric-card">
-                    <strong>{{ number_format((int) ($sourceMetrics['confirmed_nonexistent_url_count'] ?? 0)) }}</strong>
+                    <strong data-source-metric-value="confirmed_nonexistent_url_count">{{ number_format((int) ($sourceMetrics['confirmed_nonexistent_url_count'] ?? 0)) }}</strong>
                     <span>URLs confirmed non-existent</span>
                 </div>
                 <div class="source-metric-card">
-                    <strong>{{ number_format((int) ($sourceMetrics['missing_organization_count'] ?? 0)) }}</strong>
+                    <strong data-source-metric-value="missing_organization_count">{{ number_format((int) ($sourceMetrics['missing_organization_count'] ?? 0)) }}</strong>
                     <span>missing organization names</span>
                 </div>
                 <div class="source-metric-card">
-                    <strong>{{ number_format((int) ($sourceMetrics['missing_url_count'] ?? 0)) }}</strong>
+                    <strong data-source-metric-value="missing_url_count">{{ number_format((int) ($sourceMetrics['missing_url_count'] ?? 0)) }}</strong>
                     <span>missing URLs across General, Press, and Procurement</span>
                 </div>
                 <div class="source-metric-card">
-                    <strong>{{ number_format((int) ($sourceMetrics['confirmed_nonexistent_organization_count'] ?? 0)) }}</strong>
+                    <strong data-source-metric-value="confirmed_nonexistent_organization_count">{{ number_format((int) ($sourceMetrics['confirmed_nonexistent_organization_count'] ?? 0)) }}</strong>
                     <span>organizations confirmed non-existent</span>
                 </div>
                 <div class="source-metric-card">
-                    <strong>{{ number_format((float) ($sourceMetrics['completion_percent'] ?? 0), 1) }}%</strong>
-                    <span>complete toward {{ number_format((int) ($sourceMetrics['source_slot_count'] ?? 0)) }} organization slots</span>
+                    <strong data-source-metric-value="completion_percent">{{ number_format((float) ($sourceMetrics['completion_percent'] ?? 0), 1) }}%</strong>
+                    <span>complete toward <span data-source-metric-value="source_slot_count">{{ number_format((int) ($sourceMetrics['source_slot_count'] ?? 0)) }}</span> organization slots</span>
                 </div>
             </div>
 
@@ -438,6 +453,38 @@
 @endsection
 
 @push('scripts')
+    <script>
+        (() => {
+            const metricsByRegion = @json($sourceMetricsByRegion ?? ['' => $sourceMetrics]);
+            const regionSelect = document.getElementById('source-metric-region-filter');
+            const metricNodes = Array.from(document.querySelectorAll('[data-source-metric-value]'));
+            const integerFormatter = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
+            const percentFormatter = new Intl.NumberFormat(undefined, {
+                minimumFractionDigits: 1,
+                maximumFractionDigits: 1,
+            });
+
+            const renderMetrics = () => {
+                const region = regionSelect?.value || '';
+                const metrics = metricsByRegion[region] || metricsByRegion[''] || {};
+
+                metricNodes.forEach((node) => {
+                    const key = node.dataset.sourceMetricValue;
+                    const rawValue = metrics[key] ?? 0;
+
+                    if (key === 'completion_percent') {
+                        node.textContent = `${percentFormatter.format(Number(rawValue) || 0)}%`;
+                        return;
+                    }
+
+                    node.textContent = integerFormatter.format(Number(rawValue) || 0);
+                });
+            };
+
+            regionSelect?.addEventListener('change', renderMetrics);
+            renderMetrics();
+        })();
+    </script>
     <script>
         (() => {
             const countryInput = document.getElementById('tracked-country-filter');
