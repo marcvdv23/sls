@@ -50,15 +50,17 @@
         .source-url-edit { width:34px; height:30px; min-height:30px; padding:0; border-radius:6px; font-size:.76rem; }
         .source-url-modal[hidden] { display:none; }
         .source-url-modal { position:fixed; inset:0; z-index:10000; display:flex; align-items:center; justify-content:center; padding:24px; background:rgba(15, 23, 42, .46); overflow:auto; }
-        .source-url-dialog { position:relative; z-index:10001; width:min(640px, 100%); max-height:calc(100vh - 48px); overflow:auto; border-radius:8px; border:1px solid var(--border-subtle); background:var(--bg-primary); box-shadow:0 24px 70px rgba(15, 23, 42, .28); }
+        .source-url-dialog { position:relative; z-index:10001; width:min(560px, 100%); max-height:calc(100vh - 48px); overflow:auto; border-radius:8px; border:1px solid var(--border-subtle); background:var(--bg-primary); box-shadow:0 24px 70px rgba(15, 23, 42, .28); }
         @media (max-height: 720px) {
             .source-url-modal { align-items:flex-start; }
         }
-        .source-url-dialog header { display:flex; justify-content:space-between; gap:12px; padding:14px 16px; border-bottom:1px solid var(--border-subtle); }
+        .source-url-dialog header { display:flex; justify-content:space-between; gap:12px; padding:12px 14px; border-bottom:1px solid var(--border-subtle); }
         .source-url-dialog h3 { margin:0; font-size:1rem; }
-        .source-url-dialog form { display:grid; gap:12px; padding:16px; }
-        .source-url-dialog label { display:grid; gap:5px; color:var(--text-secondary); font-size:.78rem; font-weight:800; text-transform:uppercase; }
-        .source-url-dialog label.checkbox-field { display:flex; flex-direction:row; align-items:center; gap:8px; text-transform:none; letter-spacing:0; color:var(--text-primary); }
+        .source-url-dialog form { display:grid; gap:9px; padding:14px; }
+        .source-url-field { display:grid; gap:5px; }
+        .source-url-field .muted { font-size:.74rem; line-height:1.35; }
+        .source-url-field-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; color:var(--text-secondary); font-size:.78rem; font-weight:800; text-transform:uppercase; }
+        .source-url-dialog label.checkbox-field { display:flex; flex-direction:row; align-items:center; gap:7px; text-transform:none; letter-spacing:0; color:var(--text-primary); font-size:.78rem; font-weight:800; white-space:nowrap; }
         .source-url-dialog label.checkbox-field input { width:auto; }
         .source-url-dialog input,
         .source-url-dialog select { width:100%; box-sizing:border-box; }
@@ -305,40 +307,48 @@
                 <input type="hidden" name="source_category">
                 <input type="hidden" name="source_label">
                 <input type="hidden" name="product_id" value="{{ optional($products->first())->id }}">
-                <label>
-                    Organization name
+                <div class="source-url-field">
+                    <div class="source-url-field-heading">
+                        <span>Organization name</span>
+                        <label class="checkbox-field">
+                            <input type="checkbox" name="organization_nonexistent" value="1">
+                            Confirmed non-existence
+                        </label>
+                    </div>
                     <input type="text" name="organization_name" list="source-url-suggestions" placeholder="Official organization name" autocomplete="off">
                     <span class="muted">Start typing to reuse an existing unassigned organization for this country, or enter a new official name.</span>
-                </label>
-                <label class="checkbox-field">
-                    <input type="checkbox" name="organization_nonexistent" value="1">
-                    Confirmed non-existence of this organization
-                </label>
+                </div>
                 <datalist id="source-url-suggestions"></datalist>
-                <label>
-                    General
+                <div class="source-url-field">
+                    <div class="source-url-field-heading">
+                        <span>General</span>
+                        <label class="checkbox-field">
+                            <input type="checkbox" name="general_url_nonexistent" value="1">
+                            Confirmed none exists
+                        </label>
+                    </div>
                     <input type="url" name="general_url" placeholder="https://example.gov">
-                </label>
-                <label class="checkbox-field">
-                    <input type="checkbox" name="general_url_nonexistent" value="1">
-                    Confirmed no general URL exists
-                </label>
-                <label>
-                    Press
+                </div>
+                <div class="source-url-field">
+                    <div class="source-url-field-heading">
+                        <span>Press</span>
+                        <label class="checkbox-field">
+                            <input type="checkbox" name="press_url_nonexistent" value="1">
+                            Confirmed none exists
+                        </label>
+                    </div>
                     <input type="url" name="press_url" placeholder="https://example.gov/news">
-                </label>
-                <label class="checkbox-field">
-                    <input type="checkbox" name="press_url_nonexistent" value="1">
-                    Confirmed no press URL exists
-                </label>
-                <label>
-                    Tenders
+                </div>
+                <div class="source-url-field">
+                    <div class="source-url-field-heading">
+                        <span>Tenders</span>
+                        <label class="checkbox-field">
+                            <input type="checkbox" name="tenders_url_nonexistent" value="1">
+                            Confirmed none exists
+                        </label>
+                    </div>
                     <input type="url" name="tenders_url" placeholder="https://example.gov/procurement">
-                </label>
-                <label class="checkbox-field">
-                    <input type="checkbox" name="tenders_url_nonexistent" value="1">
-                    Confirmed no procurement URL exists
-                </label>
+                </div>
                 <div class="toolbar" style="justify-content:space-between;">
                     <button class="secondary tiny source-url-reset" type="button" id="source-url-reset">Reset slot</button>
                     <span class="form-status" id="source-url-status"></span>
