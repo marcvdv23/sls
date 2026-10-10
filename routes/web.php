@@ -63,6 +63,7 @@ use App\Services\OpportunityEmailDraftService;
 use App\Services\IntelligenceSourceCheckerService;
 use App\Services\JournalistDiscoveryService;
 use App\Services\SourceContactExtractionService;
+use App\Services\SourceMaintenanceExportService;
 use App\Services\SourceMaintenanceImportService;
 use App\Services\SocialSecurityAdminDocumentService;
 use App\Services\SerpApiSearchService;
@@ -713,6 +714,39 @@ Route::post('/sls/source-maintenance/import', function (Request $request, Source
             'message_count' => count($result['messages']),
         ]);
 })->name('sls.sourceMaintenance.import');
+
+Route::get('/sls/source-maintenance/export', function (Request $request, SourceMaintenanceExportService $exporter) use ($defaultSlsProduct, $ensureSourceMaintenanceAccess) {
+    $ensureSourceMaintenanceAccess('view');
+
+    $data = $request->validate([
+        'product_id' => ['nullable', 'integer', 'exists:products,id'],
+        'mode' => ['nullable', Rule::in(['missing', 'all'])],
+    ]);
+
+    $product = filled($data['product_id'] ?? null)
+        ? Product::query()->find((int) $data['product_id'])
+        : $defaultSlsProduct();
+
+    abort_unless($product, 404);
+
+    $mode = (string) ($data['mode'] ?? 'missing');
+    $mode = $mode === 'all' ? 'all' : 'missing';
+    $export = $exporter->rows($product, $mode);
+    $filename = 'source-maintenance-' . Str::slug($product->name ?: $product->code ?: 'product') . '-' . $mode . '-' . now()->format('Ymd-His') . '.csv';
+
+    return response()->streamDownload(function () use ($export) {
+        $handle = fopen('php://output', 'wb');
+        fputcsv($handle, $export['headers']);
+
+        foreach ($export['rows'] as $row) {
+            fputcsv($handle, $row);
+        }
+
+        fclose($handle);
+    }, $filename, [
+        'Content-Type' => 'text/csv; charset=UTF-8',
+    ]);
+})->name('sls.sourceMaintenance.export');
 
 Route::post('/sls/intelligence/map-items/{update}/opened', function (CountryUpdate $update) {
     abort_if($update->review_status === 'rejected', 404);

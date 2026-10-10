@@ -26,9 +26,12 @@
         .source-trend-caption { display:flex; justify-content:space-between; gap:12px; color:var(--text-secondary); font-size:.78rem; }
         .source-import-panel { display:grid; gap:10px; margin-top:12px; padding:12px; border:1px solid var(--border-subtle); border-radius:8px; background:var(--bg-secondary); }
         .source-import-form { display:grid; grid-template-columns:minmax(230px, 1fr) minmax(150px, 190px) auto auto auto; gap:8px; align-items:end; }
+        .source-export-form { display:grid; grid-template-columns:minmax(150px, 190px) minmax(150px, 190px) auto; gap:8px; align-items:end; }
         .source-import-form label { display:grid; gap:4px; color:var(--text-secondary); font-size:.7rem; font-weight:800; letter-spacing:.05em; text-transform:uppercase; }
+        .source-export-form label { display:grid; gap:4px; color:var(--text-secondary); font-size:.7rem; font-weight:800; letter-spacing:.05em; text-transform:uppercase; }
         .source-import-form input,
-        .source-import-form select { min-height:34px; border:1px solid var(--border-subtle); border-radius:7px; background:var(--bg-primary); color:var(--text-primary); font:inherit; font-size:.84rem; padding:4px 8px; }
+        .source-import-form select,
+        .source-export-form select { min-height:34px; border:1px solid var(--border-subtle); border-radius:7px; background:var(--bg-primary); color:var(--text-primary); font:inherit; font-size:.84rem; padding:4px 8px; }
         .source-import-form label.checkbox-field { display:flex; flex-direction:row; align-items:center; gap:7px; min-height:34px; padding:0 4px; text-transform:none; letter-spacing:0; font-size:.84rem; color:var(--text-primary); }
         .source-import-form label.checkbox-field input { width:auto; min-height:0; }
         .source-import-result { display:grid; gap:4px; margin-top:4px; color:var(--text-secondary); font-size:.78rem; }
@@ -140,6 +143,32 @@
                         <span class="muted">Progress tracking starts after the daily snapshot runs.</span>
                     @endforelse
                 </div>
+            </div>
+
+            <div class="source-import-panel">
+                <div>
+                    <p class="eyebrow">CSV Export</p>
+                    <h3 style="margin:0;">Download source rows for research</h3>
+                    <p class="muted">Exports use the same core columns accepted by the importer, so researchers can update the CSV and upload it back here.</p>
+                </div>
+                <form class="source-export-form" method="get" action="{{ route('sls.sourceMaintenance.export') }}">
+                    <label>
+                        Product
+                        <select name="product_id">
+                            @foreach ($products as $product)
+                                <option value="{{ $product->id }}" @selected(optional($defaultSourceProduct ?? null)->id === $product->id)>{{ $product->name }}</option>
+                            @endforeach
+                        </select>
+                    </label>
+                    <label>
+                        Export rows
+                        <select name="mode">
+                            <option value="missing">Missing only</option>
+                            <option value="all">All records</option>
+                        </select>
+                    </label>
+                    <button class="button tiny" type="submit">Export CSV</button>
+                </form>
             </div>
 
             <div class="source-import-panel">
