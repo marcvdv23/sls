@@ -25,8 +25,11 @@
         .source-col { width:36%; }
         .url-col { width:38%; }
         .source-name-list { display:grid; gap:4px; }
-        .source-row { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:8px; align-items:start; padding:4px 0; border-bottom:1px solid var(--border-subtle); }
-        .source-row:last-child { border-bottom:0; }
+        .source-slot-grid-cell { padding:0; }
+        .source-slot-grid { display:grid; }
+        .source-slot-row { display:grid; grid-template-columns:minmax(0, 1.05fr) minmax(0, .95fr); gap:20px; padding:7px 9px; border-bottom:1px solid var(--border-subtle); }
+        .source-slot-row:last-child { border-bottom:0; }
+        .source-row { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:8px; align-items:start; }
         .source-title { font-weight:800; overflow-wrap:anywhere; }
         .source-title.missing { color:var(--accent-danger); }
         .source-slot { display:block; color:var(--text-secondary); font-size:.72rem; font-weight:800; letter-spacing:.05em; text-transform:uppercase; }
@@ -34,7 +37,7 @@
         .country-progress { display:grid; gap:4px; margin-top:8px; color:var(--text-secondary); font-size:.78rem; }
         .unlinked-source-list { display:grid; gap:3px; margin-top:10px; padding-top:8px; border-top:1px solid var(--border-subtle); color:var(--text-secondary); font-size:.78rem; }
         .unlinked-source-list strong { color:var(--text-primary); }
-        .source-urls { display:grid; gap:3px; color:var(--text-secondary); font-size:.78rem; overflow-wrap:anywhere; }
+        .source-urls { display:grid; align-content:start; gap:3px; color:var(--text-secondary); font-size:.78rem; overflow-wrap:anywhere; }
         .source-urls a { color:var(--accent-primary); font-weight:700; text-decoration:none; }
         .source-urls a:hover { text-decoration:underline; }
         .source-url-edit { width:34px; height:30px; min-height:30px; padding:0; border-radius:6px; font-size:.76rem; }
@@ -126,39 +129,60 @@
                                 </td>
                                 <td class="mono iso-col">{{ strtoupper($country->iso_code ?? 'n/a') }}</td>
                                 <td class="region-col">{{ $country->region }}</td>
-                                <td class="source-col">
+                                <td class="source-slot-grid-cell" colspan="2">
                                     @if (($country->social_security_administration_links ?? collect())->isNotEmpty())
-                                        <div class="source-name-list">
+                                        <div class="source-slot-grid">
                                             @foreach (($country->social_security_administration_links ?? collect()) as $admin)
-                                                <div class="source-row">
-                                                    <span>
-                                                        <span class="source-slot">{{ $admin['slot_label'] ?? 'Source organization' }}</span>
-                                                        @if (filled($admin['name'] ?? null))
-                                                            <span class="source-title">{{ $admin['name'] }}</span>
+                                                <div class="source-slot-row">
+                                                    <div class="source-row">
+                                                        <span>
+                                                            <span class="source-slot">{{ $admin['slot_label'] ?? 'Source organization' }}</span>
+                                                            @if (filled($admin['name'] ?? null))
+                                                                <span class="source-title">{{ $admin['name'] }}</span>
+                                                            @else
+                                                                <span class="source-title missing">Missing - add organization name</span>
+                                                            @endif
+                                                            @if (filled($admin['description'] ?? null))
+                                                                <span class="source-description">{{ $admin['description'] }}</span>
+                                                            @endif
+                                                        </span>
+                                                        <button
+                                                            class="source-url-edit secondary"
+                                                            type="button"
+                                                            title="Edit URLs"
+                                                            aria-label="Edit URLs for {{ $admin['slot_label'] ?? $admin['name'] }}"
+                                                            data-country-iso="{{ strtoupper($country->iso_code ?? '') }}"
+                                                            data-country-name="{{ $country->name }}"
+                                                            data-region="{{ $country->region }}"
+                                                            data-organization-name="{{ $admin['name'] ?? '' }}"
+                                                            data-source-category="{{ $admin['source_category'] ?? 'social_security_administration' }}"
+                                                            data-source-label="{{ $admin['slot_label'] ?? $admin['name'] }}"
+                                                            data-source-suggestions='@json(($country->unlinked_source_organization_names ?? collect())->values())'
+                                                            data-product-id="{{ $admin['product_id'] ?? optional($products->first())->id }}"
+                                                            data-general-url="{{ $admin['general_url'] ?? '' }}"
+                                                            data-press-url="{{ $admin['press_url'] ?? '' }}"
+                                                            data-tenders-url="{{ $admin['tenders_url'] ?? '' }}"
+                                                        >Edit</button>
+                                                    </div>
+                                                    <div class="source-urls">
+                                                        <strong>{{ $admin['slot_label'] ?? $admin['name'] }}</strong>
+                                                        @if (blank($admin['name'] ?? null))
+                                                            <span>Organization: not identified</span>
+                                                        @elseif (($admin['slot_label'] ?? null) && ($admin['name'] ?? null) && $admin['slot_label'] !== $admin['name'])
+                                                            <span>Organization: {{ $admin['name'] }}</span>
+                                                        @endif
+                                                        @if (filled($admin['general_url'] ?? null))
+                                                            <span>General: <a href="{{ $admin['general_url'] }}" target="_blank" rel="noreferrer">{{ $admin['general_url'] }}</a></span>
                                                         @else
-                                                            <span class="source-title missing">Missing - add organization name</span>
+                                                            <span>General: not set</span>
                                                         @endif
-                                                        @if (filled($admin['description'] ?? null))
-                                                            <span class="source-description">{{ $admin['description'] }}</span>
+                                                        @if (filled($admin['press_url'] ?? null))
+                                                            <span>Press: <a href="{{ $admin['press_url'] }}" target="_blank" rel="noreferrer">{{ $admin['press_url'] }}</a></span>
                                                         @endif
-                                                    </span>
-                                                    <button
-                                                        class="source-url-edit secondary"
-                                                        type="button"
-                                                        title="Edit URLs"
-                                                        aria-label="Edit URLs for {{ $admin['slot_label'] ?? $admin['name'] }}"
-                                                        data-country-iso="{{ strtoupper($country->iso_code ?? '') }}"
-                                                        data-country-name="{{ $country->name }}"
-                                                        data-region="{{ $country->region }}"
-                                                        data-organization-name="{{ $admin['name'] ?? '' }}"
-                                                        data-source-category="{{ $admin['source_category'] ?? 'social_security_administration' }}"
-                                                        data-source-label="{{ $admin['slot_label'] ?? $admin['name'] }}"
-                                                        data-source-suggestions='@json(($country->unlinked_source_organization_names ?? collect())->values())'
-                                                        data-product-id="{{ $admin['product_id'] ?? optional($products->first())->id }}"
-                                                        data-general-url="{{ $admin['general_url'] ?? '' }}"
-                                                        data-press-url="{{ $admin['press_url'] ?? '' }}"
-                                                        data-tenders-url="{{ $admin['tenders_url'] ?? '' }}"
-                                                    >Edit</button>
+                                                        @if (filled($admin['tenders_url'] ?? null))
+                                                            <span>Tenders: <a href="{{ $admin['tenders_url'] }}" target="_blank" rel="noreferrer">{{ $admin['tenders_url'] }}</a></span>
+                                                        @endif
+                                                    </div>
                                                 </div>
                                             @endforeach
                                         </div>
@@ -173,31 +197,6 @@
                                     @else
                                         <span class="missing-source">Missing official source</span>
                                     @endif
-                                </td>
-                                <td class="url-col">
-                                    <div class="source-name-list">
-                                        @foreach (($country->social_security_administration_links ?? collect()) as $admin)
-                                            <div class="source-urls">
-                                                <strong>{{ $admin['slot_label'] ?? $admin['name'] }}</strong>
-                                                @if (blank($admin['name'] ?? null))
-                                                    <span>Organization: not identified</span>
-                                                @elseif (($admin['slot_label'] ?? null) && ($admin['name'] ?? null) && $admin['slot_label'] !== $admin['name'])
-                                                    <span>Organization: {{ $admin['name'] }}</span>
-                                                @endif
-                                                @if (filled($admin['general_url'] ?? null))
-                                                    <span>General: <a href="{{ $admin['general_url'] }}" target="_blank" rel="noreferrer">{{ $admin['general_url'] }}</a></span>
-                                                @else
-                                                    <span>General: not set</span>
-                                                @endif
-                                                @if (filled($admin['press_url'] ?? null))
-                                                    <span>Press: <a href="{{ $admin['press_url'] }}" target="_blank" rel="noreferrer">{{ $admin['press_url'] }}</a></span>
-                                                @endif
-                                                @if (filled($admin['tenders_url'] ?? null))
-                                                    <span>Tenders: <a href="{{ $admin['tenders_url'] }}" target="_blank" rel="noreferrer">{{ $admin['tenders_url'] }}</a></span>
-                                                @endif
-                                            </div>
-                                        @endforeach
-                                    </div>
                                 </td>
                             </tr>
                         @endforeach
