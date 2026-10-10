@@ -63,6 +63,12 @@ class SourceMaintenanceMetrics
         $missingUrlCount = max(0, $targetUrlCount - $urlCount - $confirmedNonexistentUrlCount);
         $completionBasis = $sourceSlotCount + $targetUrlCount;
         $completionValue = $handledOrganizationCount + $urlCount + $confirmedNonexistentUrlCount;
+        $organizationCompletionPercent = $sourceSlotCount > 0
+            ? round(($handledOrganizationCount / $sourceSlotCount) * 100, 2)
+            : 0.0;
+        $urlCompletionPercent = $targetUrlCount > 0
+            ? round((($urlCount + $confirmedNonexistentUrlCount) / $targetUrlCount) * 100, 2)
+            : 0.0;
 
         return [
             'country_count' => $countries->count(),
@@ -76,6 +82,10 @@ class SourceMaintenanceMetrics
             'target_url_count' => $targetUrlCount,
             'missing_url_count' => $missingUrlCount,
             'complete_source_slot_count' => $completeSourceSlotCount,
+            'organization_completion_percent' => $organizationCompletionPercent,
+            'url_completion_percent' => $urlCompletionPercent,
+            'completion_field_count' => $completionValue,
+            'completion_target_field_count' => $completionBasis,
             'completion_percent' => $completionBasis > 0 ? round(($completionValue / $completionBasis) * 100, 2) : 0.0,
         ];
     }

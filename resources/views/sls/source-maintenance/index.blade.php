@@ -137,8 +137,8 @@
                     <span>organizations confirmed non-existent</span>
                 </div>
                 <div class="source-metric-card">
-                    <strong data-source-metric-value="completion_percent">{{ number_format((float) ($sourceMetrics['completion_percent'] ?? 0), 1) }}%</strong>
-                    <span>complete toward <span data-source-metric-value="source_slot_count">{{ number_format((int) ($sourceMetrics['source_slot_count'] ?? 0)) }}</span> organization slots</span>
+                    <strong data-source-metric-value="organization_completion_percent">{{ number_format((float) ($sourceMetrics['organization_completion_percent'] ?? 0), 1) }}%</strong>
+                    <span>organization names complete toward <span data-source-metric-value="source_slot_count">{{ number_format((int) ($sourceMetrics['source_slot_count'] ?? 0)) }}</span> slots</span>
                 </div>
             </div>
 
@@ -472,7 +472,7 @@
                     const key = node.dataset.sourceMetricValue;
                     const rawValue = metrics[key] ?? 0;
 
-                    if (key === 'completion_percent') {
+                    if (key === 'completion_percent' || key === 'organization_completion_percent' || key === 'url_completion_percent') {
                         node.textContent = `${percentFormatter.format(Number(rawValue) || 0)}%`;
                         return;
                     }
