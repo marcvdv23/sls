@@ -9,6 +9,7 @@ use App\Services\EuLegislationMonitorService;
 use App\Services\KnowledgeChunkClassifier;
 use App\Services\IntelligenceSourceCheckerService;
 use App\Services\IloSocialProtectionProjectDiscoveryService;
+use App\Services\OutOfOfficeMailboxService;
 use App\Services\SourceContactExtractionService;
 use App\Services\SerpApiSourceDiscoveryService;
 use App\Services\SerpApiSearchService;
@@ -53,6 +54,51 @@ use Carbon\Carbon;
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
+
+Artisan::command('sls:test-oof-mailbox', function (OutOfOfficeMailboxService $mailbox) {
+    try {
+        $result = $mailbox->testConnection();
+    } catch (Throwable $exception) {
+        $this->error('Out-of-office mailbox test failed: ' . $exception->getMessage());
+
+        return 1;
+    }
+
+    $this->info('Out-of-office mailbox connection OK.');
+    $this->line('Mailbox: ' . $result['mailbox']);
+    $this->line('Folder: ' . $result['folder']);
+
+    return 0;
+})->purpose('Test the Gmail/IMAP mailbox used for out-of-office referral capture');
+
+Artisan::command('sls:process-oof-mailbox {--limit=25 : Maximum messages to inspect} {--all : Inspect all messages instead of only unread messages} {--dry-run : Detect and extract without saving} {--mark-seen : Mark processed messages as seen}', function (OutOfOfficeMailboxService $mailbox) {
+    try {
+        $result = $mailbox->process(
+            limit: (int) $this->option('limit'),
+            all: (bool) $this->option('all'),
+            dryRun: (bool) $this->option('dry-run'),
+            markSeen: (bool) $this->option('mark-seen'),
+        );
+    } catch (Throwable $exception) {
+        $this->error('Out-of-office mailbox processing failed: ' . $exception->getMessage());
+
+        return 1;
+    }
+
+    $this->info('Out-of-office mailbox processing completed.');
+    $this->line('Mailbox: ' . $result['mailbox']);
+    $this->line('Messages checked: ' . $result['checked']);
+    $this->line('Out-of-office replies detected: ' . $result['oof_detected']);
+    $this->line('Created: ' . $result['created']);
+    $this->line('Updated: ' . $result['updated']);
+    $this->line('Skipped: ' . $result['skipped']);
+
+    foreach ($result['errors'] as $error) {
+        $this->warn($error);
+    }
+
+    return empty($result['errors']) ? 0 : 1;
+})->purpose('Read Gmail out-of-office replies and capture referred contacts for review');
 
 Artisan::command('sls:source-maintenance-missing {--workspace=} {--product=SSAS} {--mode=missing_core} {--output=}', function () {
     $workspaceKey = trim((string) ($this->option('workspace') ?? ''));
