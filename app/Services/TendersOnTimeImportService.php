@@ -109,6 +109,7 @@ class TendersOnTimeImportService
 
     private function normalizeTender(array $item, string $postingDate): array
     {
+        $requestedPostingDate = $postingDate;
         $externalId = $this->cleanText($item['tot_id'] ?? $item['id'] ?? $item['tender_id'] ?? '');
         $title = $this->cleanText($item['title'] ?? $item['tender_title'] ?? '');
         $description = $this->cleanText($item['description'] ?? $item['tender_description'] ?? '');
@@ -122,7 +123,8 @@ class TendersOnTimeImportService
         $countryIso = strtoupper($this->cleanText($item['country_iso'] ?? ''));
         $countryName = $this->cleanText($item['purchaser_country'] ?? $item['country'] ?? '');
         $closingDate = $this->dateOrNull($item['closing_date'] ?? null);
-        $postingDate = $this->dateOrNull($item['posting_date'] ?? null) ?: $postingDate;
+        $apiPostingDate = $this->dateOrNull($item['posting_date'] ?? null);
+        $postingDate = $requestedPostingDate;
         $value = $this->cleanText($item['tender_value'] ?? '');
         $currency = strtoupper($this->cleanText($item['currency'] ?? ''));
         $purchaserName = $this->cleanText($item['purchaser_name'] ?? '');
@@ -157,6 +159,7 @@ class TendersOnTimeImportService
             'document_type' => $documentType,
             'bidding_type' => $biddingType,
             'posting_date' => $postingDate,
+            'api_posting_date' => $apiPostingDate,
             'closing_date' => $closingDate,
             'purchaser_name' => $purchaserName,
             'purchaser_country' => $countryName,
@@ -438,6 +441,22 @@ class TendersOnTimeImportService
             ->orderByRaw("CASE WHEN review_status = 'rejected' THEN 0 WHEN map_processed_at IS NOT NULL THEN 1 WHEN archive_read_at IS NOT NULL THEN 2 ELSE 3 END")
             ->orderBy('id')
             ->first();
+
+        $candidateKeys = CountryUpdateDedupeRules::semanticDuplicateKeys($item + ['country_id' => $country->id]);
+
+        if (! $existing && $candidateKeys !== []) {
+            $existing = CountryUpdate::query()
+                ->where('country_id', $country->id)
+                ->where('review_status', '!=', 'rejected')
+                ->where(function ($query) {
+                    $query->where('source_name', 'like', '%TendersOnTime%')
+                        ->orWhere('summary', 'like', '%[TendersOnTime JSON]%');
+                })
+                ->orderByRaw("CASE WHEN map_processed_at IS NOT NULL THEN 0 WHEN archive_read_at IS NOT NULL THEN 1 ELSE 2 END")
+                ->orderBy('id')
+                ->get()
+                ->first(fn (CountryUpdate $update) => array_intersect($candidateKeys, CountryUpdateDedupeRules::semanticDuplicateKeys($update)) !== []);
+        }
 
         $payload = [
             'country_id' => $country->id,

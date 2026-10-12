@@ -126,7 +126,59 @@ class CountryUpdateDedupeRules
             ]);
         }
 
+        $tenderFamilyKey = self::tenderFamilyKey($update);
+        if ($tenderFamilyKey !== '') {
+            $keys[] = implode('|', [
+                'tendersontime-family',
+                $countryId,
+                $tenderFamilyKey,
+            ]);
+        }
+
         return array_values(array_unique($keys));
+    }
+
+    public static function tenderFamilyKey(CountryUpdate|array $update): string
+    {
+        if (! self::isTendersOnTime($update)) {
+            return '';
+        }
+
+        $titleKey = self::semanticTitleKey($update);
+        if (Str::length($titleKey) < 45) {
+            return '';
+        }
+
+        $base = $titleKey;
+
+        foreach ([
+            '/\s+(?:in|for|at|under|across)\s+[a-z][a-z0-9 ]+$/',
+            '/\s+(?:operation circles?|division|district|province|region|state|zone|lot|package)\s+[a-z0-9 ]+$/',
+        ] as $pattern) {
+            $candidate = preg_replace($pattern, '', $base) ?? $base;
+            if (Str::length($candidate) >= 45) {
+                $base = $candidate;
+            }
+        }
+
+        $hasSystemSignal = preg_match('/\b(system|software|platform|application|solution|framework|portal|module|database|mis|erp|hris|hrms|hcm)\b/', $base) === 1
+            || Str::contains($base, [
+                'performance management',
+                'asset performance',
+                'benefits administration',
+                'pension administration',
+                'pension payroll',
+                'human resources information',
+                'enterprise resource planning',
+                'budget management',
+                'time and attendance',
+            ]);
+
+        if (! $hasSystemSignal || Str::length($base) < 45) {
+            return '';
+        }
+
+        return trim($base);
     }
 
     public static function reviewDuplicateKey(CountryUpdate $update): string
@@ -149,6 +201,18 @@ class CountryUpdateDedupeRules
         }
 
         return trim((string) $value);
+    }
+
+    private static function isTendersOnTime(CountryUpdate|array $update): bool
+    {
+        $sourceText = Str::lower(implode(' ', [
+            self::field($update, 'source_name'),
+            self::field($update, 'source_url'),
+            self::field($update, 'summary'),
+            self::field($update, 'summary_english'),
+        ]));
+
+        return Str::contains($sourceText, ['tendersontime', 'tenders on time']);
     }
 
     private static function field(CountryUpdate|array $update, string $key): string

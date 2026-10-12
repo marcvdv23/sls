@@ -2355,6 +2355,63 @@ Artisan::command('sls:cleanup-title-duplicates {--apply : Mark older active dupl
     return 0;
 })->purpose('Reject older active duplicates by canonical source URL or normalized story title/date/country');
 
+Artisan::command('sls:repair-tendersontime-publication-dates {--apply : Update future TendersOnTime publication dates to their retrieval date}', function () {
+    $today = now()->toDateString();
+    $candidates = CountryUpdate::query()
+        ->with('country:id,name,iso_code')
+        ->where('review_status', '!=', 'rejected')
+        ->whereNotNull('publication_date')
+        ->whereDate('publication_date', '>', $today)
+        ->where(function ($query) {
+            $query->where('source_name', 'like', '%TendersOnTime%')
+                ->orWhere('summary', 'like', '%[TendersOnTime JSON]%');
+        })
+        ->orderByDesc('publication_date')
+        ->orderBy('id')
+        ->get();
+
+    $this->info('Future-dated active TendersOnTime rows found: ' . $candidates->count());
+
+    $candidates
+        ->take(40)
+        ->each(function (CountryUpdate $update): void {
+            $replacementDate = ($update->retrieved_at ?: $update->created_at ?: now())->toDateString();
+            $this->line(sprintf(
+                '#%d | %s | published %s -> %s | retrieved %s | %s',
+                $update->id,
+                trim(($update->country?->name ?? 'Unknown') . ' (' . ($update->country?->iso_code ?? '?') . ')'),
+                $update->publication_date?->toDateString() ?? 'no date',
+                $replacementDate,
+                $update->retrieved_at?->toDateTimeString() ?? 'no retrieval date',
+                Str::limit((string) ($update->title_english ?: $update->title ?: $update->title_original), 120)
+            ));
+        });
+
+    if ($candidates->isEmpty()) {
+        return 0;
+    }
+
+    if (! $this->option('apply')) {
+        $this->warn('Dry run only. Re-run with --apply to repair future TendersOnTime publication dates.');
+
+        return 0;
+    }
+
+    $updated = 0;
+
+    foreach ($candidates as $update) {
+        $replacementDate = ($update->retrieved_at ?: $update->created_at ?: now())->toDateString();
+        $update->forceFill([
+            'publication_date' => $replacementDate,
+        ])->save();
+        $updated++;
+    }
+
+    $this->info('Repaired publication dates: ' . $updated);
+
+    return 0;
+})->purpose('Repair TendersOnTime rows whose publication date is a future deadline/date');
+
 Artisan::command('sls:repair-news-aggregator-urls {--id= : Repair one country update id} {--limit=100 : Maximum rows to inspect} {--apply : Save repaired URLs and titles}', function () {
     $isGoogleNewsRssArticleUrl = function (string $url): bool {
         $host = Str::lower((string) parse_url($url, PHP_URL_HOST));
