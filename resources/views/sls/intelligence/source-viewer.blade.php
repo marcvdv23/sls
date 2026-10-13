@@ -46,20 +46,38 @@
         .compact-row { display: flex; gap: 7px; align-items: center; min-height: 42px; }
         .compact-row > * { min-width: 0; }
         .compact-row select, .compact-row input { flex: 1; }
-        .reminder-row { align-items: stretch; }
-        .reminder-preset-list { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; max-width: 10rem; }
-        .reminder-preset {
+        .reminder-row { align-items: center; }
+        .reminder-date-box {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) max-content;
+            align-items: center;
+            min-width: 0;
+            flex: 1;
             border: 1px solid var(--border-subtle);
-            border-radius: 7px;
+            border-radius: 8px;
             background: var(--bg-primary);
+            overflow: hidden;
+        }
+        .source-tool .reminder-date-box input {
+            min-width: 0;
+            border: 0;
+            border-radius: 0;
+            background: transparent;
+            padding: 9px 8px 9px 10px;
+        }
+        .reminder-preset-list { display: grid; gap: 1px; align-items: center; padding: 4px 7px 4px 0; }
+        .reminder-preset {
+            border: 0;
+            background: transparent;
             color: var(--text-primary);
             cursor: pointer;
-            font-size: 11px;
-            font-weight: 800;
-            line-height: 1;
-            padding: 5px 7px;
+            font-size: 10px;
+            font-weight: 700;
+            line-height: 1.05;
+            padding: 0 2px;
+            text-align: left;
         }
-        .reminder-preset:hover { border-color: var(--accent); color: var(--accent); }
+        .reminder-preset:hover { color: var(--accent); text-decoration: underline; }
         .source-button-link { border: 0; background: transparent; color: var(--accent); cursor: pointer; font-weight: 900; padding: 0; text-align: left; }
         .source-button-link.danger { color: #dc2626; }
         .source-note { padding: 10px 14px; color: var(--text-secondary); }
@@ -283,12 +301,14 @@
                     <input type="hidden" name="return_to" value="{{ url()->full() }}">
                     <label for="reminder_due_at">Schedule follow-up</label>
                     <div class="compact-row reminder-row">
-                        <input id="reminder_due_at" type="datetime-local" name="reminder_due_at" value="{{ $reminderDueAtValue }}">
-                        <div class="reminder-preset-list" aria-label="Follow-up date shortcuts">
-                            <button class="reminder-preset" type="button" data-reminder-preset="today">Today</button>
-                            <button class="reminder-preset" type="button" data-reminder-preset="tomorrow">Tomorrow</button>
-                            <button class="reminder-preset" type="button" data-reminder-preset="next_week">Next Week</button>
-                            <button class="reminder-preset" type="button" data-reminder-preset="next_month">Next Month</button>
+                        <div class="reminder-date-box">
+                            <input id="reminder_due_at" type="datetime-local" name="reminder_due_at" value="{{ $reminderDueAtValue }}">
+                            <div class="reminder-preset-list" aria-label="Follow-up date shortcuts">
+                                <button class="reminder-preset" type="button" data-reminder-preset="today">Today</button>
+                                <button class="reminder-preset" type="button" data-reminder-preset="tomorrow">Tomorrow</button>
+                                <button class="reminder-preset" type="button" data-reminder-preset="next_week">Next Week</button>
+                                <button class="reminder-preset" type="button" data-reminder-preset="next_month">Next Month</button>
+                            </div>
                         </div>
                         <button class="source-button-link" type="submit">Save</button>
                     </div>
