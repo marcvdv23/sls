@@ -46,6 +46,20 @@
         .compact-row { display: flex; gap: 7px; align-items: center; min-height: 42px; }
         .compact-row > * { min-width: 0; }
         .compact-row select, .compact-row input { flex: 1; }
+        .reminder-row { align-items: stretch; }
+        .reminder-preset-list { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; max-width: 10rem; }
+        .reminder-preset {
+            border: 1px solid var(--border-subtle);
+            border-radius: 7px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 800;
+            line-height: 1;
+            padding: 5px 7px;
+        }
+        .reminder-preset:hover { border-color: var(--accent); color: var(--accent); }
         .source-button-link { border: 0; background: transparent; color: var(--accent); cursor: pointer; font-weight: 900; padding: 0; text-align: left; }
         .source-button-link.danger { color: #dc2626; }
         .source-note { padding: 10px 14px; color: var(--text-secondary); }
@@ -114,6 +128,14 @@
             $decodedMetadata = json_decode($metadataJson, true);
             $tendersOnTimeMeta = is_array($decodedMetadata) ? $decodedMetadata : null;
         }
+        $austinTz = 'America/Chicago';
+        $defaultReminderDueAt = now($austinTz)->addDay()->setTime(9, 0)->format('Y-m-d\TH:i');
+        $reminderDueAtValue = old(
+            'reminder_due_at',
+            $update->reminder_due_at
+                ? $update->reminder_due_at->copy()->timezone($austinTz)->format('Y-m-d\TH:i')
+                : $defaultReminderDueAt
+        );
     @endphp
 
     <div class="source-viewer-page">
@@ -260,8 +282,14 @@
                     @csrf
                     <input type="hidden" name="return_to" value="{{ url()->full() }}">
                     <label for="reminder_due_at">Schedule follow-up</label>
-                    <div class="compact-row">
-                        <input id="reminder_due_at" type="datetime-local" name="reminder_due_at" value="{{ old('reminder_due_at', $update->reminder_due_at?->copy()->timezone('America/Chicago')->format('Y-m-d\TH:i')) }}">
+                    <div class="compact-row reminder-row">
+                        <input id="reminder_due_at" type="datetime-local" name="reminder_due_at" value="{{ $reminderDueAtValue }}">
+                        <div class="reminder-preset-list" aria-label="Follow-up date shortcuts">
+                            <button class="reminder-preset" type="button" data-reminder-preset="today">Today</button>
+                            <button class="reminder-preset" type="button" data-reminder-preset="tomorrow">Tomorrow</button>
+                            <button class="reminder-preset" type="button" data-reminder-preset="next_week">Next Week</button>
+                            <button class="reminder-preset" type="button" data-reminder-preset="next_month">Next Month</button>
+                        </div>
                         <button class="source-button-link" type="submit">Save</button>
                     </div>
                     <input id="visible_favorite_note" name="favorite_note" placeholder="Reminder note" value="{{ old('favorite_note', $update->favorite_note) }}">
@@ -319,6 +347,37 @@
         const actionReminderDueAt = document.getElementById('source-action-reminder-due-at');
         const actionFavoriteNote = document.getElementById('source-action-favorite-note');
         let orgSearchTimer = null;
+
+        function reminderDateValue(offset) {
+            const date = new Date();
+            if (offset === 'tomorrow') {
+                date.setDate(date.getDate() + 1);
+            } else if (offset === 'next_week') {
+                date.setDate(date.getDate() + 7);
+            } else if (offset === 'next_month') {
+                date.setMonth(date.getMonth() + 1);
+            }
+            date.setHours(9, 0, 0, 0);
+
+            const pad = (value) => String(value).padStart(2, '0');
+
+            return [
+                date.getFullYear(),
+                pad(date.getMonth() + 1),
+                pad(date.getDate())
+            ].join('-') + 'T' + [pad(date.getHours()), pad(date.getMinutes())].join(':');
+        }
+
+        document.querySelectorAll('[data-reminder-preset]').forEach((button) => {
+            button.addEventListener('click', () => {
+                if (!visibleReminderDueAt) {
+                    return;
+                }
+
+                visibleReminderDueAt.value = reminderDateValue(button.dataset.reminderPreset || 'tomorrow');
+                visibleReminderDueAt.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+        });
 
         sourceActionForm?.addEventListener('submit', () => {
             if (actionStatus?.value === 'follow_up') {
