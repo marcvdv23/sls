@@ -18,6 +18,7 @@ use Carbon\Carbon;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Throwable;
@@ -31,6 +32,8 @@ class CountryIntelligenceMonitor
     private array $developmentPartnerTenderCache = [];
 
     private ?Collection $countrySourceDomainsByIso = null;
+
+    private bool $samGovFailureLogged = false;
 
     public function __construct(private TitleTranslationService $translator)
     {
@@ -1128,6 +1131,11 @@ class CountryIntelligenceMonitor
         $apiKey = $this->crawlerSettingString('sam_gov_api_key', env('SAM_GOV_API_KEY', env('SAM_API_KEY', '')));
 
         if ($endpoint === '' || $apiKey === '') {
+            if (! $this->samGovFailureLogged) {
+                Log::warning('SAM.gov opportunity search skipped: endpoint or API key is missing.');
+                $this->samGovFailureLogged = true;
+            }
+
             return collect();
         }
 
@@ -1140,9 +1148,9 @@ class CountryIntelligenceMonitor
         $postedTo = now()->format('m/d/Y');
         $postedFrom = now()->subDays(120)->format('m/d/Y');
 
-        return $this->topicTenderQueries($focus)
+        return $this->topicTenderTerms($focus)
             ->take(8)
-            ->flatMap(function (string $query) use ($request, $endpoint, $apiKey, $source, $maxRecords, $postedFrom, $postedTo) {
+            ->flatMap(function (string $query) use ($request, $endpoint, $apiKey, $source, $focus, $maxRecords, $postedFrom, $postedTo) {
                 try {
                     $response = $request->get($endpoint, [
                         'api_key' => $apiKey,
@@ -1152,11 +1160,27 @@ class CountryIntelligenceMonitor
                         'limit' => min(100, max(10, $maxRecords)),
                         'offset' => 0,
                     ]);
-                } catch (Throwable) {
+                } catch (Throwable $exception) {
+                    if (! $this->samGovFailureLogged) {
+                        Log::warning('SAM.gov opportunity search request failed.', [
+                            'focus' => $focus,
+                            'error_type' => get_class($exception),
+                        ]);
+                        $this->samGovFailureLogged = true;
+                    }
+
                     return collect();
                 }
 
                 if (! $response->successful()) {
+                    if (! $this->samGovFailureLogged) {
+                        Log::warning('SAM.gov opportunity search returned an error.', [
+                            'focus' => $focus,
+                            'status' => $response->status(),
+                        ]);
+                        $this->samGovFailureLogged = true;
+                    }
+
                     return collect();
                 }
 
@@ -1194,6 +1218,13 @@ class CountryIntelligenceMonitor
 
     private function topicTenderQueries(string $focus): Collection
     {
+        return $this->topicTenderTerms($focus)
+            ->map(fn (string $term) => trim($term . ' tender procurement rfp expression of interest'))
+            ->values();
+    }
+
+    private function topicTenderTerms(string $focus): Collection
+    {
         $terms = match ($focus) {
             'hrms_tenders' => ['HRMS', 'HRIS', 'HCM', 'payroll', 'human resources management system', 'benefits administration', 'talent management', 'performance management'],
             'erms_tenders' => ['enterprise risk management', 'risk management software', 'risk management system', 'GRC software', 'governance risk compliance', 'internal audit software', 'audit management system', 'internal control system', 'compliance management software', 'operational risk management'],
@@ -1202,10 +1233,7 @@ class CountryIntelligenceMonitor
             default => ['social security', 'social insurance', 'pension administration', 'provident fund', 'social protection', 'national insurance'],
         };
 
-        return collect($terms)
-            ->map(fn (string $term) => trim($term . ' tender procurement rfp expression of interest'))
-            ->unique()
-            ->values();
+        return collect($terms)->unique()->values();
     }
 
     private function tedNoticeToItem(array $notice, array $source): array
@@ -1276,6 +1304,7 @@ class CountryIntelligenceMonitor
             'sourcecountry' => (string) ($source['name'] ?? 'SAM.gov Contract Opportunities'),
             'seendate' => $publishedAt,
             'excerpt' => trim(implode(' | ', array_filter([
+                'Federal contract opportunity',
                 $this->firstStringValue($row, ['solicitationNumber']),
                 $this->firstStringValue($row, ['type', 'baseType']),
                 $this->firstStringValue($row, ['fullParentPathName', 'department', 'subTier', 'office']),
